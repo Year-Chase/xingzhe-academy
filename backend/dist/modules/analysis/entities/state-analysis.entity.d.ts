@@ -1,0 +1,33 @@
+import { User } from '../../users/entities/user.entity';
+import { DiaryEntry } from '../../diary/entities/diary-entry.entity';
+export declare class StateAnalysis {
+    id: string;
+    userId: string;
+    user: User;
+    diaryId?: string;
+    diary?: DiaryEntry;
+    sourceType: string;
+    tensionScore: number;
+    emotionValence: number;
+    recoveryLevel: number;
+    durationLevel: number;
+    stateType: string;
+    stateLabel?: string;
+    summary?: string;
+    evidence?: string[];
+    suggestion: string;
+    confidence: number;
+    rawResponse?: any;
+    aiProvider: string;
+    aiModel: string;
+    xValue?: number;
+    yValue?: number;
+    scoreStress?: number;
+    scoreEmotion?: number;
+    scoreComposite?: number;
+    engineVersion?: string;
+    mapperType: string;
+    mapperProvider?: string;
+    mapperModel?: string;
+    createdAt: Date;
+}
