@@ -1,0 +1,35 @@
+{
+  "name": "xingzhe-v3-weapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "行者 V3 微信小程序",
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp"
+  },
+  "dependencies": {
+    "@tarojs/components": "3.6.33",
+    "@tarojs/helper": "3.6.33",
+    "@tarojs/plugin-platform-h5": "3.6.33",
+    "@tarojs/plugin-platform-weapp": "3.6.33",
+    "@tarojs/react": "3.6.33",
+    "@tarojs/runtime": "3.6.33",
+    "@tarojs/shared": "3.6.33",
+    "@tarojs/taro": "3.6.33",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.21.0",
+    "@babel/preset-env": "^7.21.0",
+    "@babel/preset-react": "^7.18.6",
+    "@babel/preset-typescript": "^7.21.0",
+    "@tarojs/cli": "3.6.33",
+    "@tarojs/webpack5-runner": "3.6.33",
+    "@types/react": "^18.2.0",
+    "babel-loader": "^9.1.0",
+    "babel-preset-taro": "3.6.33",
+    "typescript": "^5.1.0",
+    "webpack": "^5.88.2"
+  }
+}

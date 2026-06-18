@@ -1,0 +1,28 @@
+{
+  "name": "xingzhe-v3",
+  "version": "1.0.0",
+  "private": true,
+  "description": "V3 基础架构 - Taro + NestJS monorepo",
+  "workspaces": [
+    "apps/h5",
+    "apps/weapp",
+    "backend"
+  ],
+  "scripts": {
+    "dev:h5": "npm -w apps/h5 run dev:h5",
+    "dev:weapp": "npm -w apps/weapp run dev:weapp",
+    "build:h5": "npm -w apps/h5 run build:h5",
+    "build:weapp": "npm -w apps/weapp run build:weapp",
+    "start:backend": "npm -w backend run start:dev"
+  },
+  "overrides": {
+  "webpack": "5.88.2"
+  },
+  "dependencies": {
+    "@tarojs/plugin-framework-react": "^3.6.33"
+  },
+  "devDependencies": {
+    "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
+    "react-refresh": "^0.18.0"
+  }
+}

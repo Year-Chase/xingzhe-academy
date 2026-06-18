@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.taro-cache/
+.env
+*.log
+.DS_Store
+.idea/
+.vscode/
+coverage/
+
+# Runtime data
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Taro / SWC cache
+.swc/
+**/.swc/
