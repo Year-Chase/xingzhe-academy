@@ -69,6 +69,15 @@ export class ActivityService implements OnModuleInit {
     return this.activityRepo.find({ where: { status: 'active' }, order: { startTime: 'ASC' } })
   }
 
+  async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
+    const [items, total] = await this.activityRepo.findAndCount({
+      order: { startTime: 'ASC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    })
+    return { items, total }
+  }
+
   async getDetail(id: number): Promise<Activity> {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)

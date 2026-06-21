@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
+import { Repository, In } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { Activity } from './entities/activity.entity'
 import { ActivityRegistration } from './entities/activity-registration.entity'
@@ -132,9 +132,76 @@ export class ActivityFlowService {
     return { status: reg.status, qrCode: reg.qr?.code || null, qrStatus: reg.qr?.status || null }
   }
 
-  // ──── getRegisteredCount ────
+  // ──── enrollPay — 报名+支付一体化 ────
+  async enrollPay(userId: string, activityId: number) {
+    await this.ensureActivity(activityId)
+
+    // check capacity
+    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
+    if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
+    const paidCount = await this.regRepo.count({
+      where: { activityId, status: In(['PAID', 'CHECKED_IN']) },
+    })
+    if (activity.capacity > 0 && paidCount >= activity.capacity) {
+      throw new BadRequestException('活动名额已满')
+    }
+
+    // already paid or checked in — idempotent
+    const existing = await this.regRepo.findOne({ where: { userId, activityId } })
+    if (existing && (existing.status === 'PAID' || existing.status === 'CHECKED_IN')) {
+      const qr = await this.qrRepo.findOne({ where: { registrationId: existing.id, status: 'ACTIVE' as any } })
+      return { status: existing.status, id: existing.id, code: qr?.code || null }
+    }
+
+    // create or update registration → PAID directly
+    let reg = existing
+    if (!reg) {
+      reg = this.regRepo.create({ userId, activityId, status: 'PAID' })
+    } else {
+      reg.status = 'PAID'
+    }
+    const saved = await this.regRepo.save(reg)
+
+    // create order if not exists
+    const orderExists = await this.orderRepo.findOne({ where: { registrationId: saved.id } })
+    if (!orderExists) {
+      const order = this.orderRepo.create({ registrationId: saved.id, amount: 0 })
+      await this.orderRepo.save(order)
+    }
+
+    // generate QR
+    let qr = await this.qrRepo.findOne({ where: { registrationId: saved.id, status: 'ACTIVE' as any } })
+    if (!qr) {
+      qr = this.qrRepo.create({
+        registrationId: saved.id,
+        code: randomUUID(),
+        status: 'ACTIVE',
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      })
+      await this.qrRepo.save(qr)
+    }
+
+    return { status: 'PAID', id: saved.id, code: qr.code }
+  }
+
+  // ──── getRegisteredCount — only PAID + CHECKED_IN ────
   async getRegisteredCount(activityId: number) {
-    return this.regRepo.count({ where: { activityId } })
+    return this.regRepo.count({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
+  }
+
+  // ──── getParticipants — only PAID + CHECKED_IN ────
+  async getParticipants(activityId: number, currentUserId: string) {
+    const regs = await this.regRepo.find({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
+    return regs.map((r) => ({
+      userId: r.userId,
+      avatarUrl: '',
+      nickname: `行者 ${r.userId}`,
+      name: `行者 ${r.userId}`,
+      gender: '未知',
+      commonActivityCount: 0,
+      motto: '把身体从屏幕里带出来。',
+      status: r.status,
+    }))
   }
 
   // ──── private helpers ────

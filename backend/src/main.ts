@@ -7,7 +7,7 @@ async function bootstrap() {
   mkdirSync(join(__dirname, '..', 'data'), { recursive: true })
   const app = await NestFactory.create(AppModule)
   app.enableCors()
-  await app.listen(3000)
+  await app.listen(3000, '0.0.0.0')
   console.log('行者 V3 Backend running on http://localhost:3000')
 }
 bootstrap()
