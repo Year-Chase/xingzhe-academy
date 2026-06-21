@@ -49,3 +49,40 @@
 - 无活动种子数据，需通过 API 隐式创建
 - 前端 H5 和 WeApp 页面结构不一致（WeApp 缺 activity/detail 和 activity/qr 页面）
 - 未验证状态机在重复操作下的幂等行为
+
+2026-06-21 — P1 WeApp 活动报名支付闭环完成
+
+Commit：
+
+aedb819 feat: complete weapp activity enrollment flow p1
+
+完成内容：
+
+小程序首页活动列表
+活动详情页
+活动报名支付合并
+支付成功生成签到码
+二维码页面
+核销 / 签到
+已签到状态
+全部活动列表
+已结束活动置灰
+已参加盖章
+已报名同行者展示
+UI-STANDARD.md
+
+Tag：
+
+p1-weapp-enrollment-flow
+2026-06-21 — P2 Admin 管理后台启动
+
+P2 目标：
+
+建设独立 PC Admin 管理后台，支撑活动创建、发布、编辑、下架、报名查看、订单只读和小程序联动验证。
+
+重要决策：
+
+P2 不使用 apps/h5
+Admin 新建 apps/admin
+P2 先做运营闭环，不做复杂财务
+QA Agent 可在 P2 介入

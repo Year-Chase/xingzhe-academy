@@ -116,3 +116,42 @@
 首次参加时间
 
 最近参加时间
+
+P2 系统形态
+
+P2 后系统形态：
+
+backend
+├── WeApp 小程序
+└── Admin PC 管理后台
+
+目录规划：
+
+apps/
+├── weapp/
+├── h5/      # 冻结，不作为管理后台
+└── admin/  # P2 新建
+
+Admin 技术方向：
+
+Vue 3
+Vite
+TypeScript
+TDesign Vue Next 或 Ant Design Vue
+独立路由
+独立 API client
+独立环境变量
+通过 backend admin API 访问业务数据
+
+backend 是唯一业务中枢。
+
+Admin 不直接操作数据库。
+WeApp 不直接操作数据库。
+所有状态流转必须经过 backend service。
+
+P2 Admin API 建议前缀：
+
+/admin/activity
+/admin/registration
+/admin/order
+/admin/user
