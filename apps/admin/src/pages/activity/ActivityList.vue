@@ -49,8 +49,8 @@ const statusOptions = [
 ]
 
 // ── helpers ──
-const statusLabel = (s: string) => ({ PUBLISHED: '已发布', DRAFT: '未发布', CLOSED: '已下架', ENDED: '已结束', active: '已发布' } as any)[s] || s
-const statusColor = (s: string) => ({ PUBLISHED: '#2E7D5A', DRAFT: '#8A9288', CLOSED: '#B35B4B', ENDED: '#8A9288', active: '#2E7D5A' } as any)[s] || '#666'
+const statusLabel = (s: string) => ({ PUBLISHED: '已发布', DRAFT: '未发布', CLOSED: '已下架', ENDED: '已结束' } as any)[s] || s
+const statusColor = (s: string) => ({ PUBLISHED: '#2E7D5A', DRAFT: '#8A9288', CLOSED: '#B35B4B', ENDED: '#8A9288' } as any)[s] || '#666'
 const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 const toLocal = (s: string) => {
   if (!s) return ''

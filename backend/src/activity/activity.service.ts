@@ -74,24 +74,28 @@ export class ActivityService implements OnModuleInit {
 
   // ── WeApp facing ──
 
+  /** Unified: can this activity be enrolled now? (also used for display filtering) */
+  canDisplay(a: Activity, now: Date): boolean {
+    if (a.status !== 'PUBLISHED') return false
+    if (a.endTime && new Date(a.endTime) <= now) return false
+    if (a.registrationStartTime && new Date(a.registrationStartTime) > now) return false
+    if (a.registrationEndTime && new Date(a.registrationEndTime) < now) return false
+    return true
+  }
+
   async getList(): Promise<Activity[]> {
-    const now = new Date().toISOString()
+    const now = new Date()
     const items = await this.activityRepo
       .createQueryBuilder('a')
-      .where('(a.status = :pub OR a.status = :act)', { pub: 'PUBLISHED', act: 'active' })
+      .where('a.status = :pub', { pub: 'PUBLISHED' })
       .getMany()
-    // Filter in JS for reliable date comparison (avoid SQLite type issues)
-    return items.filter((a) => {
-      if (a.endTime && new Date(a.endTime).toISOString() <= now) return false
-      if (a.registrationStartTime && new Date(a.registrationStartTime).toISOString() > now) return false
-      if (a.registrationEndTime && new Date(a.registrationEndTime).toISOString() < now) return false
-      return true
-    }).sort((a, b) => (a.startTime?.getTime() || 0) - (b.startTime?.getTime() || 0))
+    return items.filter((a) => this.canDisplay(a, now))
+      .sort((a, b) => (a.startTime?.getTime() || 0) - (b.startTime?.getTime() || 0))
   }
 
   async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
     const [items, total] = await this.activityRepo.findAndCount({
-      where: { status: In(['PUBLISHED', 'ENDED', 'active']) },
+      where: { status: In(['PUBLISHED', 'ENDED']) },
       order: { startTime: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -111,15 +115,12 @@ export class ActivityService implements OnModuleInit {
   effectiveStatus(a: Activity): string {
     const now = new Date()
     if (a.endTime && new Date(a.endTime) <= now && a.status !== 'DRAFT') return 'ENDED'
-    if (a.status === 'active') return 'PUBLISHED'
     return a.status
   }
 
   async adminGetList(page: number, limit: number, status?: string, keyword?: string) {
     const qb = this.activityRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC')
-    if (status === 'PUBLISHED') {
-      qb.andWhere('(a.status = :s1 OR a.status = :s2)', { s1: 'PUBLISHED', s2: 'active' })
-    } else if (status) {
+    if (status) {
       qb.andWhere('a.status = :status', { status })
     }
     if (keyword) {

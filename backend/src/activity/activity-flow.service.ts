@@ -139,13 +139,11 @@ export class ActivityFlowService {
     const activity = await this.activityRepo.findOne({ where: { id: activityId } })
     if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
 
-    // status check
-    if (activity.status !== 'PUBLISHED' && activity.status !== 'active') {
+    // unified enrollment check
+    const now = new Date()
+    if (activity.status !== 'PUBLISHED') {
       throw new BadRequestException('活动未发布，暂不可报名')
     }
-
-    // registration window check
-    const now = new Date()
     if (activity.endTime && now > new Date(activity.endTime)) {
       throw new BadRequestException('活动已结束，不可报名')
     }
