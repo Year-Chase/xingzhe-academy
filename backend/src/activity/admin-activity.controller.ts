@@ -1,6 +1,19 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, ParseIntPipe, BadRequestException } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Query, Body, ParseIntPipe, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
+import { diskStorage } from 'multer'
+import { extname, join } from 'path'
+import { mkdirSync, existsSync } from 'fs'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
+
+type UploadedActivityImageFile = {
+  originalname: string
+  filename: string
+  mimetype: string
+  size: number
+  buffer?: Buffer
+  path?: string
+}
 
 @Controller('admin')
 export class AdminActivityController {
@@ -9,30 +22,34 @@ export class AdminActivityController {
     private readonly flow: ActivityFlowService,
   ) {}
 
-  // ── helpers ──
   private toAdminItem(a: any, registeredCount: number) {
+    const now = new Date()
+    const effStatus = this.activitySvc.effectiveStatus(a)
     return {
       id: a.id,
       title: a.title,
+      slogan: a.slogan || '',
       description: a.description || '',
       location: a.location || '',
-      city: '',
+      city: a.city || '',
       startTime: a.startTime,
       endTime: a.endTime,
+      registrationStartTime: a.registrationStartTime || null,
+      registrationEndTime: a.registrationEndTime || null,
       capacity: a.capacity,
       registeredCount,
-      status: a.status,
+      status: effStatus,
       coverImage: a.coverImage || '',
-      price: 0,
-      memberPrice: 0,
-      lifetimeMemberPrice: 0,
-      paymentMode: 'FULL',
+      price: a.price ?? 0,
+      memberPrice: a.memberPrice ?? 0,
+      lifetimeMemberPrice: a.lifetimeMemberPrice ?? 0,
+      paymentMode: a.paymentMode || 'FULL',
       createdAt: a.createdAt,
       updatedAt: a.createdAt,
     }
   }
 
-  // GET /admin/activity?page=1&limit=20&status=PUBLISHED&keyword=
+  // GET /admin/activity?page=1&limit=20&status=&keyword=
   @Get('activity')
   async getList(
     @Query('page') page: string,
@@ -60,8 +77,8 @@ export class AdminActivityController {
   // POST /admin/activity
   @Post('activity')
   async create(@Body() body: any) {
-    if (!body.title || !body.location || !body.startTime || !body.capacity || body.capacity <= 0) {
-      throw new BadRequestException('title, location, startTime, and capacity (>0) are required')
+    if (!body.title || !body.location || !body.startTime || !body.endTime || !body.registrationStartTime || !body.registrationEndTime || !body.capacity || body.capacity <= 0) {
+      throw new BadRequestException('title, location, startTime, endTime, registrationStartTime, registrationEndTime, and capacity (>0) are required')
     }
     return this.activitySvc.adminCreate(body)
   }
@@ -85,5 +102,33 @@ export class AdminActivityController {
   @Post('activity/:id/close')
   async close(@Param('id', ParseIntPipe) id: number) {
     return this.activitySvc.adminClose(id)
+  }
+
+  // POST /admin/activity/upload-cover
+  @Post('activity/upload-cover')
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: (_req, _file, cb) => {
+        const dir = join(__dirname, '..', '..', 'uploads', 'activity')
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        cb(null, dir)
+      },
+      filename: (_req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e9)
+        cb(null, unique + extname(file.originalname))
+      },
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.match(/^image\/(jpeg|png|webp)$/)) {
+        cb(new BadRequestException('Only jpg/jpeg/png/webp allowed'), false)
+      } else {
+        cb(null, true)
+      }
+    },
+  }))
+  uploadCover(@UploadedFile() file: UploadedActivityImageFile)  {
+    if (!file) throw new BadRequestException('No file uploaded')
+    return { url: '/uploads/activity/' + file.filename }
   }
 }

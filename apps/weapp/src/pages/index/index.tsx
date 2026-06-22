@@ -1,4 +1,4 @@
-import { View, Text } from '@tarojs/components'
+import { View, Text, Image } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { useDidShow } from '@tarojs/taro'
 
@@ -7,9 +7,16 @@ const API = 'http://172.20.10.10:3000'
 interface ActivityCard {
   id: number; title: string; description: string; location: string
   startTime: string; capacity: number; registeredCount: number
+  coverImage: string
 }
 
-const ICON: Record<number, string> = { 1: '🏃', 2: '🚴', 3: '🧘', 4: '⛰️', 5: '🏊' }
+const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
+
+function imgUrl(cover: string | undefined): string {
+  if (!cover) return ''
+  if (cover.startsWith('http')) return cover
+  return API + (cover.startsWith('/') ? '' : '/') + cover
+}
 
 export default function Index() {
   const [activities, setActivities] = useState<ActivityCard[]>([])
@@ -25,27 +32,20 @@ export default function Index() {
     finally { setLoading(false) }
   }
 
-  // Initial load
   useEffect(() => { fetchActivities() }, [])
 
-  // onShow — check dirtyActivityId and patch
   useDidShow(() => {
     const dirtyId = Taro.getStorageSync('dirtyActivityId')
     if (!dirtyId) return
     Taro.removeStorageSync('dirtyActivityId')
-
     Taro.request({ url: `${API}/activity/${dirtyId}` })
       .then((res) => {
         const latest = res.data as any
         setActivities((prev) =>
-          prev.map((a) =>
-            a.id === latest.id
-              ? { ...a, registeredCount: latest.registeredCount ?? a.registeredCount }
-              : a
-          )
+          prev.map((a) => a.id === latest.id ? { ...a, registeredCount: latest.registeredCount ?? a.registeredCount } : a)
         )
       })
-      .catch(() => { /* silently ignore — main list still intact */ })
+      .catch(() => {})
   })
 
   const fmtDate = (d: string) => {
@@ -56,23 +56,16 @@ export default function Index() {
     return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${h}:${m}`
   }
 
-  const goDetail = (id: number) => {
-    Taro.navigateTo({ url: `/pages/activity/detail/index?id=${id}` })
-  }
-
-  const goAll = () => {
-    Taro.navigateTo({ url: '/pages/activity/list/index' })
-  }
+  const goDetail = (id: number) => { Taro.navigateTo({ url: `/pages/activity/detail/index?id=${id}` }) }
+  const goAll = () => { Taro.navigateTo({ url: '/pages/activity/list/index' }) }
 
   return (
-    <View style={{ minHeight: '100vh', background: '#F7F6F2', fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif' }}>
-      {/* Brand */}
+    <View style={{ minHeight: '100vh', background: '#F7F6F2' }}>
       <View style={{ padding: '36rpx 32rpx 28rpx' }}>
         <Text style={{ fontSize: '44rpx', fontWeight: '700', color: '#18231E', display: 'block', lineHeight: '1.25' }}>行者学社</Text>
         <Text style={{ fontSize: '26rpx', color: '#666666', fontWeight: '400', display: 'block', marginTop: '8rpx' }}>把身体从屏幕里带出来</Text>
       </View>
 
-      {/* Banner */}
       <View style={{ margin: '0 32rpx 36rpx', height: '240rpx', borderRadius: '24rpx', overflow: 'hidden', background: '#EEF5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ textAlign: 'center' }}>
           <Text style={{ fontSize: '34rpx', fontWeight: '700', color: '#18231E', display: 'block', lineHeight: '1.35' }}>在城市边界</Text>
@@ -81,27 +74,17 @@ export default function Index() {
         </View>
       </View>
 
-      {/* Section header */}
       <View style={{ padding: '0 32rpx 20rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text style={{ fontSize: '34rpx', fontWeight: '700', color: '#18231E' }}>行者活动</Text>
         <Text onClick={goAll} style={{ fontSize: '24rpx', color: '#2E7D5A' }}>全部活动 →</Text>
       </View>
 
-      {/* Loading */}
-      {loading && (
-        <View style={{ padding: '100rpx 32rpx', textAlign: 'center' }}>
-          <Text style={{ color: '#8A9288', fontSize: '28rpx' }}>加载中...</Text>
-        </View>
-      )}
-
-      {/* Error */}
+      {loading && (<View style={{ padding: '100rpx 32rpx', textAlign: 'center' }}><Text style={{ color: '#8A9288', fontSize: '28rpx' }}>加载中...</Text></View>)}
       {error && !loading && (
         <View style={{ margin: '0 32rpx', padding: '40rpx', background: '#FFFFFF', borderRadius: '24rpx', border: '1rpx solid #EDE9DF', textAlign: 'center' }}>
           <Text style={{ fontSize: '28rpx', color: '#B35B4B', display: 'block', marginBottom: '12rpx' }}>{error}</Text>
         </View>
       )}
-
-      {/* Empty */}
       {!loading && !error && activities.length === 0 && (
         <View style={{ padding: '100rpx 32rpx', textAlign: 'center' }}>
           <Text style={{ fontSize: '60rpx', display: 'block', marginBottom: '16rpx' }}>🏃</Text>
@@ -110,31 +93,44 @@ export default function Index() {
         </View>
       )}
 
-      {/* Cards */}
-      {activities.map((a) => (
-        <View key={a.id} onClick={() => goDetail(a.id)}
-          style={{ margin: '0 32rpx 24rpx', background: '#FFFFFF', borderRadius: '24rpx', padding: '20rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)', display: 'flex', flexDirection: 'row', boxSizing: 'border-box' }}
-        >
-          <View style={{ width: '172rpx', height: '172rpx', borderRadius: '18rpx', background: '#EEF5EF', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '56rpx' }}>{ICON[a.id] || '🏔️'}</Text>
+      {activities.map((a) => {
+        const cover = imgUrl(a.coverImage)
+        return (
+          <View key={a.id} onClick={() => goDetail(a.id)}
+            style={{ margin: '0 32rpx 24rpx', background: '#FFFFFF', borderRadius: '24rpx', overflow: 'hidden', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)' }}
+          >
+            {/* Cover — 3:2, full width, top of card */}
+            <View style={{ width: '100%', height: '400rpx', background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {cover ? (
+                <Image src={cover} mode="aspectFill" style={{ width: '100%', height: '100%' }} />
+              ) : (
+                <Text style={{ fontSize: '48rpx', color: 'rgba(24,35,30,0.12)' }}>行者学社</Text>
+              )}
+            </View>
+            {/* Text area */}
+            <View style={{ padding: '24rpx 28rpx' }}>
+              <Text style={{ fontSize: '30rpx', fontWeight: '700', color: '#18231E', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</Text>
+              {a.description ? (
+                <Text style={{ fontSize: '24rpx', color: '#3A403B', lineHeight: '1.5', marginTop: '8rpx', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{a.description}</Text>
+              ) : null}
+              {/* Info row */}
+              <View style={{ marginTop: '16rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  {a.startTime ? (
+                    <Text style={{ fontSize: '24rpx', color: '#666666', lineHeight: '1.4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtDate(a.startTime)}</Text>
+                  ) : null}
+                  {a.location ? (
+                    <Text style={{ fontSize: '23rpx', color: '#8A9288', lineHeight: '1.4', marginTop: '4rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.location}</Text>
+                  ) : null}
+                </View>
+                <Text style={{ fontSize: '24rpx', fontWeight: '500', color: '#18231E', flexShrink: 0, marginLeft: '16rpx' }}>
+                  {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity} 人</Text>
+                </Text>
+              </View>
+            </View>
           </View>
-          <View style={{ flex: 1, minWidth: 0, paddingLeft: '22rpx', display: 'flex', flexDirection: 'column' }}>
-            <Text style={{ fontSize: '30rpx', fontWeight: '700', color: '#18231E', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</Text>
-            {a.description ? (
-              <Text style={{ fontSize: '24rpx', color: '#3A403B', lineHeight: '1.5', marginTop: '6rpx', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{a.description}</Text>
-            ) : null}
-            {a.startTime ? (
-              <Text style={{ fontSize: '23rpx', color: '#666666', lineHeight: '1.4', marginTop: a.description ? '10rpx' : '14rpx' }}>📅 {fmtDate(a.startTime)}</Text>
-            ) : null}
-            {a.location ? (
-              <Text style={{ fontSize: '23rpx', color: '#666666', lineHeight: '1.4', marginTop: '6rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {a.location}</Text>
-            ) : null}
-            <Text style={{ fontSize: '24rpx', fontWeight: '500', color: '#18231E', marginTop: 'auto', alignSelf: 'flex-end' }}>
-              {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity} 人</Text>
-            </Text>
-          </View>
-        </View>
-      ))}
+        )
+      })}
 
       <View style={{ height: '56rpx' }} />
     </View>

@@ -19,10 +19,10 @@ export class ActivityController {
    async getActivityList() {
      const list = await this.activitySvc.getList()
      const enriched: any[] = []
- 
+
      for (const a of list) {
        const registeredCount = await this.flow.getRegisteredCount(a.id)
- 
+
        enriched.push({
          id: a.id,
          title: a.title,
@@ -31,9 +31,12 @@ export class ActivityController {
          startTime: a.startTime,
          capacity: a.capacity,
          registeredCount,
+         coverImage: a.coverImage || '',
+         effectivePrice: a.price ?? 0,
+         effectivePriceLabel: '普通价',
        })
      }
- 
+
      return enriched
    }
    
@@ -46,39 +49,47 @@ export class ActivityController {
     const p = Math.max(1, parseInt(page) || 1) 
     const l = Math.min(100, Math.max(1, parseInt(limit) || 50)) 
     const { items, total } = await this.activitySvc.getAll(p, l) 
-    const enriched = await Promise.all( 
-      items.map(async (a) => ({ 
-        id: a.id, 
-        title: a.title, 
-        description: a.description?.slice(0, 80) || '', 
-        location: a.location, 
-        startTime: a.startTime, 
-        endTime: a.endTime, 
-        capacity: a.capacity, 
-        status: a.status, 
-        registeredCount: await this.flow.getRegisteredCount(a.id), 
+    const enriched = await Promise.all(
+      items.map(async (a) => ({
+        id: a.id,
+        title: a.title,
+        description: a.description?.slice(0, 80) || '',
+        location: a.location,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        capacity: a.capacity,
+        status: a.status,
+        registeredCount: await this.flow.getRegisteredCount(a.id),
+        coverImage: a.coverImage || '',
+        effectivePrice: a.price ?? 0,
+        effectivePriceLabel: '普通价',
       })), 
     ) 
     return { items: enriched, total, page: p, limit: l } 
   } 
   
-  @Get('activity/:id') 
-  async getActivityDetail(@Param('id', ParseIntPipe) id: number) { 
-    const a = await this.activitySvc.getDetail(id) 
-    const registeredCount = await this.flow.getRegisteredCount(id) 
-    return { 
-      id: a.id, 
-      title: a.title, 
-      description: a.description, 
-      location: a.location, 
-      startTime: a.startTime, 
-      endTime: a.endTime, 
-      capacity: a.capacity, 
-      coverImage: a.coverImage, 
-      status: a.status, 
-      registeredCount, 
-    } 
-  } 
+  @Get('activity/:id')
+  async getActivityDetail(@Param('id', ParseIntPipe) id: number) {
+    const a = await this.activitySvc.getDetail(id)
+    const registeredCount = await this.flow.getRegisteredCount(id)
+    return {
+      id: a.id,
+      title: a.title,
+      description: a.description,
+      location: a.location,
+      startTime: a.startTime,
+      endTime: a.endTime,
+      capacity: a.capacity,
+      coverImage: a.coverImage || '',
+      status: a.status,
+      registeredCount,
+      price: a.price ?? 0,
+      effectivePrice: a.price ?? 0,
+      effectivePriceLabel: '普通价',
+      registrationStartTime: a.registrationStartTime || null,
+      registrationEndTime: a.registrationEndTime || null,
+    }
+  }
   
   @Get('activity/:id/status') 
   async getStatus( 

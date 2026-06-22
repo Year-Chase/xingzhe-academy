@@ -136,9 +136,27 @@ export class ActivityFlowService {
   async enrollPay(userId: string, activityId: number) {
     await this.ensureActivity(activityId)
 
-    // check capacity
     const activity = await this.activityRepo.findOne({ where: { id: activityId } })
     if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
+
+    // status check
+    if (activity.status !== 'PUBLISHED' && activity.status !== 'active') {
+      throw new BadRequestException('活动未发布，暂不可报名')
+    }
+
+    // registration window check
+    const now = new Date()
+    if (activity.endTime && now > new Date(activity.endTime)) {
+      throw new BadRequestException('活动已结束，不可报名')
+    }
+    if (activity.registrationStartTime && now < new Date(activity.registrationStartTime)) {
+      throw new BadRequestException('报名尚未开始')
+    }
+    if (activity.registrationEndTime && now > new Date(activity.registrationEndTime)) {
+      throw new BadRequestException('报名已结束')
+    }
+
+    // capacity check
     const paidCount = await this.regRepo.count({
       where: { activityId, status: In(['PAID', 'CHECKED_IN']) },
     })

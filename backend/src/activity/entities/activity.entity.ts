@@ -9,11 +9,17 @@ export class Activity {
   @Column({ type: 'varchar', length: 200 })
   title: string
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  slogan: string
+
   @Column({ type: 'text', nullable: true })
   description: string
 
   @Column({ type: 'varchar', length: 300, nullable: true })
   location: string
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  city: string
 
   @Column({ type: 'datetime', nullable: true })
   startTime: Date
@@ -21,13 +27,31 @@ export class Activity {
   @Column({ type: 'datetime', nullable: true })
   endTime: Date
 
+  @Column({ type: 'datetime', nullable: true })
+  registrationStartTime: Date
+
+  @Column({ type: 'datetime', nullable: true })
+  registrationEndTime: Date
+
   @Column({ type: 'int', default: 0 })
   capacity: number
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   coverImage: string
 
-  @Column({ type: 'varchar', length: 50, default: 'active' })
+  @Column({ type: 'int', default: 0 })
+  price: number
+
+  @Column({ type: 'int', default: 0 })
+  memberPrice: number
+
+  @Column({ type: 'int', default: 0 })
+  lifetimeMemberPrice: number
+
+  @Column({ type: 'varchar', length: 20, default: 'FULL' })
+  paymentMode: string
+
+  @Column({ type: 'varchar', length: 50, default: 'DRAFT' })
   status: string
 
   @CreateDateColumn()

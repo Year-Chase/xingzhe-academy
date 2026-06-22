@@ -16,67 +16,82 @@ export class ActivityService implements OnModuleInit {
   async onModuleInit() {
     const count = await this.activityRepo.count()
     if (count > 0) return
-
     const now = new Date()
     await this.activityRepo.save([
       {
         title: '🏃 奥森晨跑',
         description: '每周六早上7点在奥森南门集合，沿5km环线慢跑。适合所有水平的跑者，新手友好。请穿运动鞋，自带饮用水。',
-        location: '奥林匹克森林公园南门',
+        location: '奥林匹克森林公园南门', city: '北京',
         startTime: new Date(now.getTime() + 86400000),
         endTime: new Date(now.getTime() + 86400000 + 7200000),
-        capacity: 30,
-        status: 'active',
+        registrationStartTime: new Date(now.getTime() - 86400000),
+        registrationEndTime: new Date(now.getTime() + 86400000),
+        capacity: 30, status: 'PUBLISHED',
       },
       {
         title: '🚴 周末骑行',
         description: '沿温榆河绿道骑行30km，途经多个湿地公园。需自备自行车（或扫码共享单车），头盔必备。',
-        location: '温榆河绿道入口',
+        location: '温榆河绿道入口', city: '北京',
         startTime: new Date(now.getTime() + 172800000),
         endTime: new Date(now.getTime() + 172800000 + 14400000),
-        capacity: 20,
-        status: 'active',
+        registrationStartTime: new Date(now.getTime()),
+        registrationEndTime: new Date(now.getTime() + 172800000),
+        capacity: 20, status: 'PUBLISHED',
       },
       {
         title: '🧘 朝阳公园瑜伽',
         description: '在草坪上进行1小时流瑜伽，由持证教练带领。请自带瑜伽垫，建议穿宽松舒适衣物。',
-        location: '朝阳公园中心草坪',
+        location: '朝阳公园中心草坪', city: '北京',
         startTime: new Date(now.getTime() + 259200000),
         endTime: new Date(now.getTime() + 259200000 + 3600000),
-        capacity: 25,
-        status: 'active',
+        registrationStartTime: new Date(now.getTime()),
+        registrationEndTime: new Date(now.getTime() + 259200000),
+        capacity: 25, status: 'PUBLISHED',
       },
       {
         title: '⛰️ 香山徒步',
         description: '从香山邮局出发，经好汉坡登顶，全程约8km，累计爬升500m。有一定强度，要求参与者体能良好。',
-        location: '香山邮局',
+        location: '香山邮局', city: '北京',
         startTime: new Date(now.getTime() + 604800000),
         endTime: new Date(now.getTime() + 604800000 + 21600000),
-        capacity: 15,
-        status: 'active',
+        registrationStartTime: new Date(now.getTime()),
+        registrationEndTime: new Date(now.getTime() + 604800000),
+        capacity: 15, status: 'PUBLISHED',
       },
       {
         title: '🏊 游泳训练',
         description: '在英东游泳馆进行1.5小时游泳训练，含技术指导和自由泳练习。需自带泳衣、泳帽、泳镜。',
-        location: '英东游泳馆',
+        location: '英东游泳馆', city: '北京',
         startTime: new Date(now.getTime() + 345600000),
         endTime: new Date(now.getTime() + 345600000 + 5400000),
-        capacity: 12,
-        status: 'active',
+        registrationStartTime: new Date(now.getTime()),
+        registrationEndTime: new Date(now.getTime() + 345600000),
+        capacity: 12, status: 'PUBLISHED',
       },
     ])
     console.log('[ActivityService] Seeded 5 activities')
   }
 
+  // ── WeApp facing ──
+
   async getList(): Promise<Activity[]> {
-    return this.activityRepo.find({
-      where: [{ status: 'active' }, { status: 'PUBLISHED' }],
-      order: { startTime: 'ASC' },
-    })
+    const now = new Date().toISOString()
+    const items = await this.activityRepo
+      .createQueryBuilder('a')
+      .where('(a.status = :pub OR a.status = :act)', { pub: 'PUBLISHED', act: 'active' })
+      .getMany()
+    // Filter in JS for reliable date comparison (avoid SQLite type issues)
+    return items.filter((a) => {
+      if (a.endTime && new Date(a.endTime).toISOString() <= now) return false
+      if (a.registrationStartTime && new Date(a.registrationStartTime).toISOString() > now) return false
+      if (a.registrationEndTime && new Date(a.registrationEndTime).toISOString() < now) return false
+      return true
+    }).sort((a, b) => (a.startTime?.getTime() || 0) - (b.startTime?.getTime() || 0))
   }
 
   async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
     const [items, total] = await this.activityRepo.findAndCount({
+      where: { status: In(['PUBLISHED', 'ENDED', 'active']) },
       order: { startTime: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -92,9 +107,21 @@ export class ActivityService implements OnModuleInit {
 
   // ── Admin query methods ──
 
+  /** Compute effective status: override with ENDED if endTime has passed */
+  effectiveStatus(a: Activity): string {
+    const now = new Date()
+    if (a.endTime && new Date(a.endTime) <= now && a.status !== 'DRAFT') return 'ENDED'
+    if (a.status === 'active') return 'PUBLISHED'
+    return a.status
+  }
+
   async adminGetList(page: number, limit: number, status?: string, keyword?: string) {
     const qb = this.activityRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC')
-    if (status) qb.andWhere('a.status = :status', { status })
+    if (status === 'PUBLISHED') {
+      qb.andWhere('(a.status = :s1 OR a.status = :s2)', { s1: 'PUBLISHED', s2: 'active' })
+    } else if (status) {
+      qb.andWhere('a.status = :status', { status })
+    }
     if (keyword) {
       qb.andWhere('(a.title LIKE :kw OR a.location LIKE :kw2 OR a.description LIKE :kw3)', {
         kw: `%${keyword}%`, kw2: `%${keyword}%`, kw3: `%${keyword}%`,
@@ -106,17 +133,32 @@ export class ActivityService implements OnModuleInit {
   }
 
   async adminCreate(dto: {
-    title: string; description?: string; location: string
-    startTime: string; endTime?: string; capacity: number; coverImage?: string
+    title: string; slogan?: string; description?: string; location: string; city?: string
+    startTime: string; endTime: string; registrationStartTime: string; registrationEndTime: string
+    capacity: number; coverImage?: string; price?: number; memberPrice?: number
+    lifetimeMemberPrice?: number; paymentMode?: string
   }) {
+    if (dto.slogan && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
+    const st = new Date(dto.startTime), et = new Date(dto.endTime)
+    const rs = new Date(dto.registrationStartTime), re = new Date(dto.registrationEndTime)
+    if (et <= st) throw new BadRequestException('活动结束时间必须晚于活动开始时间')
+    if (re <= rs) throw new BadRequestException('报名结束时间必须晚于报名开始时间')
     const a = this.activityRepo.create({
       title: dto.title,
+      slogan: dto.slogan || '',
       description: dto.description || '',
       location: dto.location,
-      startTime: new Date(dto.startTime),
-      endTime: dto.endTime ? new Date(dto.endTime) : undefined,
+      city: dto.city || '',
+      startTime: st,
+      endTime: et,
+      registrationStartTime: rs,
+      registrationEndTime: re,
       capacity: dto.capacity,
       coverImage: dto.coverImage || '',
+      price: dto.price ?? 0,
+      memberPrice: dto.memberPrice ?? 0,
+      lifetimeMemberPrice: dto.lifetimeMemberPrice ?? 0,
+      paymentMode: dto.paymentMode || 'FULL',
       status: 'DRAFT',
     })
     const saved = await this.activityRepo.save(a)
@@ -124,27 +166,41 @@ export class ActivityService implements OnModuleInit {
   }
 
   async adminUpdate(id: number, dto: {
-    title?: string; description?: string; location?: string
-    startTime?: string; endTime?: string; capacity?: number; coverImage?: string
+    title?: string; slogan?: string; description?: string; location?: string; city?: string
+    startTime?: string; endTime?: string; registrationStartTime?: string; registrationEndTime?: string
+    capacity?: number; coverImage?: string; price?: number; memberPrice?: number
+    lifetimeMemberPrice?: number; paymentMode?: string
   }) {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
+    if (dto.slogan !== undefined && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
 
     if (dto.title !== undefined) a.title = dto.title
+    if (dto.slogan !== undefined) a.slogan = dto.slogan
     if (dto.description !== undefined) a.description = dto.description
     if (dto.location !== undefined) a.location = dto.location
+    if (dto.city !== undefined) a.city = dto.city
     if (dto.startTime !== undefined) a.startTime = new Date(dto.startTime)
-    if (dto.endTime !== undefined) a.endTime = dto.endTime ? new Date(dto.endTime) : null as any
+    if (dto.endTime !== undefined) a.endTime = new Date(dto.endTime)
+    if (dto.registrationStartTime !== undefined) a.registrationStartTime = new Date(dto.registrationStartTime)
+    if (dto.registrationEndTime !== undefined) a.registrationEndTime = new Date(dto.registrationEndTime)
+    // time validation
+    const st = a.startTime, et = a.endTime
+    const rs = a.registrationStartTime, re = a.registrationEndTime
+    if (st && et && et <= st) throw new BadRequestException('活动结束时间必须晚于活动开始时间')
+    if (rs && re && re <= rs) throw new BadRequestException('报名结束时间必须晚于报名开始时间')
     if (dto.capacity !== undefined) {
       const registeredCount = await this.regRepo.count({
         where: { activityId: id, status: In(['PAID', 'CHECKED_IN']) },
       })
-      if (dto.capacity < registeredCount) {
-        throw new BadRequestException('capacity cannot be less than registered count')
-      }
+      if (dto.capacity < registeredCount) throw new BadRequestException('capacity cannot be less than registered count')
       a.capacity = dto.capacity
     }
     if (dto.coverImage !== undefined) a.coverImage = dto.coverImage
+    if (dto.price !== undefined) a.price = dto.price
+    if (dto.memberPrice !== undefined) a.memberPrice = dto.memberPrice
+    if (dto.lifetimeMemberPrice !== undefined) a.lifetimeMemberPrice = dto.lifetimeMemberPrice
+    if (dto.paymentMode !== undefined) a.paymentMode = dto.paymentMode
 
     await this.activityRepo.save(a)
     return { id, updated: true }
