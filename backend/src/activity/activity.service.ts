@@ -1,13 +1,16 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
+import { Repository, In } from 'typeorm'
 import { Activity } from './entities/activity.entity'
+import { ActivityRegistration } from './entities/activity-registration.entity'
 
 @Injectable()
 export class ActivityService implements OnModuleInit {
   constructor(
     @InjectRepository(Activity)
     private readonly activityRepo: Repository<Activity>,
+    @InjectRepository(ActivityRegistration)
+    private readonly regRepo: Repository<ActivityRegistration>,
   ) {}
 
   async onModuleInit() {
@@ -66,7 +69,10 @@ export class ActivityService implements OnModuleInit {
   }
 
   async getList(): Promise<Activity[]> {
-    return this.activityRepo.find({ where: { status: 'active' }, order: { startTime: 'ASC' } })
+    return this.activityRepo.find({
+      where: [{ status: 'active' }, { status: 'PUBLISHED' }],
+      order: { startTime: 'ASC' },
+    })
   }
 
   async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
@@ -82,5 +88,83 @@ export class ActivityService implements OnModuleInit {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
     return a
+  }
+
+  // ── Admin query methods ──
+
+  async adminGetList(page: number, limit: number, status?: string, keyword?: string) {
+    const qb = this.activityRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC')
+    if (status) qb.andWhere('a.status = :status', { status })
+    if (keyword) {
+      qb.andWhere('(a.title LIKE :kw OR a.location LIKE :kw2 OR a.description LIKE :kw3)', {
+        kw: `%${keyword}%`, kw2: `%${keyword}%`, kw3: `%${keyword}%`,
+      })
+    }
+    qb.skip((page - 1) * limit).take(limit)
+    const [items, total] = await qb.getManyAndCount()
+    return { items, total }
+  }
+
+  async adminCreate(dto: {
+    title: string; description?: string; location: string
+    startTime: string; endTime?: string; capacity: number; coverImage?: string
+  }) {
+    const a = this.activityRepo.create({
+      title: dto.title,
+      description: dto.description || '',
+      location: dto.location,
+      startTime: new Date(dto.startTime),
+      endTime: dto.endTime ? new Date(dto.endTime) : undefined,
+      capacity: dto.capacity,
+      coverImage: dto.coverImage || '',
+      status: 'DRAFT',
+    })
+    const saved = await this.activityRepo.save(a)
+    return { id: saved.id, status: saved.status }
+  }
+
+  async adminUpdate(id: number, dto: {
+    title?: string; description?: string; location?: string
+    startTime?: string; endTime?: string; capacity?: number; coverImage?: string
+  }) {
+    const a = await this.activityRepo.findOne({ where: { id } })
+    if (!a) throw new NotFoundException(`Activity ${id} not found`)
+
+    if (dto.title !== undefined) a.title = dto.title
+    if (dto.description !== undefined) a.description = dto.description
+    if (dto.location !== undefined) a.location = dto.location
+    if (dto.startTime !== undefined) a.startTime = new Date(dto.startTime)
+    if (dto.endTime !== undefined) a.endTime = dto.endTime ? new Date(dto.endTime) : null as any
+    if (dto.capacity !== undefined) {
+      const registeredCount = await this.regRepo.count({
+        where: { activityId: id, status: In(['PAID', 'CHECKED_IN']) },
+      })
+      if (dto.capacity < registeredCount) {
+        throw new BadRequestException('capacity cannot be less than registered count')
+      }
+      a.capacity = dto.capacity
+    }
+    if (dto.coverImage !== undefined) a.coverImage = dto.coverImage
+
+    await this.activityRepo.save(a)
+    return { id, updated: true }
+  }
+
+  async adminPublish(id: number) {
+    const a = await this.activityRepo.findOne({ where: { id } })
+    if (!a) throw new NotFoundException(`Activity ${id} not found`)
+    if (a.status === 'PUBLISHED') return { id, status: 'PUBLISHED' }
+    a.status = 'PUBLISHED'
+    await this.activityRepo.save(a)
+    return { id, status: 'PUBLISHED' }
+  }
+
+  async adminClose(id: number) {
+    const a = await this.activityRepo.findOne({ where: { id } })
+    if (!a) throw new NotFoundException(`Activity ${id} not found`)
+    if (a.status === 'CLOSED') return { id, status: 'CLOSED' }
+    a.status = 'CLOSED'
+    await this.activityRepo.save(a)
+    return { id, status: 'CLOSED' }
   }
 }
