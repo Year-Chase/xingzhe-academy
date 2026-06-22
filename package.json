@@ -6,14 +6,16 @@
   "workspaces": [
     "apps/h5",
     "apps/weapp",
-    "backend"
+    "backend",
+    "apps/admin"
   ],
   "scripts": {
     "dev:h5": "npm -w apps/h5 run dev:h5",
     "dev:weapp": "npm -w apps/weapp run dev:weapp",
     "build:h5": "npm -w apps/h5 run build:h5",
     "build:weapp": "npm -w apps/weapp run build:weapp",
-    "start:backend": "npm -w backend run start:dev"
+    "start:backend": "npm -w backend run start:dev",
+    "dev:admin": "npm -w apps/admin run dev"
   },
   "overrides": {
   "webpack": "5.88.2"
