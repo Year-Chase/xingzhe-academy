@@ -7,8 +7,11 @@ const route = useRoute()
 const collapsed = ref(false)
 
 const menuItems = [
-  { path: '/', name: 'Dashboard', label: '控制台', icon: 'dashboard' },
-  { path: '/activity', name: 'ActivityList', label: '活动管理', icon: 'calendar' },
+  { path: '/', name: 'Dashboard', label: '控制台' },
+  { path: '/activity', name: 'ActivityList', label: '活动管理' },
+  { path: '/orders', name: 'OrderList', label: '订单管理' },
+  { path: '/finance', name: 'FinanceSummary', label: '财务概览' },
+  { path: '/invoices', name: 'InvoiceList', label: '发票管理' },
 ]
 
 function logout() {
@@ -42,8 +45,11 @@ function isActive(path: string) {
           @click="router.push(item.path)"
         >
           <template #icon>
-            <span v-if="item.icon === 'dashboard'">📊</span>
-            <span v-else-if="item.icon === 'calendar'">📅</span>
+            <span v-if="item.path === '/'">📊</span>
+            <span v-else-if="item.path === '/activity'">📅</span>
+            <span v-else-if="item.path === '/orders'">📋</span>
+            <span v-else-if="item.path === '/finance'">💰</span>
+            <span v-else-if="item.path === '/invoices'">🧾</span>
           </template>
           {{ item.label }}
         </t-menu-item>

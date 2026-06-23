@@ -99,22 +99,6 @@ export class ActivityController {
     if (!userId) return { status: 'NOT_REGISTERED' } 
     return this.flow.getUserStatus(userId, id) 
   } 
-  @Post('activity/:id/register') 
-  async register( 
-    @Param('id', ParseIntPipe) id: number, 
-    @Query('userId') userId: string, 
-  ) { 
-    if (!userId) return { error: 'userId is required' } 
-    return this.flow.register(userId, id) 
-  } 
-  @Post('activity/:id/pay') 
-  async pay( 
-    @Param('id', ParseIntPipe) id: number, 
-    @Query('userId') userId: string, 
-  ) { 
-    if (!userId) return { error: 'userId is required' } 
-    return this.flow.pay(userId, id) } 
-    
     @Get('activity/:id/qr') 
     async getQR( 
       @Param('id', ParseIntPipe) id: number, 

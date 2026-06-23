@@ -13,16 +13,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/layouts/AdminLayout.vue'),
     meta: { requiresAuth: true },
     children: [
-      {
-        path: '',
-        name: 'Dashboard',
-        component: () => import('@/pages/Dashboard.vue'),
-      },
-      {
-        path: 'activity',
-        name: 'ActivityList',
-        component: () => import('@/pages/activity/ActivityList.vue'),
-      },
+      { path: '', name: 'Dashboard', component: () => import('@/pages/Dashboard.vue') },
+      { path: 'activity', name: 'ActivityList', component: () => import('@/pages/activity/ActivityList.vue') },
+      { path: 'orders', name: 'OrderList', component: () => import('@/pages/order/OrderList.vue') },
+      { path: 'finance', name: 'FinanceSummary', component: () => import('@/pages/finance/FinanceSummary.vue') },
+      { path: 'invoices', name: 'InvoiceList', component: () => import('@/pages/invoice/InvoiceList.vue') },
     ],
   },
 ]
@@ -34,13 +29,9 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('admin_token')
-  if (to.meta.requiresAuth && !token) {
-    next('/login')
-  } else if (to.path === '/login' && token) {
-    next('/')
-  } else {
-    next()
-  }
+  if (to.meta.requiresAuth && !token) { next('/login') }
+  else if (to.path === '/login' && token) { next('/') }
+  else { next() }
 })
 
 export default router
