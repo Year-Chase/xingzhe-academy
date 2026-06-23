@@ -1,0 +1,25 @@
+{
+  "description": "P2.3 QA regression scope — files and dirs to read for LLM review",
+  "maxFileChars": 12000,
+  "extensions": [".ts", ".tsx", ".vue", ".js", ".json", ".md"],
+  "sections": [
+    { "label": "Backend Entity", "path": "backend/src/activity/entities/" },
+    { "label": "Backend Services", "path": "backend/src/activity/activity-flow.service.ts" },
+    { "label": "Backend Services", "path": "backend/src/activity/activity.service.ts" },
+    { "label": "Backend Controller (WeApp)", "path": "backend/src/activity/activity.controller.ts" },
+    { "label": "Backend Controller (Admin Activity)", "path": "backend/src/activity/admin-activity.controller.ts" },
+    { "label": "Backend Controller (Admin Order)", "path": "backend/src/activity/admin-order.controller.ts" },
+    { "label": "Backend Controller (Admin Finance)", "path": "backend/src/activity/admin-finance.controller.ts" },
+    { "label": "Backend Controller (Admin Invoice)", "path": "backend/src/activity/admin-invoice.controller.ts" },
+    { "label": "Backend Controller (Admin CRM)", "path": "backend/src/activity/admin-crm.controller.ts" },
+    { "label": "Backend Module", "path": "backend/src/activity/activity.module.ts" },
+    { "label": "Backend App Module", "path": "backend/src/app.module.ts" },
+    { "label": "Backend Main", "path": "backend/src/main.ts" },
+    { "label": "Admin Router", "path": "apps/admin/src/router/index.ts" },
+    { "label": "Admin Layout", "path": "apps/admin/src/layouts/AdminLayout.vue" },
+    { "label": "Admin Pages", "path": "apps/admin/src/pages/" },
+    { "label": "Admin CRM Pages", "path": "apps/admin/src/pages/crm/" },
+    { "label": "WeApp Index", "path": "apps/weapp/src/pages/index/" },
+    { "label": "WeApp Activity", "path": "apps/weapp/src/pages/activity/" }
+  ]
+}

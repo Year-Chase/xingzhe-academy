@@ -1,0 +1,17 @@
+{
+  "description": "P2.3 API regression checks",
+  "baseUrlEnv": "QA_BACKEND_URL",
+  "endpoints": [
+    { "method": "GET", "path": "/activity", "required": true, "allow": [200], "blockOn": [500, 404, "network"] },
+    { "method": "GET", "path": "/activity/all?page=1&limit=50", "required": true, "allow": [200], "blockOn": [500, 404, "network"] },
+    { "method": "GET", "path": "/admin/orders?page=1&limit=20", "required": true, "allow": [200], "blockOn": [500, 404, "network"] },
+    { "method": "GET", "path": "/admin/orders?page=1&limit=20&status=PENDING", "required": true, "allow": [200], "blockOn": [500, "network"] },
+    { "method": "GET", "path": "/admin/finance/summary", "required": true, "allow": [200], "blockOn": [500, 404, "network"] },
+    { "method": "GET", "path": "/admin/finance/activity/1", "required": true, "allow": [200], "blockOn": [500, "network"] },
+    { "method": "GET", "path": "/admin/invoices?page=1&limit=20", "required": true, "allow": [200], "blockOn": [500, 404, "network"] },
+    { "method": "GET", "path": "/admin/crm/users?page=1&limit=20", "required": true, "allow": [200], "blockOn": [500, "network"] },
+    { "method": "GET", "path": "/admin/crm/users?page=1&limit=20&inviteRegisterMin=0&inviteActivityMin=0", "required": true, "allow": [200], "blockOn": [500, "network"] },
+    { "method": "GET", "path": "/admin/crm/users?page=1&limit=20&birthYearMonth=1990-01", "required": true, "allow": [200], "blockOn": [500, "network"] },
+    { "method": "GET", "path": "/admin/crm/users/1", "required": false, "allow": [200, 404], "blockOn": [500, "network"] }
+  ]
+}

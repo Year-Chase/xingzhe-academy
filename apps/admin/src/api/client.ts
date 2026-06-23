@@ -38,4 +38,8 @@ export function patch<T = any>(url: string, data?: any) {
   return client.patch<T>(url, data).then((r) => r.data)
 }
 
+export function del<T = any>(url: string) {
+  return client.delete<T>(url).then((r) => r.data)
+}
+
 export default client

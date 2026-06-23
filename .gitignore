@@ -17,3 +17,6 @@ backend/data/
 # Taro / SWC cache
 .swc/
 **/.swc/
+
+# Local dev config & QA agent secrets
+.local/
