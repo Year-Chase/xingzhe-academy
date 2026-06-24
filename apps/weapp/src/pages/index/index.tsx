@@ -1,6 +1,7 @@
 import { View, Text, Image } from '@tarojs/components'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Taro, { useDidShow } from '@tarojs/taro'
+import { ensureUserId } from '../../utils/user'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -18,6 +19,12 @@ function imgUrl(cover: string | undefined): string {
   return API + (cover.startsWith('/') ? '' : '/') + cover
 }
 
+function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; style: React.CSSProperties; mode?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) return null
+  return <Image src={src} mode={mode as any} style={style} onError={() => setFailed(true)} />
+}
+
 export default function Index() {
   const [activities, setActivities] = useState<ActivityCard[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,9 +39,10 @@ export default function Index() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchActivities() }, [])
+  useEffect(() => { ensureUserId(false); fetchActivities() }, [])
 
   useDidShow(() => {
+    ensureUserId(false)
     const dirtyId = Taro.getStorageSync('dirtyActivityId')
     if (!dirtyId) return
     Taro.removeStorageSync('dirtyActivityId')
@@ -102,7 +110,7 @@ export default function Index() {
             {/* Cover — 3:2, full width, top of card */}
             <View style={{ width: '100%', height: '400rpx', background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               {cover ? (
-                <Image src={cover} mode="aspectFill" style={{ width: '100%', height: '100%' }} />
+                <ImgWithFallback src={cover} style={{ width: '100%', height: '100%' }} />
               ) : (
                 <Text style={{ fontSize: '48rpx', color: 'rgba(24,35,30,0.12)' }}>行者学社</Text>
               )}

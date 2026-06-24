@@ -1,9 +1,15 @@
 import { View, Text, Button, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
+import { getUserId, ensureUserId } from '../../../utils/user'
 
 const API = 'http://172.20.10.10:3000'
-const CURRENT_USER = '1'
+
+function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; style: React.CSSProperties; mode?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) return null
+  return <Image src={src} mode={mode as any} style={style} onError={() => setFailed(true)} />
+}
 
 function imgUrl(cover: string | undefined): string {
   if (!cover) return ''
@@ -57,8 +63,8 @@ export default function ActivityDetail() {
     try {
       const [d, s, p] = await Promise.all([
         Taro.request({ url: `${API}/activity/${activityId}` }),
-        Taro.request({ url: `${API}/activity/${activityId}/status?userId=1` }),
-        Taro.request({ url: `${API}/activity/${activityId}/participants?userId=1` }).catch(() => ({ data: [] })),
+        Taro.request({ url: `${API}/activity/${activityId}/status?userId=${getUserId()}` }),
+        Taro.request({ url: `${API}/activity/${activityId}/participants?userId=${getUserId()}` }).catch(() => ({ data: [] })),
       ])
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
@@ -68,6 +74,8 @@ export default function ActivityDetail() {
   }, [])
 
   const handleEnroll = async () => {
+    const uid = await ensureUserId()
+    if (!uid) return // toast already shown by ensureUserId
     const cap = activity?.capacity ?? 0
     const reg = activity?.registeredCount ?? 0
     if (cap > 0 && reg >= cap) { Taro.showToast({ title: '活动名额已满', icon: 'none' }); return }
@@ -78,7 +86,7 @@ export default function ActivityDetail() {
     setShowPayConfirm(false)
     if (acting) return; setActing(true)
     try {
-      const res = await Taro.request({ method: 'POST', url: `${API}/activity/${id}/enroll-pay?userId=1` })
+      const res = await Taro.request({ method: 'POST', url: `${API}/activity/${id}/enroll-pay?userId=${getUserId()}` })
       if (res.data?.status === 'PAID') {
         Taro.showToast({ title: '报名成功', icon: 'success' })
         Taro.setStorageSync('dirtyActivityId', id)
@@ -108,7 +116,7 @@ export default function ActivityDetail() {
 
   const reg = activity?.registeredCount ?? 0
   const cap = activity?.capacity ?? 0
-  const isSelf = (p: Participant) => p.userId === CURRENT_USER
+  const isSelf = (p: Participant) => p.userId === getUserId()
   const aAny = activity as any
 
   if (loading) return <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ color: C.secondary, fontSize: '28rpx' }}>加载中...</Text></View>
@@ -130,7 +138,7 @@ export default function ActivityDetail() {
       {/* 2. Cover — 3:2 ratio */}
       <View style={{ margin: '0 32rpx', height: '460rpx', borderRadius: '16rpx', overflow: 'hidden', background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {activity.coverImage ? (
-          <Image src={imgUrl(activity.coverImage)} mode="aspectFill" style={{ width: '100%', height: '100%' }} />
+          <ImgWithFallback src={imgUrl(activity.coverImage)} style={{ width: '100%', height: '100%' }} />
         ) : (
           <Text style={{ fontSize: '72rpx', color: 'rgba(24,35,30,0.15)' }}>行者学社</Text>
         )}

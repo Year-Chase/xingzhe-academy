@@ -19,6 +19,7 @@ import { UserNote } from './entities/user-note.entity'
 import { UserProfile } from './entities/user-profile.entity'
 import { UserInviteRecord } from './entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './entities/activity-invite-record.entity'
+import { User } from '../users/entities/user.entity'
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ActivityInviteRecord } from './entities/activity-invite-record.entity'
       UserProfile,
       UserInviteRecord,
       ActivityInviteRecord,
+      User,
     ]),
   ],
   controllers: [

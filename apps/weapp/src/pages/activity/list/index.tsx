@@ -1,6 +1,7 @@
 import { View, Text, ScrollView } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro from '@tarojs/taro'
+import { getUserId } from '../../../utils/user'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -40,7 +41,7 @@ export default function ActivityList() {
     if (items.length === 0) return
     Promise.all(
       items.map((a) =>
-        Taro.request({ url: `${API}/activity/${a.id}/status?userId=1` })
+        Taro.request({ url: `${API}/activity/${a.id}/status?userId=${getUserId()}` }).catch(() => ({ data: { status: '' } }))
           .then((r) => ({ id: a.id, status: (r.data as any)?.status }))
           .catch(() => ({ id: a.id, status: '' }))
       )

@@ -324,6 +324,62 @@ grepCheck('registeredCount-source', [
   grepResults.push({ check: 'appmodule-activity-invite-record', found: hasEntity });
 })();
 
+// 17. V2.4C: User entity registered in app.module.ts — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/app.module.ts') || '';
+  const hasUser = content.includes("import { User } from './users/entities/user.entity'") || content.includes("import { User } from './users/entities/user.entity");
+  if (!hasUser) {
+    blocking.push({ check: 'appmodule-user', detail: 'User entity not registered in app.module.ts' });
+    fail('BLOCKING: User entity not registered in app.module.ts root entities');
+  } else {
+    passed.push({ check: 'appmodule-user' });
+    log('PASS: appmodule-user — User registered in app.module.ts');
+  }
+  grepResults.push({ check: 'appmodule-user', found: hasUser });
+})();
+
+// 18. V2.4C: User entity in activity.module.ts forFeature — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/activity.module.ts') || '';
+  const hasUser = content.includes("import { User } from '../users/entities/user.entity'") || content.includes("import { User } from '../users/entities/user.entity");
+  if (!hasUser) {
+    blocking.push({ check: 'activitymodule-user', detail: 'User entity not in activity.module.ts forFeature' });
+    fail('BLOCKING: User entity not registered in activity.module.ts');
+  } else {
+    passed.push({ check: 'activitymodule-user' });
+    log('PASS: activitymodule-user — User in activity.module.ts forFeature');
+  }
+  grepResults.push({ check: 'activitymodule-user', found: hasUser });
+})();
+
+// 19. V2.4C: PATCH /admin/crm/users/:userId/type route exists — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/admin-crm.controller.ts') || '';
+  const hasRoute = /@Patch\('users\/:userId\/type'\)/.test(content);
+  if (!hasRoute) {
+    blocking.push({ check: 'crm-type-route', detail: 'PATCH /admin/crm/users/:userId/type route missing' });
+    fail('BLOCKING: CRM type update route not found');
+  } else {
+    passed.push({ check: 'crm-type-route' });
+    log('PASS: crm-type-route — PATCH /admin/crm/users/:userId/type exists');
+  }
+  grepResults.push({ check: 'crm-type-route', found: hasRoute });
+})();
+
+// 20. V2.4C: CRM controller injects User repository — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/admin-crm.controller.ts') || '';
+  const hasUserRepo = content.includes('userRepo') || content.includes('@InjectRepository(User)');
+  if (!hasUserRepo) {
+    blocking.push({ check: 'crm-user-repo', detail: 'CRM controller does not inject User repository' });
+    fail('BLOCKING: CRM controller missing User repository injection');
+  } else {
+    passed.push({ check: 'crm-user-repo' });
+    log('PASS: crm-user-repo — CRM controller injects User repository');
+  }
+  grepResults.push({ check: 'crm-user-repo', found: hasUserRepo });
+})();
+
 async function main() {
 // ── Step 4: API checks ──────────────────────────────────────
 log('\n== Step 4: API Checks ==');
@@ -359,6 +415,149 @@ for (const ep of apiConfig.endpoints) {
       fail(`BLOCKING: ${ep.method} ${ep.path} → network error (is backend running?)`);
     }
   }
+}
+
+// ── Step 4.5: V2.4 User Smoke Test ──────────────────────────
+log('\n== Step 4.5: V2.4 User Smoke Test ==');
+let smokeUserId = null;
+try {
+  // 1. Login
+  const loginResp = await fetch(`${BACKEND_URL}/users/wechat-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: 'mock-code-v24-smoke', nickname: 'QA行者', avatarUrl: '', gender: 'unknown' }),
+    signal: AbortSignal.timeout(5000),
+  });
+  const loginData = await loginResp.json();
+  apiResults.push({ method: 'POST', path: '/users/wechat-login', status: loginResp.status, ok: loginResp.ok, preview: JSON.stringify(loginData).slice(0, 200) });
+
+  if (loginResp.status >= 500) {
+    blocking.push({ check: 'v24-login', status: loginResp.status, detail: 'POST /users/wechat-login returned 500' });
+    fail('BLOCKING: V2.4 login returned 500');
+  } else if (!loginData?.user?.id) {
+    blocking.push({ check: 'v24-login', detail: 'POST /users/wechat-login missing user.id' });
+    fail('BLOCKING: V2.4 login — no user.id in response');
+  } else {
+    smokeUserId = loginData.user.id;
+    passed.push({ check: 'v24-login' });
+    log(`PASS: v24-login — user.id=${smokeUserId} openid=${loginData.user.openid}`);
+  }
+
+  // 2. Get profile
+  if (smokeUserId) {
+    const profileResp = await fetch(`${BACKEND_URL}/users/${smokeUserId}/profile`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const profileData = await profileResp.json();
+    apiResults.push({ method: 'GET', path: `/users/${smokeUserId}/profile`, status: profileResp.status, ok: profileResp.ok, preview: JSON.stringify(profileData).slice(0, 200) });
+
+    if (profileResp.status >= 500) {
+      blocking.push({ check: 'v24-profile-get', status: profileResp.status, detail: `GET /users/${smokeUserId}/profile returned 500` });
+      fail('BLOCKING: V2.4 profile GET returned 500');
+    } else if (profileResp.status !== 200) {
+      blocking.push({ check: 'v24-profile-get', status: profileResp.status, detail: `GET /users/${smokeUserId}/profile returned ${profileResp.status}` });
+      fail(`BLOCKING: V2.4 profile GET returned ${profileResp.status}`);
+    } else {
+      passed.push({ check: 'v24-profile-get' });
+      log('PASS: v24-profile-get — profile returned 200');
+    }
+
+    // 3. Update profile
+    const patchResp = await fetch(`${BACKEND_URL}/users/${smokeUserId}/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: 'QA行者更新', phone: '13800000000', birthYearMonth: '1990-01', identityType: '普通用户' }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const patchData = await patchResp.json();
+    apiResults.push({ method: 'PATCH', path: `/users/${smokeUserId}/profile`, status: patchResp.status, ok: patchResp.ok, preview: JSON.stringify(patchData).slice(0, 200) });
+
+    if (patchResp.status >= 500) {
+      blocking.push({ check: 'v24-profile-patch', status: patchResp.status, detail: `PATCH /users/${smokeUserId}/profile returned 500` });
+      fail('BLOCKING: V2.4 profile PATCH returned 500');
+    } else {
+      passed.push({ check: 'v24-profile-patch' });
+      log('PASS: v24-profile-patch — profile updated');
+    }
+
+    // 4. Verify update persisted
+    const verifyResp = await fetch(`${BACKEND_URL}/users/${smokeUserId}/profile`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const verifyData = await verifyResp.json();
+    apiResults.push({ method: 'GET', path: `/users/${smokeUserId}/profile (verify)`, status: verifyResp.status, ok: verifyResp.ok, preview: JSON.stringify(verifyData).slice(0, 200) });
+
+    if (verifyResp.status >= 500) {
+      blocking.push({ check: 'v24-profile-verify', status: verifyResp.status, detail: 'Profile verify GET returned 500' });
+      fail('BLOCKING: V2.4 profile verify returned 500');
+    } else if (verifyData.nickname !== 'QA行者更新') {
+      warnings.push({ check: 'v24-profile-verify', detail: `Expected nickname=QA行者更新, got ${verifyData.nickname}` });
+      warn(`V2.4 profile verify: nickname mismatch (got "${verifyData.nickname}")`);
+    } else {
+      passed.push({ check: 'v24-profile-verify' });
+      log('PASS: v24-profile-verify — nickname updated correctly');
+    }
+  }
+} catch (e) {
+  apiResults.push({ method: 'POST', path: '/users/wechat-login (smoke)', status: 0, ok: false, error: e.message });
+  blocking.push({ check: 'v24-smoke-network', detail: e.message });
+  fail(`BLOCKING: V2.4 smoke test failed — ${e.message}`);
+}
+
+// ── Step 4.6: V2.4C CRM User Field Check ──────────────────────
+log('\n== Step 4.6: V2.4C CRM Check ==');
+try {
+  const crmResp = await fetch(`${BACKEND_URL}/admin/crm/users?page=1&limit=5`, {
+    signal: AbortSignal.timeout(10000),
+  });
+  const crmData = await crmResp.json();
+  apiResults.push({ method: 'GET', path: '/admin/crm/users (V2.4C)', status: crmResp.status, ok: crmResp.ok, preview: JSON.stringify(crmData).slice(0, 200) });
+
+  if (crmResp.status >= 500) {
+    blocking.push({ check: 'v24c-crm-list', status: crmResp.status, detail: 'CRM users list returned 500' });
+    fail('BLOCKING: V2.4C CRM users list returned 500');
+  } else {
+    // Verify at least one item has real User fields
+    const items = crmData?.items || [];
+    if (items.length > 0) {
+      const item = items[0];
+      const requiredFields = ['nickname', 'avatarUrl', 'gender', 'birthYearMonth', 'identityType', 'registeredAt', 'lastLoginAt'];
+      const missing = requiredFields.filter(f => !(f in item));
+      if (missing.length > 0) {
+        warnings.push({ check: 'v24c-crm-fields', detail: `CRM user items missing fields: ${missing.join(', ')}` });
+        warn(`V2.4C CRM: missing fields in user items — ${missing.join(', ')}`);
+      } else {
+        passed.push({ check: 'v24c-crm-fields' });
+        log('PASS: v24c-crm-fields — all real User fields present in CRM list');
+      }
+    }
+    passed.push({ check: 'v24c-crm-list' });
+    log('PASS: v24c-crm-list — CRM users list returned 200');
+  }
+
+  // Test PATCH type endpoint if smoke user exists
+  if (smokeUserId) {
+    const typeResp = await fetch(`${BACKEND_URL}/admin/crm/users/${smokeUserId}/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identityType: 'QA测试' }),
+      signal: AbortSignal.timeout(5000),
+    });
+    const typeData = await typeResp.json();
+    apiResults.push({ method: 'PATCH', path: `/admin/crm/users/${smokeUserId}/type`, status: typeResp.status, ok: typeResp.ok, preview: JSON.stringify(typeData).slice(0, 200) });
+
+    if (typeResp.status >= 500) {
+      blocking.push({ check: 'v24c-type-patch', status: typeResp.status, detail: 'CRM type PATCH returned 500' });
+      fail('BLOCKING: V2.4C CRM type PATCH returned 500');
+    } else {
+      passed.push({ check: 'v24c-type-patch' });
+      log('PASS: v24c-type-patch — identityType updated');
+    }
+  }
+} catch (e) {
+  apiResults.push({ method: 'GET', path: '/admin/crm/users (V2.4C)', status: 0, ok: false, error: e.message });
+  warnings.push({ check: 'v24c-crm-network', detail: e.message });
+  warn(`V2.4C CRM check failed: ${e.message}`);
 }
 
 // ── Step 5: Collect file content for LLM ───────────────────

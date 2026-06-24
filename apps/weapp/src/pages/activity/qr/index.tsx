@@ -1,6 +1,7 @@
 import { View, Text, Button } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useState, useEffect, useCallback } from 'react'
+import { getUserId, ensureUserId } from '../../../utils/user'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -40,7 +41,7 @@ export default function QRPage() {
     try {
       const [detail, qr] = await Promise.all([
         Taro.request({ url: `${API}/activity/${id}` }),
-        Taro.request({ url: `${API}/activity/${id}/qr?userId=1` }),
+        Taro.request({ url: `${API}/activity/${id}/qr?userId=${getUserId()}` }),
       ])
       const d = detail.data as any
       setTitle(d.title || title)
@@ -50,13 +51,13 @@ export default function QRPage() {
       setCode(q.code || '')
       if (q.status === 'ACTIVE') { setQrStatus('ACTIVE') }
       else {
-        const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=1` })
+        const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
         const st = (s.data as any)?.status
         setQrStatus(st === 'CHECKED_IN' ? 'CHECKED_IN' : 'EXPIRED')
       }
     } catch {
       try {
-        const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=1` })
+        const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
         const st = (s.data as any)?.status
         if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
         else if (st === 'EXPIRED') setQrStatus('EXPIRED')

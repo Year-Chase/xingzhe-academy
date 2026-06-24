@@ -1,9 +1,11 @@
 {
-  "description": "P2.3 QA regression scope — files and dirs to read for LLM review",
+  "description": "V2.4 QA regression scope — files and dirs to read for LLM review",
   "maxFileChars": 12000,
   "extensions": [".ts", ".tsx", ".vue", ".js", ".json", ".md"],
   "sections": [
     { "label": "Backend Entity", "path": "backend/src/activity/entities/" },
+    { "label": "Backend User Entity", "path": "backend/src/users/entities/" },
+    { "label": "Backend Users Module", "path": "backend/src/users/" },
     { "label": "Backend Services", "path": "backend/src/activity/activity-flow.service.ts" },
     { "label": "Backend Services", "path": "backend/src/activity/activity.service.ts" },
     { "label": "Backend Controller (WeApp)", "path": "backend/src/activity/activity.controller.ts" },
