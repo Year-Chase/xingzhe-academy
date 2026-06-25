@@ -3,7 +3,7 @@ ADMIN-API-CONTRACT
 行者学社 Admin API Contract
 1. 当前版本
 
-当前系统版本：V2.3 本地运营框架版。
+当前系统版本：V2.5 活动产品模型增强版。
 
 Admin API 已从 P2 活动管理后台扩展为：
 
@@ -341,3 +341,64 @@ GET /users//profile
 PATCH /users//profile
 
 V2.4 后 CRM 用户资料优先读取真实 User 表。
+
+## 13. V2.5 活动管理 API
+
+### 13.1 Admin 活动管理
+
+现有接口（增强，未新增平行路由）：
+
+```
+GET    /admin/activity?page=&limit=&status=&keyword=
+GET    /admin/activity/:id
+POST   /admin/activity
+PATCH  /admin/activity/:id
+POST   /admin/activity/:id/publish
+POST   /admin/activity/:id/close
+POST   /admin/activity/upload-cover
+GET    /admin/activity/:id/registrations
+```
+
+V2.5A 增强字段：province, prepayAmount, remainingAmount, remainingPayDate, memoryImages, memoryText, requiredUserInfoFields, groupQrType, groupQrImageUrl, groupQrTitle, groupQrDescription
+
+Admin 编辑页必须使用 /admin/activity/:id 回读完整配置，不使用 /activity/:id。
+
+**GET /admin/activity/:id/registrations** 返回报名信息快照（手机号脱敏、身份证号脱敏），覆盖 15位/18位/17位+X/x。
+
+### 13.2 小程序活动详情
+
+```
+GET /activity/:id
+```
+
+V2.5C 返回：requiredUserInfoFields, groupQrType, groupQrImageUrl, groupQrTitle, groupQrDescription, hasGroupQr, createdAt
+
+### 13.3 报名支付
+
+```
+POST /activity/:id/enroll-pay
+```
+
+请求体支持：
+
+```json
+{
+  "userId": "user_xxx",
+  "registrationInfo": {
+    "realName": "张三",
+    "phone": "13800000000",
+    "idCardNo": "11010119900307123X",
+    "departureCity": "北京",
+    "transportPreference": "高铁",
+    "roomPreference": "无特殊要求"
+  }
+}
+```
+
+规则：idCardNo 不得出现在 URL query。禁止恢复 POST /activity/:id/register 和 POST /activity/:id/pay。
+
+### 13.4 CRM 类型管理
+
+```
+PATCH /admin/crm/users/:userId/type
+```

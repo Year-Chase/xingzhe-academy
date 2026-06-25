@@ -68,7 +68,7 @@ export class ActivityService implements OnModuleInit {
         registrationEndTime: new Date(now.getTime() + 345600000),
         capacity: 12, status: 'PUBLISHED',
       },
-    ])
+    ] as any)
     console.log('[ActivityService] Seeded 5 activities')
   }
 
@@ -90,13 +90,13 @@ export class ActivityService implements OnModuleInit {
       .where('a.status = :pub', { pub: 'PUBLISHED' })
       .getMany()
     return items.filter((a) => this.canDisplay(a, now))
-      .sort((a, b) => (a.startTime?.getTime() || 0) - (b.startTime?.getTime() || 0))
+      .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
   }
 
   async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
     const [items, total] = await this.activityRepo.findAndCount({
       where: { status: In(['PUBLISHED', 'ENDED']) },
-      order: { startTime: 'ASC' },
+      order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     })
@@ -134,10 +134,14 @@ export class ActivityService implements OnModuleInit {
   }
 
   async adminCreate(dto: {
-    title: string; slogan?: string; description?: string; location: string; city?: string
+    title: string; slogan?: string; province?: string; description?: string; location: string; city?: string
     startTime: string; endTime: string; registrationStartTime: string; registrationEndTime: string
     capacity: number; coverImage?: string; price?: number; memberPrice?: number
     lifetimeMemberPrice?: number; paymentMode?: string
+    prepayAmount?: number; remainingAmount?: number; remainingPayDate?: string
+    memoryImages?: string; memoryText?: string
+    requiredUserInfoFields?: string[]; groupQrType?: string; groupQrImageUrl?: string
+    groupQrTitle?: string; groupQrDescription?: string
   }) {
     if (dto.slogan && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
     const st = new Date(dto.startTime), et = new Date(dto.endTime)
@@ -147,6 +151,7 @@ export class ActivityService implements OnModuleInit {
     const a = this.activityRepo.create({
       title: dto.title,
       slogan: dto.slogan || '',
+      province: dto.province || '',
       description: dto.description || '',
       location: dto.location,
       city: dto.city || '',
@@ -160,17 +165,31 @@ export class ActivityService implements OnModuleInit {
       memberPrice: dto.memberPrice ?? 0,
       lifetimeMemberPrice: dto.lifetimeMemberPrice ?? 0,
       paymentMode: dto.paymentMode || 'FULL',
+      prepayAmount: dto.prepayAmount ?? 0,
+      remainingAmount: dto.remainingAmount ?? 0,
+      remainingPayDate: dto.remainingPayDate ? new Date(dto.remainingPayDate) : null,
+      memoryImages: dto.memoryImages || null,
+      memoryText: dto.memoryText || null,
+      requiredUserInfoFields: Array.isArray(dto.requiredUserInfoFields) ? JSON.stringify(dto.requiredUserInfoFields) : null,
+      groupQrType: dto.groupQrType || 'NONE',
+      groupQrImageUrl: dto.groupQrImageUrl || null,
+      groupQrTitle: dto.groupQrTitle || '加入活动群',
+      groupQrDescription: dto.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
       status: 'DRAFT',
-    })
-    const saved = await this.activityRepo.save(a)
+    } as any)
+    const saved: any = await this.activityRepo.save(a)
     return { id: saved.id, status: saved.status }
   }
 
   async adminUpdate(id: number, dto: {
-    title?: string; slogan?: string; description?: string; location?: string; city?: string
+    title?: string; slogan?: string; province?: string; description?: string; location?: string; city?: string
     startTime?: string; endTime?: string; registrationStartTime?: string; registrationEndTime?: string
     capacity?: number; coverImage?: string; price?: number; memberPrice?: number
     lifetimeMemberPrice?: number; paymentMode?: string
+    prepayAmount?: number; remainingAmount?: number; remainingPayDate?: string
+    memoryImages?: string; memoryText?: string
+    requiredUserInfoFields?: string[]; groupQrType?: string; groupQrImageUrl?: string
+    groupQrTitle?: string; groupQrDescription?: string
   }) {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
@@ -178,6 +197,7 @@ export class ActivityService implements OnModuleInit {
 
     if (dto.title !== undefined) a.title = dto.title
     if (dto.slogan !== undefined) a.slogan = dto.slogan
+    if (dto.province !== undefined) a.province = dto.province
     if (dto.description !== undefined) a.description = dto.description
     if (dto.location !== undefined) a.location = dto.location
     if (dto.city !== undefined) a.city = dto.city
@@ -202,6 +222,16 @@ export class ActivityService implements OnModuleInit {
     if (dto.memberPrice !== undefined) a.memberPrice = dto.memberPrice
     if (dto.lifetimeMemberPrice !== undefined) a.lifetimeMemberPrice = dto.lifetimeMemberPrice
     if (dto.paymentMode !== undefined) a.paymentMode = dto.paymentMode
+    if (dto.prepayAmount !== undefined) a.prepayAmount = dto.prepayAmount
+    if (dto.remainingAmount !== undefined) a.remainingAmount = dto.remainingAmount
+    if (dto.remainingPayDate !== undefined) a.remainingPayDate = dto.remainingPayDate ? new Date(dto.remainingPayDate) : null
+    if (dto.memoryImages !== undefined) a.memoryImages = dto.memoryImages || null
+    if (dto.memoryText !== undefined) a.memoryText = dto.memoryText || null
+    if (dto.requiredUserInfoFields !== undefined) a.requiredUserInfoFields = Array.isArray(dto.requiredUserInfoFields) ? JSON.stringify(dto.requiredUserInfoFields) : null
+    if (dto.groupQrType !== undefined) a.groupQrType = dto.groupQrType
+    if (dto.groupQrImageUrl !== undefined) a.groupQrImageUrl = dto.groupQrImageUrl || null
+    if (dto.groupQrTitle !== undefined) a.groupQrTitle = dto.groupQrTitle
+    if (dto.groupQrDescription !== undefined) a.groupQrDescription = dto.groupQrDescription
 
     await this.activityRepo.save(a)
     return { id, updated: true }

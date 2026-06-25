@@ -12,6 +12,9 @@ export class Activity {
   @Column({ type: 'varchar', length: 100, nullable: true })
   slogan: string
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  province: string
+
   @Column({ type: 'text', nullable: true })
   description: string
 
@@ -51,8 +54,41 @@ export class Activity {
   @Column({ type: 'varchar', length: 20, default: 'FULL' })
   paymentMode: string
 
+  @Column({ type: 'int', default: 0 })
+  prepayAmount: number
+
+  @Column({ type: 'int', default: 0 })
+  remainingAmount: number
+
+  @Column({ type: 'datetime', nullable: true })
+  remainingPayDate: Date | null
+
   @Column({ type: 'varchar', length: 50, default: 'DRAFT' })
   status: string
+
+  // ── V2.5A: Registration info collection ──
+  @Column({ type: 'text', nullable: true })
+  requiredUserInfoFields: string | null  // JSON array, e.g. '["realName","phone"]'
+
+  // ── V2.5A: Group QR ──
+  @Column({ type: 'varchar', length: 30, default: 'NONE' })
+  groupQrType: string
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  groupQrImageUrl: string | null
+
+  @Column({ type: 'varchar', length: 100, default: '加入活动群' })
+  groupQrTitle: string
+
+  @Column({ type: 'varchar', length: 200, default: '活动通知、集合安排和现场事项将在群内同步' })
+  groupQrDescription: string
+
+  // ── V2.5A: Memory ──
+  @Column({ type: 'text', nullable: true })
+  memoryImages: string | null  // JSON string
+
+  @Column({ type: 'text', nullable: true })
+  memoryText: string | null
 
   @CreateDateColumn()
   createdAt: Date

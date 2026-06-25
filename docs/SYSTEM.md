@@ -3,7 +3,7 @@ SYSTEM
 行者学社 SYSTEM
 1. 当前系统形态
 
-当前版本：V2.3 本地运营框架版。
+当前版本：V2.5 活动产品模型增强版。
 
 系统组成：
 
@@ -236,4 +236,51 @@ V3.0：
 管理员发放
 
 不公开规则
+
+---
+
+## V2.5 系统边界
+
+### V2.5 不做事项
+
+- 活动模板 / ActivityTemplate
+- 真实微信支付 / PaymentRecord
+- 真实后付支付流水 / 后付提醒
+- 证书生成 / 证书模板
+- 企业微信 API / 自动建群 / 自动拉人 / 自动退群 / 群成员同步
+- COS / 对象存储正式接入
+- 身份证实名联网核验 / OCR
+- 权限系统重构
+- CRM 大重构
+
+### 身份证号保护规则
+
+格式覆盖：15位数字 / 18位数字 / 17位数字+X / 17位数字+x
+
+规则：
+- 可以通过 POST body 提交完整身份证号
+- 不得出现在 URL query
+- 不得写入小程序 Storage（包括 xingzhe_reginfo_pending）
+- 不得 console.log
+- 不得进入 QA latest.md / latest.json
+- Admin 和小程序展示时必须脱敏
+
+正则：`/^(?:\d{15}|\d{17}[\dXx])$/`
+脱敏：`110***********1234` / `110***********123X`
+
+### 小程序 Storage 规则
+
+允许存储：xingzhe_user_id, xingzhe_user_profile
+
+禁止存储：idCardNo, registrationInfo, xingzhe_reginfo_pending
+
+### QA Agent
+
+命令：`cd /Users/chen/projects/xingzhe-v3 && node tools/qa-agent/qa-runner.js`
+
+报告：`.local/qa-agent/reports/latest.md` / `.local/qa-agent/reports/latest.json`
+
+V2.5A QA：Activity 字段、ActivityRegistrationInfo、enrollPay registrationInfo、groupQr、idCardNo 脱敏
+V2.5B QA：Admin 表单、requiredUserInfoFields、groupQr、memoryImages/memoryText、活动回忆独立入口
+V2.5C QA：小程序报名信息页、registrationInfo body、无 storage 敏感信息、groupQr 弹窗、签到码入口
 

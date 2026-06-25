@@ -11,6 +11,7 @@ import { UserNote } from './activity/entities/user-note.entity'
 import { UserProfile } from './activity/entities/user-profile.entity'
 import { UserInviteRecord } from './activity/entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './activity/entities/activity-invite-record.entity'
+import { ActivityRegistrationInfo } from './activity/entities/activity-registration-info.entity'
 import { User } from './users/entities/user.entity'
 import { ActivityModule } from './activity/activity.module'
 import { UsersModule } from './users/users.module'
@@ -22,7 +23,7 @@ import { UsersModule } from './users/users.module'
       database: 'data/xingzhe.db',
       synchronize: true,
       logging: false,
-      entities: [Activity, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, User],
+      entities: [Activity, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, User],
     }),
     ActivityModule,
     UsersModule,

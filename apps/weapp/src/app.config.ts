@@ -4,6 +4,7 @@ export default defineAppConfig({
     'pages/trail/index',
     'pages/mine/index',
     'pages/activity/detail/index',
+    'pages/activity/registration-info/index',
     'pages/activity/qr/index',
     'pages/activity/list/index',
   ],

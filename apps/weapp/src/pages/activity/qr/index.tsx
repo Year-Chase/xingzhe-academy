@@ -1,15 +1,15 @@
-import { View, Text, Button } from '@tarojs/components'
+import { View, Text, Button, Image } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useState, useEffect, useCallback } from 'react'
-import { getUserId, ensureUserId } from '../../../utils/user'
+import { getUserId } from '../../../utils/user'
 
 const API = 'http://172.20.10.10:3000'
 
 type QRState = 'ACTIVE' | 'CHECKED_IN' | 'EXPIRED' | 'loading'
 
 const C = {
-  bg: '#F7F6F2', white: '#FFFFFF', green: '#2E7D5A', dark: '#18231E',
-  body: '#333A34', neutral: '#666666', secondary: '#8A9288',
+  bg: '#F7F6F2', white: '#FFFFFF', green: '#3F6B4F', dark: '#18231E',
+  body: '#3E463F', neutral: '#7A8178', secondary: '#A6AAA2',
   lightGreen: '#EEF5EF', border: '#EDE9DF', disabledBg: '#E9EAE5',
 }
 
@@ -23,6 +23,9 @@ export default function QRPage() {
   const [error, setError] = useState('')
   const [location, setLocation] = useState('')
   const [startTime, setStartTime] = useState('')
+  // V2.5C: group QR
+  const [groupQr, setGroupQr] = useState<any>(null)
+  const [showGroupQr, setShowGroupQr] = useState(false)
 
   useEffect(() => {
     const p = router.params as any
@@ -47,6 +50,10 @@ export default function QRPage() {
       setTitle(d.title || title)
       setLocation(d.location || '')
       setStartTime(d.startTime || '')
+      // V2.5C: capture group QR info
+      if (d.groupQrType && d.groupQrType !== 'NONE' && d.groupQrImageUrl) {
+        setGroupQr({ type: d.groupQrType, imageUrl: d.groupQrImageUrl, title: d.groupQrTitle || '加入活动群', desc: d.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步' })
+      }
       const q = qr.data as any
       setCode(q.code || '')
       if (q.status === 'ACTIVE') { setQrStatus('ACTIVE') }
@@ -186,10 +193,37 @@ export default function QRPage() {
             style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.dark, color: '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none' }}
           >{acting ? '...' : '模拟签到'}</Button>
         )}
+        {/* V2.5C: group QR entry */}
+        {groupQr && (
+          <Button onClick={() => setShowGroupQr(true)}
+            style={{ marginTop: qrStatus === 'ACTIVE' ? '20rpx' : '0', width: '100%', height: '88rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid ${C.border}`, color: C.green, fontSize: '28rpx', lineHeight: '88rpx' }}
+          >加入活动群</Button>
+        )}
         <Button onClick={() => Taro.navigateBack()}
           style={{ marginTop: '24rpx', width: '100%', height: '88rpx', borderRadius: '999rpx', background: C.white, border: '1rpx solid #EDE9DF', color: C.dark, fontSize: '30rpx', lineHeight: '88rpx' }}
         >返回活动详情</Button>
       </View>
+
+      {/* V2.5C: Group QR modal */}
+      {showGroupQr && groupQr && (
+        <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowGroupQr(false)}>
+          <View style={{ width: '560rpx', background: C.white, borderRadius: '24rpx', padding: '36rpx 32rpx 28rpx', boxShadow: '0 16rpx 48rpx rgba(0,0,0,0.16)' }} onClick={(e) => e.stopPropagation()}>
+            <View style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8rpx' }}>
+              <View onClick={() => setShowGroupQr(false)} style={{ width: '48rpx', height: '48rpx', borderRadius: '50%', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: '30rpx', color: C.neutral }}>×</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block' }}>{groupQr.title}</Text>
+            <Text style={{ fontSize: '25rpx', color: C.neutral, textAlign: 'center', display: 'block', marginTop: '8rpx' }}>{groupQr.desc}</Text>
+            <View style={{ textAlign: 'center', marginTop: '20rpx' }}>
+              <Image src={groupQr.imageUrl} mode='widthFix' style={{ width: '300rpx', borderRadius: '12rpx' }} onError={(e) => { (e.target as any).style.display = 'none' }} />
+            </View>
+            <View style={{ marginTop: '12rpx', padding: '12rpx', background: C.lightGreen, borderRadius: '8rpx' }}>
+              <Text style={{ fontSize: '24rpx', color: C.neutral, textAlign: 'center', display: 'block' }}>长按识别二维码加入活动群</Text>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   )
 }

@@ -72,6 +72,8 @@ export class ActivityController {
   async getActivityDetail(@Param('id', ParseIntPipe) id: number) {
     const a = await this.activitySvc.getDetail(id)
     const registeredCount = await this.flow.getRegisteredCount(id)
+    let requiredFields: string[] = []
+    try { const v = JSON.parse(a.requiredUserInfoFields || 'null'); requiredFields = Array.isArray(v) ? v : [] } catch {}
     return {
       id: a.id,
       title: a.title,
@@ -84,10 +86,26 @@ export class ActivityController {
       status: a.status,
       registeredCount,
       price: a.price ?? 0,
+      memberPrice: a.memberPrice ?? 0,
+      lifetimeMemberPrice: a.lifetimeMemberPrice ?? 0,
+      paymentMode: a.paymentMode || 'FULL',
+      prepayAmount: a.prepayAmount ?? 0,
+      remainingAmount: a.remainingAmount ?? 0,
+      remainingPayDate: a.remainingPayDate || null,
       effectivePrice: a.price ?? 0,
       effectivePriceLabel: '普通价',
+      createdAt: a.createdAt,
+      slogan: a.slogan || '',
+      province: a.province || '',
+      city: a.city || '',
       registrationStartTime: a.registrationStartTime || null,
       registrationEndTime: a.registrationEndTime || null,
+      groupQrType: a.groupQrType || 'NONE',
+      groupQrImageUrl: a.groupQrImageUrl || '',
+      hasGroupQr: a.groupQrType && a.groupQrType !== 'NONE' && !!a.groupQrImageUrl,
+      groupQrTitle: a.groupQrTitle || '加入活动群',
+      groupQrDescription: a.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
+      requiredUserInfoFields: requiredFields,
     }
   }
   
@@ -115,13 +133,14 @@ export class ActivityController {
         if (!body?.code) return { error: 'code is required in body' } 
         return this.flow.checkin(body.code) } 
         
-        @Post('activity/:id/enroll-pay') 
-        async enrollPay( 
-          @Param('id', ParseIntPipe) id: number, 
-          @Query('userId') userId: string, 
-        ) { 
-          if (!userId) return { error: 'userId is required' } 
-          return this.flow.enrollPay(userId, id) 
+        @Post('activity/:id/enroll-pay')
+        async enrollPay(
+          @Param('id', ParseIntPipe) id: number,
+          @Query('userId') userId: string,
+          @Body() body: any,
+        ) {
+          if (!userId) return { error: 'userId is required' }
+          return this.flow.enrollPay(userId, id, body?.registrationInfo || undefined)
         } 
         
         @Get('activity/:id/participants') 

@@ -17,10 +17,19 @@ function imgUrl(cover: string | undefined): string {
   return API + (cover.startsWith('/') ? '' : '/') + cover
 }
 
+function safeFields(raw: any): string[] {
+  if (Array.isArray(raw)) return raw
+  if (!raw) return []
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+
 interface ActivityData {
   id: number; title: string; description: string; location: string
   startTime: string; endTime: string; capacity: number; registeredCount: number
   coverImage: string; status: string; effectivePrice: number; effectivePriceLabel: string
+  requiredUserInfoFields?: any; hasGroupQr?: boolean
+  groupQrType?: string; groupQrImageUrl?: string; groupQrTitle?: string; groupQrDescription?: string
+  registrationStartTime?: string; registrationEndTime?: string
 }
 
 interface Participant {
@@ -31,8 +40,8 @@ interface Participant {
 type RegStatus = 'NOT_REGISTERED' | 'REGISTERED' | 'PAID' | 'CHECKED_IN' | 'EXPIRED'
 
 const C = {
-  bg: '#F7F6F2', white: '#FFFFFF', green: '#2E7D5A', dark: '#18231E',
-  body: '#333A34', neutral: '#666666', secondary: '#8A9288',
+  bg: '#F7F6F2', white: '#FFFFFF', green: '#3F6B4F', dark: '#18231E',
+  body: '#3E463F', neutral: '#7A8178', secondary: '#A6AAA2',
   lightGreen: '#EEF5EF', border: '#EDE9DF', disabledBg: '#E9EAE5', disabledText: '#8A9288',
 }
 
@@ -54,17 +63,26 @@ export default function ActivityDetail() {
   const [participants, setParticipants] = useState<Participant[]>([])
   const [modalUser, setModalUser] = useState<Participant | null>(null)
   const [showPayConfirm, setShowPayConfirm] = useState(false)
+  // V2.5C: group QR display
+  const [showGroupQr, setShowGroupQr] = useState(false)
+  const [groupQrFailed, setGroupQrFailed] = useState(false)
 
   useEffect(() => { const p = router.params as any; if (p.id) setId(Number(p.id)) }, [router.params])
   useEffect(() => { if (id === 0) return; load(id) }, [id])
+  // V2.5C: check enrollSuccess to show group QR
+  useEffect(() => {
+    const p = router.params as any
+    if (p?.enrollSuccess === '1') setShowGroupQr(true)
+  }, [router.params])
 
   const load = useCallback(async (activityId: number) => {
     setLoading(true); setError('')
     try {
+      const uid = getUserId()
       const [d, s, p] = await Promise.all([
         Taro.request({ url: `${API}/activity/${activityId}` }),
-        Taro.request({ url: `${API}/activity/${activityId}/status?userId=${getUserId()}` }),
-        Taro.request({ url: `${API}/activity/${activityId}/participants?userId=${getUserId()}` }).catch(() => ({ data: [] })),
+        Taro.request({ url: `${API}/activity/${activityId}/status?userId=${uid}` }),
+        Taro.request({ url: `${API}/activity/${activityId}/participants?userId=${uid}` }).catch(() => ({ data: [] })),
       ])
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
@@ -75,10 +93,19 @@ export default function ActivityDetail() {
 
   const handleEnroll = async () => {
     const uid = await ensureUserId()
-    if (!uid) return // toast already shown by ensureUserId
+    if (!uid) return
     const cap = activity?.capacity ?? 0
     const reg = activity?.registeredCount ?? 0
     if (cap > 0 && reg >= cap) { Taro.showToast({ title: '活动名额已满', icon: 'none' }); return }
+
+    // V2.5C: check requiredUserInfoFields
+    const requiredFields = safeFields(activity?.requiredUserInfoFields)
+    if (requiredFields.length > 0) {
+      Taro.navigateTo({ url: `/pages/activity/registration-info/index?activityId=${id}` })
+      return
+    }
+
+    // No required fields — use existing flow
     setShowPayConfirm(true)
   }
 
@@ -86,13 +113,19 @@ export default function ActivityDetail() {
     setShowPayConfirm(false)
     if (acting) return; setActing(true)
     try {
-      const res = await Taro.request({ method: 'POST', url: `${API}/activity/${id}/enroll-pay?userId=${getUserId()}` })
-      if (res.data?.status === 'PAID') {
+      const uid = getUserId()
+      const res = await Taro.request({
+        method: 'POST',
+        url: `${API}/activity/${id}/enroll-pay?userId=${uid}`,
+        header: { 'content-type': 'application/json' },
+      })
+      if ((res.data as any)?.status === 'PAID') {
         Taro.showToast({ title: '报名成功', icon: 'success' })
         Taro.setStorageSync('dirtyActivityId', id)
+        setShowGroupQr(true)
         await load(id)
-      } else if (res.data?.message) {
-        Taro.showToast({ title: res.data.message, icon: 'none' })
+      } else if ((res.data as any)?.message) {
+        Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
     } catch { Taro.showToast({ title: '操作失败，请重试', icon: 'none' }) }
     finally { setActing(false) }
@@ -118,6 +151,8 @@ export default function ActivityDetail() {
   const cap = activity?.capacity ?? 0
   const isSelf = (p: Participant) => p.userId === getUserId()
   const aAny = activity as any
+  const hasGroupQr = activity?.hasGroupQr && activity?.groupQrImageUrl
+  const isPaid = userStatus === 'PAID' || userStatus === 'CHECKED_IN'
 
   if (loading) return <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ color: C.secondary, fontSize: '28rpx' }}>加载中...</Text></View>
   if (error || !activity) return <View style={{ padding: '160rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ display: 'block', fontSize: '32rpx', color: C.body, marginBottom: '20rpx' }}>{error || '活动未找到'}</Text><Button onClick={() => load(id)} style={{ height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', lineHeight: '88rpx', border: 'none', padding: '0 56rpx' }}>重试</Button></View>
@@ -144,31 +179,26 @@ export default function ActivityDetail() {
         )}
       </View>
 
-      {/* 3. Info card — no icons, unified labels */}
+      {/* 3. Info card */}
       <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)' }}>
-        {/* 报名时间 */}
         {(aAny.registrationStartTime || aAny.registrationEndTime) && (
           <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
             <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>报名时间</Text>
             <Text style={{ flex: 1, fontSize: '26rpx', color: C.body, lineHeight: '1.5' }}>{fmtTimeRange(aAny.registrationStartTime, aAny.registrationEndTime)}</Text>
           </View>
         )}
-        {/* 活动时间 */}
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>活动时间</Text>
           <Text style={{ flex: 1, fontSize: '26rpx', color: C.body, lineHeight: '1.5' }}>{fmtTimeRange(activity.startTime, activity.endTime)}</Text>
         </View>
-        {/* 地点 */}
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>地点</Text>
           <Text style={{ flex: 1, fontSize: '26rpx', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.location || '待定'}</Text>
         </View>
-        {/* 名额 */}
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>名额</Text>
           <Text style={{ fontSize: '26rpx', color: C.body }}><Text style={{ fontWeight: '700', color: C.dark }}>{reg}</Text><Text style={{ color: C.secondary }}> / {cap} 人已报名</Text></Text>
         </View>
-        {/* 价格 */}
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>价格</Text>
           <Text style={{ fontSize: '26rpx', color: C.body }}>
@@ -188,6 +218,19 @@ export default function ActivityDetail() {
           <Text style={{ fontSize: '27rpx', color: C.body, lineHeight: '1.65' }}>{activity.description}</Text>
         </View>
       ) : null}
+
+      {/* V2.5C: Group QR for paid users — only button, opens popup */}
+      {isPaid && hasGroupQr && (
+        <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '20rpx 28rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View>
+            <Text style={{ fontSize: '28rpx', fontWeight: '600', color: C.dark, display: 'block' }}>{activity.groupQrTitle || '加入活动群'}</Text>
+            <Text style={{ fontSize: '23rpx', color: C.neutral, display: 'block', marginTop: '4rpx' }}>{activity.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'}</Text>
+          </View>
+          <Button onClick={() => setShowGroupQr(true)}
+            style={{ flexShrink: 0, marginLeft: '16rpx', height: '60rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid ${C.border}`, color: C.green, fontSize: '26rpx', lineHeight: '60rpx', padding: '0 24rpx' }}
+          >查看</Button>
+        </View>
+      )}
 
       {/* 理念提示卡 */}
       <View style={{ margin: '24rpx 32rpx 0', padding: '24rpx', background: C.lightGreen, borderRadius: '18rpx', border: '1rpx solid rgba(46,125,90,0.12)' }}>
@@ -263,7 +306,7 @@ export default function ActivityDetail() {
         </View>
       )}
 
-      {/* Modal: mock 支付确认 */}
+      {/* Modal: mock 支付确认 (V2.5C: shows regInfo if present) */}
       {showPayConfirm && (
         <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={cancelPay}>
           <View style={{ width: '560rpx', background: C.white, borderRadius: '24rpx', padding: '40rpx 36rpx 32rpx', boxShadow: '0 16rpx 48rpx rgba(0,0,0,0.16)' }} onClick={(e) => e.stopPropagation()}>
@@ -285,9 +328,16 @@ export default function ActivityDetail() {
           >{acting ? '...' : '立即报名'}</Button>
         )}
         {userStatus === 'PAID' && (
-          <Button onClick={goQR}
-            style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none', textAlign: 'center' }}
-          >查看签到码</Button>
+          <View style={{ display: 'flex', flexDirection: 'column', gap: '12rpx' }}>
+            <Button onClick={goQR}
+              style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none', textAlign: 'center' }}
+            >查看签到码</Button>
+            {hasGroupQr && (
+              <Button onClick={() => setShowGroupQr(true)}
+                style={{ width: '100%', height: '72rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid ${C.border}`, color: C.green, fontSize: '28rpx', lineHeight: '72rpx', textAlign: 'center' }}
+              >加入活动群</Button>
+            )}
+          </View>
         )}
         {userStatus === 'CHECKED_IN' && (
           <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -300,6 +350,33 @@ export default function ActivityDetail() {
           </View>
         )}
       </View>
+
+      {/* V2.5C: Group QR popup modal */}
+      {showGroupQr && hasGroupQr && (
+        <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowGroupQr(false)}>
+          <View style={{ width: '560rpx', background: C.white, borderRadius: '24rpx', padding: '36rpx 32rpx 28rpx', boxShadow: '0 16rpx 48rpx rgba(0,0,0,0.16)' }} onClick={(e) => e.stopPropagation()}>
+            <View style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8rpx' }}>
+              <View onClick={() => setShowGroupQr(false)} style={{ width: '48rpx', height: '48rpx', borderRadius: '50%', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: '30rpx', color: C.neutral }}>×</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block' }}>{activity!.groupQrTitle || '加入活动群'}</Text>
+            <Text style={{ fontSize: '25rpx', color: C.neutral, textAlign: 'center', display: 'block', marginTop: '8rpx' }}>{activity!.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'}</Text>
+            <View style={{ textAlign: 'center', marginTop: '20rpx' }}>
+              {!groupQrFailed ? (
+                <Image src={activity!.groupQrImageUrl!} mode='widthFix' style={{ width: '300rpx', borderRadius: '12rpx' }} onError={() => setGroupQrFailed(true)} />
+              ) : (
+                <View style={{ padding: '32rpx', background: C.lightGreen, borderRadius: '12rpx' }}>
+                  <Text style={{ fontSize: '26rpx', color: C.neutral }}>活动群二维码暂不可用，请联系活动组织者。</Text>
+                </View>
+              )}
+            </View>
+            <View style={{ marginTop: '12rpx', padding: '12rpx', background: C.lightGreen, borderRadius: '8rpx' }}>
+              <Text style={{ fontSize: '24rpx', color: C.neutral, textAlign: 'center', display: 'block' }}>长按识别二维码加入活动群</Text>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   )
 }

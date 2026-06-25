@@ -1,10 +1,13 @@
 import { Controller, Get, Post, Patch, Param, Query, Body, ParseIntPipe, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Repository } from 'typeorm'
 import { diskStorage } from 'multer'
 import { extname, join } from 'path'
 import { mkdirSync, existsSync } from 'fs'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
+import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 
 type UploadedActivityImageFile = {
   originalname: string
@@ -15,11 +18,23 @@ type UploadedActivityImageFile = {
   path?: string
 }
 
+function maskIdCardNo(value: string | null): string | null {
+  if (!value) return null
+  return value.slice(0, 3) + '***********' + value.slice(-4)
+}
+
+function safeParseJsonArray(str: string | null): string[] {
+  if (!str) return []
+  try { const v = JSON.parse(str); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+
 @Controller('admin')
 export class AdminActivityController {
   constructor(
     private readonly activitySvc: ActivityService,
     private readonly flow: ActivityFlowService,
+    @InjectRepository(ActivityRegistrationInfo)
+    private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
   ) {}
 
   private toAdminItem(a: any, registeredCount: number) {
@@ -29,6 +44,7 @@ export class AdminActivityController {
       id: a.id,
       title: a.title,
       slogan: a.slogan || '',
+      province: a.province || '',
       description: a.description || '',
       location: a.location || '',
       city: a.city || '',
@@ -44,6 +60,16 @@ export class AdminActivityController {
       memberPrice: a.memberPrice ?? 0,
       lifetimeMemberPrice: a.lifetimeMemberPrice ?? 0,
       paymentMode: a.paymentMode || 'FULL',
+      prepayAmount: a.prepayAmount ?? 0,
+      remainingAmount: a.remainingAmount ?? 0,
+      remainingPayDate: a.remainingPayDate || null,
+      memoryImages: a.memoryImages || null,
+      memoryText: a.memoryText || null,
+      requiredUserInfoFields: safeParseJsonArray(a.requiredUserInfoFields),
+      groupQrType: a.groupQrType || 'NONE',
+      groupQrImageUrl: a.groupQrImageUrl || null,
+      groupQrTitle: a.groupQrTitle || '加入活动群',
+      groupQrDescription: a.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
       createdAt: a.createdAt,
       updatedAt: a.createdAt,
     }
@@ -72,6 +98,24 @@ export class AdminActivityController {
     const a = await this.activitySvc.getDetail(id)
     const registeredCount = await this.flow.getRegisteredCount(id)
     return this.toAdminItem(a, registeredCount)
+  }
+
+  // GET /admin/activity/:id/registrations — V2.5A: return reg info snapshots
+  @Get('activity/:id/registrations')
+  async getRegistrations(@Param('id', ParseIntPipe) activityId: number) {
+    const regInfos = await this.regInfoRepo.find({ where: { activityId }, order: { createdAt: 'DESC' } })
+    return regInfos.map(r => ({
+      id: r.id,
+      registrationId: r.registrationId,
+      userId: r.userId,
+      realName: r.realName || null,
+      phone: r.phone ? r.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : null,
+      idCardNo: maskIdCardNo(r.idCardNo),
+      departureCity: r.departureCity || null,
+      transportPreference: r.transportPreference || null,
+      roomPreference: r.roomPreference || null,
+      confirmedAt: r.confirmedAt,
+    }))
   }
 
   // POST /admin/activity

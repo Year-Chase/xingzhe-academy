@@ -380,6 +380,320 @@ grepCheck('registeredCount-source', [
   grepResults.push({ check: 'crm-user-repo', found: hasUserRepo });
 })();
 
+// ── V2.5A Checks ──
+
+// 21. Activity entity has requiredUserInfoFields — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/entities/activity.entity.ts') || '';
+  const has = content.includes('requiredUserInfoFields');
+  if (!has) {
+    blocking.push({ check: 'v25a-required-fields', detail: 'Activity entity missing requiredUserInfoFields' });
+    fail('BLOCKING: Activity entity missing requiredUserInfoFields');
+  } else {
+    passed.push({ check: 'v25a-required-fields' });
+    log('PASS: v25a-required-fields — Activity has requiredUserInfoFields');
+  }
+  grepResults.push({ check: 'v25a-required-fields', found: has });
+})();
+
+// 22. Activity entity has groupQrType — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/entities/activity.entity.ts') || '';
+  const has = content.includes('groupQrType') && content.includes('groupQrImageUrl');
+  if (!has) {
+    blocking.push({ check: 'v25a-groupqr', detail: 'Activity entity missing groupQrType/groupQrImageUrl' });
+    fail('BLOCKING: Activity entity missing groupQr fields');
+  } else {
+    passed.push({ check: 'v25a-groupqr' });
+    log('PASS: v25a-groupqr — Activity has groupQrType + groupQrImageUrl');
+  }
+  grepResults.push({ check: 'v25a-groupqr', found: has });
+})();
+
+// 23. Activity entity has memory fields — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/entities/activity.entity.ts') || '';
+  const has = content.includes('memoryImages') && content.includes('memoryText');
+  if (!has) {
+    blocking.push({ check: 'v25a-memory', detail: 'Activity entity missing memoryImages/memoryText' });
+    fail('BLOCKING: Activity entity missing memory fields');
+  } else {
+    passed.push({ check: 'v25a-memory' });
+    log('PASS: v25a-memory — Activity has memoryImages + memoryText');
+  }
+  grepResults.push({ check: 'v25a-memory', found: has });
+})();
+
+// 24. ActivityRegistrationInfo entity exists — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/entities/activity-registration-info.entity.ts') || '';
+  const has = content.includes('ActivityRegistrationInfo') && content.includes('realName');
+  if (!has) {
+    blocking.push({ check: 'v25a-reginfo-entity', detail: 'ActivityRegistrationInfo entity missing' });
+    fail('BLOCKING: ActivityRegistrationInfo entity not found');
+  } else {
+    passed.push({ check: 'v25a-reginfo-entity' });
+    log('PASS: v25a-reginfo-entity — ActivityRegistrationInfo exists');
+  }
+  grepResults.push({ check: 'v25a-reginfo-entity', found: has });
+})();
+
+// 25. ActivityRegistrationInfo registered in app.module.ts — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/app.module.ts') || '';
+  const has = content.includes('ActivityRegistrationInfo');
+  if (!has) {
+    blocking.push({ check: 'v25a-reginfo-registered', detail: 'ActivityRegistrationInfo not in app.module.ts' });
+    fail('BLOCKING: ActivityRegistrationInfo not registered in app.module.ts');
+  } else {
+    passed.push({ check: 'v25a-reginfo-registered' });
+    log('PASS: v25a-reginfo-registered — ActivityRegistrationInfo in app.module.ts');
+  }
+  grepResults.push({ check: 'v25a-reginfo-registered', found: has });
+})();
+
+// 26. Admin activity registrations endpoint exists — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/admin-activity.controller.ts') || '';
+  const has = content.includes('/:id/registrations') || content.includes('getRegistrations');
+  if (!has) {
+    blocking.push({ check: 'v25a-admin-registrations', detail: 'GET /admin/activity/:id/registrations route missing' });
+    fail('BLOCKING: Admin activity registrations endpoint not found');
+  } else {
+    passed.push({ check: 'v25a-admin-registrations' });
+    log('PASS: v25a-admin-registrations — GET /admin/activity/:id/registrations exists');
+  }
+  grepResults.push({ check: 'v25a-admin-registrations', found: has });
+})();
+
+// 27. enrollPay supports registrationInfo validation — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/activity-flow.service.ts') || '';
+  const has = content.includes('requiredUserInfoFields') && content.includes('registrationInfo');
+  if (!has) {
+    blocking.push({ check: 'v25a-enrollpay-reginfo', detail: 'enrollPay does not validate registrationInfo' });
+    fail('BLOCKING: enrollPay missing registrationInfo validation');
+  } else {
+    passed.push({ check: 'v25a-enrollpay-reginfo' });
+    log('PASS: v25a-enrollpay-reginfo — enrollPay validates registrationInfo');
+  }
+  grepResults.push({ check: 'v25a-enrollpay-reginfo', found: has });
+})();
+
+// 28. GET /activity/:id returns requiredUserInfoFields — BLOCKING if missing
+(function() {
+  const content = readFileSafe('backend/src/activity/activity.controller.ts') || '';
+  const has = content.includes('requiredUserInfoFields') && content.includes('getActivityDetail');
+  if (!has) {
+    warnings.push({ check: 'v25a-wechat-detail-fields', detail: 'GET /activity/:id may not return V2.5A fields' });
+    warn('V2.5A: GET /activity/:id should return requiredUserInfoFields');
+  } else {
+    passed.push({ check: 'v25a-wechat-detail-fields' });
+    log('PASS: v25a-wechat-detail-fields — GET /activity/:id returns V2.5A fields');
+  }
+  grepResults.push({ check: 'v25a-wechat-detail-fields', found: has });
+})();
+
+// ── V2.5B Checks ──
+
+// 29. Admin activity page has NO ActivityTemplate — BLOCKING if found
+(function() {
+  const acFile = readFileSafe('apps/admin/src/pages/activity/ActivityList.vue') || '';
+  const hasTemplate = acFile.includes('ActivityTemplate') || acFile.includes('activity-template');
+  if (hasTemplate) {
+    blocking.push({ check: 'v25b-no-template', detail: 'Admin activity page references ActivityTemplate' });
+    fail('BLOCKING: Admin activity page must not use ActivityTemplate');
+  } else {
+    passed.push({ check: 'v25b-no-template' });
+    log('PASS: v25b-no-template — no ActivityTemplate in Admin');
+  }
+  grepResults.push({ check: 'v25b-no-template', found: hasTemplate });
+})();
+
+// 30. Admin activity page uses registrationStartTime NOT registerStartTime
+(function() {
+  const acFile = readFileSafe('apps/admin/src/pages/activity/ActivityList.vue') || '';
+  const usesRegisterStart = /registerStartTime[^R]|'registerStartTime'|"registerStartTime"/.test(acFile);
+  if (usesRegisterStart) {
+    blocking.push({ check: 'v25b-reg-field-name', detail: 'Admin page uses registerStartTime instead of registrationStartTime' });
+    fail('BLOCKING: Admin page must use registrationStartTime, not registerStartTime');
+  } else {
+    passed.push({ check: 'v25b-reg-field-name' });
+    log('PASS: v25b-reg-field-name — uses registrationStartTime/registrationEndTime');
+  }
+  grepResults.push({ check: 'v25b-reg-field-name', found: usesRegisterStart });
+})();
+
+// 31. Admin activity page supports V2.5B fields (requiredUserInfoFields + groupQr in main form)
+(function() {
+  const acFile = readFileSafe('apps/admin/src/pages/activity/ActivityList.vue') || '';
+  const hasRequired = acFile.includes('requiredUserInfoFields');
+  const hasGroupQr = acFile.includes('groupQrType') && acFile.includes('groupQrImageUrl');
+  if (!hasRequired || !hasGroupQr) {
+    blocking.push({ check: 'v25b-admin-fields', detail: `Admin page missing V2.5B fields: required=${hasRequired} groupQr=${hasGroupQr}` });
+    fail('BLOCKING: Admin page missing V2.5B fields');
+  } else {
+    passed.push({ check: 'v25b-admin-fields' });
+    log('PASS: v25b-admin-fields — requiredUserInfoFields + groupQr in Admin form');
+  }
+  grepResults.push({ check: 'v25b-admin-fields', found: hasRequired && hasGroupQr });
+})();
+
+// 32. Admin page uses idCardNo mask function
+(function() {
+  const acFile = readFileSafe('apps/admin/src/pages/activity/ActivityList.vue') || '';
+  const hasMask = acFile.includes('maskIdCard');
+  if (!hasMask) {
+    warnings.push({ check: 'v25b-idcard-mask', detail: 'Admin page may not have idCardNo masking' });
+    warn('V2.5B: Admin page should mask idCardNo in registration info');
+  } else {
+    passed.push({ check: 'v25b-idcard-mask' });
+    log('PASS: v25b-idcard-mask — Admin page masks idCardNo');
+  }
+  grepResults.push({ check: 'v25b-idcard-mask', found: hasMask });
+})();
+
+// 33. V2.5B: Memory moved to separate drawer — PASS (has openMemory + memoryDrawer)
+(function() {
+  const acFile = readFileSafe('apps/admin/src/pages/activity/ActivityList.vue') || '';
+  const hasMemoryBtn = acFile.includes('openMemory') && acFile.includes('memoryDrawer');
+  if (!hasMemoryBtn) {
+    warnings.push({ check: 'v25b-memory-drawer', detail: 'Memory fields not in separate drawer' });
+    warn('V2.5B: Memory fields should be in a separate drawer with "回忆" button');
+  } else {
+    passed.push({ check: 'v25b-memory-drawer' });
+    log('PASS: v25b-memory-drawer — Memory fields in separate drawer with 回忆 button');
+  }
+  grepResults.push({ check: 'v25b-memory-drawer', found: hasMemoryBtn });
+})();
+
+// ── V2.5C Checks ──
+
+// 34. Registration-info page exists — BLOCKING if missing
+(function() {
+  const dir = readDirSafe('apps/weapp/src/pages/activity/registration-info') || [];
+  const hasPage = dir.length > 0;
+  const pageContent = readFileSafe('apps/weapp/src/pages/activity/registration-info/index.tsx') || '';
+  if (!hasPage || !pageContent) {
+    blocking.push({ check: 'v25c-reginfo-page', detail: 'Registration-info page not found' });
+    fail('BLOCKING: Registration-info page missing');
+  } else {
+    passed.push({ check: 'v25c-reginfo-page' });
+    log('PASS: v25c-reginfo-page — registration-info page exists');
+  }
+  grepResults.push({ check: 'v25c-reginfo-page', found: hasPage && !!pageContent });
+})();
+
+// 35. Detail page reads requiredUserInfoFields — BLOCKING if missing
+(function() {
+  const content = readFileSafe('apps/weapp/src/pages/activity/detail/index.tsx') || '';
+  const has = content.includes('requiredUserInfoFields');
+  if (!has) {
+    blocking.push({ check: 'v25c-detail-required', detail: 'Detail page does not read requiredUserInfoFields' });
+    fail('BLOCKING: Detail page must read requiredUserInfoFields');
+  } else {
+    passed.push({ check: 'v25c-detail-required' });
+    log('PASS: v25c-detail-required — detail page reads requiredUserInfoFields');
+  }
+  grepResults.push({ check: 'v25c-detail-required', found: has });
+})();
+
+// 36. Detail page navigates to registration-info — BLOCKING if missing
+(function() {
+  const content = readFileSafe('apps/weapp/src/pages/activity/detail/index.tsx') || '';
+  const has = content.includes('registration-info');
+  if (!has) {
+    blocking.push({ check: 'v25c-detail-navigate', detail: 'Detail page does not navigate to registration-info' });
+    fail('BLOCKING: Detail page must navigate to registration-info when required fields exist');
+  } else {
+    passed.push({ check: 'v25c-detail-navigate' });
+    log('PASS: v25c-detail-navigate — detail page navigates to registration-info');
+  }
+  grepResults.push({ check: 'v25c-detail-navigate', found: has });
+})();
+
+// 37. Detail page shows group Qr — BLOCKING if missing
+(function() {
+  const content = readFileSafe('apps/weapp/src/pages/activity/detail/index.tsx') || '';
+  const has = content.includes('groupQr') || content.includes('showGroupQr') || content.includes('hasGroupQr');
+  if (!has) {
+    blocking.push({ check: 'v25c-groupqr', detail: 'Detail page does not show group QR' });
+    fail('BLOCKING: Detail page must show group QR for paid users');
+  } else {
+    passed.push({ check: 'v25c-groupqr' });
+    log('PASS: v25c-groupqr — detail page shows group QR');
+  }
+  grepResults.push({ check: 'v25c-groupqr', found: has });
+})();
+
+// 38. Registration-info page has idCardNo X/x validation
+(function() {
+  const content = readFileSafe('apps/weapp/src/pages/activity/registration-info/index.tsx') || '';
+  const has = /idCardRx|idCard\s*.*regexp|17.*Xx|Xx\]/.test(content);
+  if (!has) {
+    warnings.push({ check: 'v25c-idcard-regex', detail: 'Registration-info page may not validate idCard X/x' });
+    warn('V2.5C: Registration-info page should validate 15/18-digit + X/x idCardNo');
+  } else {
+    passed.push({ check: 'v25c-idcard-regex' });
+    log('PASS: v25c-idcard-regex — registration-info validates idCard X/x');
+  }
+  grepResults.push({ check: 'v25c-idcard-regex', found: has });
+})();
+
+// 39. Detail page does NOT use register/pay old endpoints
+(function() {
+  const content = readFileSafe('apps/weapp/src/pages/activity/detail/index.tsx') || '';
+  const hasOld = content.includes('/activity/') && (content.includes('/register') || content.includes('/pay'));
+  // Only flag if it uses the old register/pay routes (not enroll-pay)
+  const hasOldRegister = content.includes("activity/:id/register'") || content.includes('/register?userId');
+  const hasOldPay = content.includes("activity/:id/pay'") || content.includes('/pay?userId');
+  if (hasOldRegister || hasOldPay) {
+    blocking.push({ check: 'v25c-old-routes', detail: 'Detail page uses old register/pay routes' });
+    fail('BLOCKING: Detail page must not use old register/pay routes');
+  } else {
+    passed.push({ check: 'v25c-old-routes' });
+    log('PASS: v25c-old-routes — detail page does not use old register/pay');
+  }
+  grepResults.push({ check: 'v25c-old-routes', found: hasOldRegister || hasOldPay });
+})();
+
+// 40. Detail page uses enroll-pay (not register/pay)
+(function() {
+  const content = readFileSafe('apps/weapp/src/pages/activity/detail/index.tsx') || '';
+  const has = content.includes('enroll-pay');
+  if (!has) {
+    blocking.push({ check: 'v25c-enrollpay', detail: 'Detail page does not use enroll-pay' });
+    fail('BLOCKING: Detail page must use enroll-pay');
+  } else {
+    passed.push({ check: 'v25c-enrollpay' });
+    log('PASS: v25c-enrollpay — detail page uses enroll-pay');
+  }
+  grepResults.push({ check: 'v25c-enrollpay', found: has });
+})();
+
+// 41. V2.5C: NO xingzhe_reginfo_pending in code — BLOCKING if found
+(function() {
+  const weappDir = readDirSafe('apps/weapp/src') || [];
+  let foundStorage = false
+  for (const entry of ['pages/activity/detail/index.tsx', 'pages/activity/registration-info/index.tsx']) {
+    const content = readFileSafe('apps/weapp/src/' + entry) || ''
+    if (content.includes('xingzhe_reginfo_pending')) foundStorage = true
+  }
+  // Also grep all weapp src files
+  const detailContent = readFileSafe('apps/weapp/src/pages/activity/detail/index.tsx') || ''
+  const regInfoContent = readFileSafe('apps/weapp/src/pages/activity/registration-info/index.tsx') || ''
+  const allContent = detailContent + regInfoContent
+  const hasStorageRegInfo = allContent.includes('xingzhe_reginfo_pending')
+  if (hasStorageRegInfo) {
+    blocking.push({ check: 'v25c-no-storage-reginfo', detail: 'Code saves registrationInfo/idCardNo to storage' });
+    fail('BLOCKING: Must not store registrationInfo/idCardNo in storage');
+  } else {
+    passed.push({ check: 'v25c-no-storage-reginfo' });
+    log('PASS: v25c-no-storage-reginfo — no registrationInfo in storage');
+  }
+  grepResults.push({ check: 'v25c-no-storage-reginfo', found: hasStorageRegInfo });
+})();
+
 async function main() {
 // ── Step 4: API checks ──────────────────────────────────────
 log('\n== Step 4: API Checks ==');
@@ -661,12 +975,23 @@ log('\n== Step 7: Generate Report ==');
 fs.mkdirSync(REPORTS_DIR, { recursive: true });
 const timestamp = new Date().toISOString();
 
+// ── Sanitize: strip potential full idCardNo from any text ──
+function sanitize(o) {
+  if (typeof o === 'string') return o.replace(/\b(?:\d{15}|\d{17}[\dXx])\b/g, (m) => m.slice(0, 3) + '***********' + m.slice(-4).toUpperCase());
+  if (Array.isArray(o)) return o.map(sanitize);
+  if (o && typeof o === 'object') { const r = {}; for (const k of Object.keys(o)) r[k] = sanitize(o[k]); return r; }
+  return o;
+}
+const safeApiResults = sanitize(apiResults);
+const safeBlocking = sanitize(blocking);
+const safeWarnings = sanitize(warnings);
+
 const reportJson = {
   timestamp,
   provider: env.QA_PROVIDER || 'none',
   model: env.QA_MODEL || 'none',
-  deterministicChecks: { blocking, warnings, passed },
-  apiResults,
+  deterministicChecks: { blocking: safeBlocking, warnings: safeWarnings, passed },
+  apiResults: safeApiResults,
   grepResults,
   llmReview,
   blockingCount: blocking.length,
@@ -680,13 +1005,13 @@ const reportMd = [
   `**Provider**: ${env.QA_PROVIDER || 'none'}  **Model**: ${env.QA_MODEL || 'none'}`,
   '',
   '## API 检查结果',
-  ...apiResults.map(r => `- ${r.method} ${r.path} → ${r.status || 'ERR'} ${r.ok ? '✅' : '❌'}`),
+  ...safeApiResults.map(r => `- ${r.method} ${r.path} → ${r.status || 'ERR'} ${r.ok ? '✅' : '❌'}`),
   '',
   '## 静态规则检查',
   `- Blocking: ${blocking.length}`,
-  ...blocking.map(b => `  - ❌ ${b.check}: ${b.pattern || b.detail || ''}`),
+  ...safeBlocking.map(b => `  - ❌ ${b.check}: ${b.pattern || b.detail || ''}`),
   `- Warnings: ${warnings.length}`,
-  ...warnings.map(w => `  - ⚠ ${w.check}: ${w.pattern || w.detail || ''}`),
+  ...safeWarnings.map(w => `  - ⚠ ${w.check}: ${w.pattern || w.detail || ''}`),
   `- Passed: ${passed.length}`,
   '',
   '## LLM 审查',

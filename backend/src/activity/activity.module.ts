@@ -19,6 +19,7 @@ import { UserNote } from './entities/user-note.entity'
 import { UserProfile } from './entities/user-profile.entity'
 import { UserInviteRecord } from './entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './entities/activity-invite-record.entity'
+import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 import { User } from '../users/entities/user.entity'
 
 @Module({
@@ -35,6 +36,7 @@ import { User } from '../users/entities/user.entity'
       UserProfile,
       UserInviteRecord,
       ActivityInviteRecord,
+      ActivityRegistrationInfo,
       User,
     ]),
   ],

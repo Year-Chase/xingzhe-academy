@@ -8,6 +8,7 @@ import { ActivityOrder } from './entities/activity-order.entity'
 import { ActivityQR } from './entities/activity-qr.entity'
 import { ActivityRefund } from './entities/activity-refund.entity'
 import { ActivityInvoice, InvoiceStatus } from './entities/activity-invoice.entity'
+import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 
 @Injectable()
 export class ActivityFlowService {
@@ -24,6 +25,8 @@ export class ActivityFlowService {
     private readonly refundRepo: Repository<ActivityRefund>,
     @InjectRepository(ActivityInvoice)
     private readonly invoiceRepo: Repository<ActivityInvoice>,
+    @InjectRepository(ActivityRegistrationInfo)
+    private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
   ) {}
 
   // ──── register ────
@@ -118,7 +121,10 @@ export class ActivityFlowService {
   }
 
   // ──── enrollPay ────
-  async enrollPay(userId: string, activityId: number) {
+  async enrollPay(userId: string, activityId: number, registrationInfo?: {
+    realName?: string; phone?: string; idCardNo?: string
+    departureCity?: string; transportPreference?: string; roomPreference?: string
+  }) {
     const activity = await this.activityRepo.findOne({ where: { id: activityId } })
     if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
     const now = new Date()
@@ -130,6 +136,21 @@ export class ActivityFlowService {
 
     const paidCount = await this.regRepo.count({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
     if (activity.capacity > 0 && paidCount >= activity.capacity) throw new BadRequestException('活动名额已满')
+
+    // ── V2.5A: Validate requiredUserInfoFields ──
+    let requiredFields: string[] = []
+    try { const v = JSON.parse(activity.requiredUserInfoFields || 'null'); requiredFields = Array.isArray(v) ? v : [] } catch {}
+
+    if (requiredFields.length > 0) {
+      const info = registrationInfo || {}
+      const missing: string[] = []
+      for (const field of requiredFields) {
+        if (!(info as any)[field]) missing.push(field)
+      }
+      if (missing.length > 0) {
+        throw new BadRequestException(`缺少必填报名信息: ${missing.join(', ')}`)
+      }
+    }
 
     const existing = await this.regRepo.findOne({ where: { userId, activityId } })
     if (existing && (existing.status === 'PAID' || existing.status === 'CHECKED_IN')) {
@@ -156,6 +177,37 @@ export class ActivityFlowService {
       qr = this.qrRepo.create({ registrationId: saved.id, code: randomUUID(), status: 'ACTIVE', expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) })
       await this.qrRepo.save(qr)
     }
+
+    // ── V2.5A: Save ActivityRegistrationInfo ──
+    if (registrationInfo) {
+      const existingInfo = await this.regInfoRepo.findOne({ where: { userId, activityId } })
+      if (existingInfo) {
+        existingInfo.registrationId = saved.id
+        if (registrationInfo.realName !== undefined) existingInfo.realName = registrationInfo.realName || null
+        if (registrationInfo.phone !== undefined) existingInfo.phone = registrationInfo.phone || null
+        if (registrationInfo.idCardNo !== undefined) existingInfo.idCardNo = registrationInfo.idCardNo || null
+        if (registrationInfo.departureCity !== undefined) existingInfo.departureCity = registrationInfo.departureCity || null
+        if (registrationInfo.transportPreference !== undefined) existingInfo.transportPreference = registrationInfo.transportPreference || null
+        if (registrationInfo.roomPreference !== undefined) existingInfo.roomPreference = registrationInfo.roomPreference || null
+        existingInfo.confirmedAt = new Date()
+        await this.regInfoRepo.save(existingInfo)
+      } else {
+        await this.regInfoRepo.save(this.regInfoRepo.create({
+          id: `reginfo_${randomUUID()}`,
+          activityId,
+          registrationId: saved.id,
+          userId,
+          realName: registrationInfo.realName || null,
+          phone: registrationInfo.phone || null,
+          idCardNo: registrationInfo.idCardNo || null,
+          departureCity: registrationInfo.departureCity || null,
+          transportPreference: registrationInfo.transportPreference || null,
+          roomPreference: registrationInfo.roomPreference || null,
+          confirmedAt: new Date(),
+        }))
+      }
+    }
+
     return { status: 'PAID', id: saved.id, code: qr.code, orderId: orderExists?.id || null, amount: price }
   }
 
