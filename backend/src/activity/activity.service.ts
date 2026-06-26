@@ -95,7 +95,7 @@ export class ActivityService implements OnModuleInit {
 
   async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
     const [items, total] = await this.activityRepo.findAndCount({
-      where: { status: In(['PUBLISHED', 'ENDED']) },
+      where: { status: 'PUBLISHED' },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,

@@ -105,6 +105,8 @@ export class ActivityController {
       hasGroupQr: a.groupQrType && a.groupQrType !== 'NONE' && !!a.groupQrImageUrl,
       groupQrTitle: a.groupQrTitle || '加入活动群',
       groupQrDescription: a.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
+      memoryImages: a.memoryImages || null,
+      memoryText: a.memoryText || null,
       requiredUserInfoFields: requiredFields,
     }
   }

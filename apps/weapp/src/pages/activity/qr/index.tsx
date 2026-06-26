@@ -27,6 +27,9 @@ export default function QRPage() {
   const [groupQr, setGroupQr] = useState<any>(null)
   const [showGroupQr, setShowGroupQr] = useState(false)
 
+  // V2.5.1: activity finished check
+  const [isFinished, setIsFinished] = useState(false)
+
   useEffect(() => {
     const p = router.params as any
     const id = Number(p.activityId || p.id)
@@ -50,6 +53,8 @@ export default function QRPage() {
       setTitle(d.title || title)
       setLocation(d.location || '')
       setStartTime(d.startTime || '')
+      // V2.5.1: check if finished
+      if (d.endTime && new Date(d.endTime).getTime() < Date.now()) setIsFinished(true)
       // V2.5C: capture group QR info
       if (d.groupQrType && d.groupQrType !== 'NONE' && d.groupQrImageUrl) {
         setGroupQr({ type: d.groupQrType, imageUrl: d.groupQrImageUrl, title: d.groupQrTitle || '加入活动群', desc: d.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步' })
@@ -62,14 +67,14 @@ export default function QRPage() {
         const st = (s.data as any)?.status
         setQrStatus(st === 'CHECKED_IN' ? 'CHECKED_IN' : 'EXPIRED')
       }
-    } catch {
+    } catch (_e) {
       try {
         const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
         const st = (s.data as any)?.status
         if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
         else if (st === 'EXPIRED') setQrStatus('EXPIRED')
         else setQrStatus('ACTIVE')
-      } catch { setError('加载失败'); setQrStatus('EXPIRED') }
+      } catch (_e) { setError('加载失败'); setQrStatus('EXPIRED') }
     }
   }, [])
 
@@ -78,7 +83,7 @@ export default function QRPage() {
     try {
       const res = await Taro.request({ method: 'POST', url: `${API}/activity/${activityId}/checkin`, data: { code } })
       if (res.data?.status === 'CHECKED_IN') { setQrStatus('CHECKED_IN'); Taro.showToast({ title: '签到成功', icon: 'success' }) }
-    } catch { Taro.showToast({ title: '签到失败，请重试', icon: 'none' }) }
+    } catch (_e) { Taro.showToast({ title: '签到失败，请重试', icon: 'none' }) }
     finally { setActing(false) }
   }
 
@@ -114,18 +119,24 @@ export default function QRPage() {
   return (
     <View style={{ minHeight: '100vh', background: C.bg, fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif' }}>
 
+      {/* ── V2.5.1: Finished banner ── */}
+      {isFinished && (
+        <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: '#F1F1EE', borderRadius: '16rpx', border: '1rpx solid #D9D9D2' }}>
+          <Text style={{ fontSize: '26rpx', color: C.secondary, textAlign: 'center', display: 'block' }}>活动已结束，签到码已失效</Text>
+        </View>
+      )}
       {/* ── Status banner ── */}
-      {qrStatus === 'ACTIVE' && (
+      {!isFinished && qrStatus === 'ACTIVE' && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: C.lightGreen, borderRadius: '16rpx', border: '1rpx solid rgba(46,125,90,0.12)' }}>
           <Text style={{ fontSize: '26rpx', color: C.green, textAlign: 'center', display: 'block' }}>✓ 二维码有效 — 请出示给工作人员</Text>
         </View>
       )}
-      {qrStatus === 'CHECKED_IN' && (
+      {!isFinished && qrStatus === 'CHECKED_IN' && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: '#F1F1EE', borderRadius: '16rpx', border: '1rpx solid #D9D9D2' }}>
           <Text style={{ fontSize: '26rpx', color: C.secondary, textAlign: 'center', display: 'block' }}>你已完成本次活动签到</Text>
         </View>
       )}
-      {qrStatus === 'EXPIRED' && (
+      {!isFinished && qrStatus === 'EXPIRED' && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: 'rgba(179,91,75,0.05)', borderRadius: '16rpx', border: '1rpx solid rgba(179,91,75,0.1)' }}>
           <Text style={{ fontSize: '26rpx', color: '#B35B4B', textAlign: 'center', display: 'block' }}>✗ 二维码已失效</Text>
         </View>
@@ -180,7 +191,7 @@ export default function QRPage() {
       </View>
 
       {/* ── Notice ── */}
-      {qrStatus === 'ACTIVE' && (
+      {!isFinished && qrStatus === 'ACTIVE' && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '22rpx 24rpx', background: C.lightGreen, borderRadius: '18rpx', border: '1rpx solid rgba(46,125,90,0.08)' }}>
           <Text style={{ fontSize: '25rpx', color: C.green, lineHeight: '1.5' }}>现场工作人员扫码后，二维码将自动变为已签到状态。</Text>
         </View>
@@ -188,16 +199,16 @@ export default function QRPage() {
 
       {/* ── Actions ── */}
       <View style={{ padding: '40rpx 32rpx', textAlign: 'center' }}>
-        {qrStatus === 'ACTIVE' && (
+        {!isFinished && qrStatus === 'ACTIVE' && (
           <Button onClick={doCheckin} disabled={acting}
             style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.dark, color: '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none' }}
           >{acting ? '...' : '模拟签到'}</Button>
         )}
-        {/* V2.5C: group QR entry */}
+        {/* V2.5C: group QR entry — disabled if finished */}
         {groupQr && (
-          <Button onClick={() => setShowGroupQr(true)}
-            style={{ marginTop: qrStatus === 'ACTIVE' ? '20rpx' : '0', width: '100%', height: '88rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid ${C.border}`, color: C.green, fontSize: '28rpx', lineHeight: '88rpx' }}
-          >加入活动群</Button>
+          <Button onClick={() => { if (!isFinished) setShowGroupQr(true) }}
+            style={{ marginTop: qrStatus === 'ACTIVE' ? '20rpx' : '0', width: '100%', height: '88rpx', borderRadius: '999rpx', background: isFinished ? C.disabledBg : C.lightGreen, border: `1rpx solid ${C.border}`, color: isFinished ? C.disabledText : C.green, fontSize: '28rpx', lineHeight: '88rpx' }}
+          >{isFinished ? '活动群入口已关闭' : '加入活动群'}</Button>
         )}
         <Button onClick={() => Taro.navigateBack()}
           style={{ marginTop: '24rpx', width: '100%', height: '88rpx', borderRadius: '999rpx', background: C.white, border: '1rpx solid #EDE9DF', color: C.dark, fontSize: '30rpx', lineHeight: '88rpx' }}

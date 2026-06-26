@@ -26,7 +26,7 @@ const phoneRx = /^1\d{10}$/
 function safeFields(raw: any): string[] {
   if (Array.isArray(raw)) return raw
   if (!raw) return []
-  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch { return [] }
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (_e) { return [] }
 }
 
 interface FormData { [key: string]: string }
@@ -114,7 +114,7 @@ export default function RegistrationInfoPage() {
       } else if ((res.data as any)?.message) {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
-    } catch {
+    } catch (_e) {
       Taro.showToast({ title: '操作失败，请重试', icon: 'none' })
     } finally {
       setSubmitting(false)

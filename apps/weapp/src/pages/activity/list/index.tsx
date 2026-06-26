@@ -32,7 +32,7 @@ export default function ActivityList() {
       setTotal(data.total || 0)
       if (append) setItems((prev) => [...prev, ...list])
       else setItems(list)
-    } catch { setError('加载失败') }
+    } catch (_e) { setError('加载失败') }
     finally { setLoadingMore(false); setLoading(false) }
   }, [])
 
@@ -71,7 +71,12 @@ export default function ActivityList() {
     return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
   }
 
-  const isEnded = (a: ActivityItem) => !a.status || a.status !== 'active'
+  const isEnded = (a: ActivityItem) => {
+    if (!a.endTime) return false
+    const t = new Date(a.endTime).getTime()
+    return !Number.isNaN(t) && Date.now() > t
+  }
+  const isPublished = (a: ActivityItem) => a.status === 'PUBLISHED'
   const isCheckedIn = (id: number) => checkedInIds.has(id)
 
   if (loading) return <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: '#F7F6F2' }}><Text style={{ color: '#8A9288', fontSize: '28rpx' }}>加载中...</Text></View>
