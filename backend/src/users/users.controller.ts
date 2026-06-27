@@ -19,4 +19,9 @@ export class UsersController {
   async updateProfile(@Param('id') id: string, @Body() body: any) {
     return this.usersService.updateProfile(id, body)
   }
+
+  @Get(':id/journey')
+  async getJourney(@Param('id') id: string) {
+    return this.usersService.getJourney(id)
+  }
 }

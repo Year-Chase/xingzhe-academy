@@ -20,6 +20,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'invoices', name: 'InvoiceList', component: () => import('@/pages/invoice/InvoiceList.vue') },
       { path: 'crm/users', name: 'UserList', component: () => import('@/pages/crm/UserList.vue') },
       { path: 'crm/users/:userId', name: 'UserDetail', component: () => import('@/pages/crm/UserDetail.vue') },
+      { path: 'certificate-templates', name: 'CertificateTemplateList', component: () => import('@/pages/certificate/CertificateTemplateList.vue') },
     ],
   },
 ]

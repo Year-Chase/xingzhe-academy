@@ -107,6 +107,10 @@ export class ActivityController {
       groupQrDescription: a.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
       memoryImages: a.memoryImages || null,
       memoryText: a.memoryText || null,
+      locationName: a.locationName || '',
+      locationAddress: a.locationAddress || '',
+      locationLat: a.locationLat ?? null,
+      locationLng: a.locationLng ?? null,
       requiredUserInfoFields: requiredFields,
     }
   }

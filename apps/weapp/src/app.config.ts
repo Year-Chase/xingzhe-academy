@@ -2,7 +2,12 @@ export default defineAppConfig({
   pages: [
     'pages/index/index',
     'pages/trail/index',
+    'pages/trail/memories/index',
+    'pages/journey/certificate/index',
+    'pages/mine/registrations/index',
+    'pages/mine/certificates/index',
     'pages/mine/index',
+    'pages/auth/login/index',
     'pages/activity/detail/index',
     'pages/activity/registration-info/index',
     'pages/activity/qr/index',

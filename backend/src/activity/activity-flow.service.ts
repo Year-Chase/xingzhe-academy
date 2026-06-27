@@ -220,7 +220,7 @@ export class ActivityFlowService {
   async getParticipants(activityId: number, _currentUserId: string) {
     const regs = await this.regRepo.find({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
     return regs.map((r) => ({
-      userId: r.userId, avatarUrl: '', nickname: `行者 ${r.userId}`, name: `行者 ${r.userId}`,
+      userId: r.userId, avatarUrl: '', nickname: '行者', name: '行者',
       gender: '未知', commonActivityCount: 0, motto: '把身体从屏幕里带出来。', status: r.status,
     }))
   }

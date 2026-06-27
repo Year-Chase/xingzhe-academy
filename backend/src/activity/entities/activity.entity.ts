@@ -90,6 +90,51 @@ export class Activity {
   @Column({ type: 'text', nullable: true })
   memoryText: string | null
 
+  // ── V2.6C: Certificate template ──
+  @Column({ type: 'int', nullable: true })
+  certificateTemplateId: number | null
+
+  // ── V2.6D: Structured location ──
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  provinceName: string
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  provinceCode: string
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  cityName: string
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  cityCode: string
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  adcode: string
+
+  @Column({ type: 'float', nullable: true })
+  lng: number
+
+  @Column({ type: 'float', nullable: true })
+  lat: number
+
+  // ── V2.6E-MVP: Manual location coordinates ──
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  locationName: string
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  locationAddress: string
+
+  @Column({ type: 'float', nullable: true })
+  locationLat: number
+
+  @Column({ type: 'float', nullable: true })
+  locationLng: number
+
+  @Column({ type: 'varchar', length: 20, default: 'gcj02' })
+  coordinateType: string
+
+  @Column({ type: 'varchar', length: 20, default: 'manual' })
+  locationProvider: string
+
   @CreateDateColumn()
   createdAt: Date
 

@@ -32,7 +32,7 @@ export default function ActivityList() {
       setTotal(data.total || 0)
       if (append) setItems((prev) => [...prev, ...list])
       else setItems(list)
-    } catch (_e) { setError('加载失败') }
+    } catch (e) { console.error('[activity-list]', e); setError('加载失败') }
     finally { setLoadingMore(false); setLoading(false) }
   }, [])
 

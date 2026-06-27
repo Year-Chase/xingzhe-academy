@@ -142,6 +142,11 @@ export class ActivityService implements OnModuleInit {
     memoryImages?: string; memoryText?: string
     requiredUserInfoFields?: string[]; groupQrType?: string; groupQrImageUrl?: string
     groupQrTitle?: string; groupQrDescription?: string
+    certificateTemplateId?: number
+    provinceName?: string; provinceCode?: string; cityName?: string; cityCode?: string
+    adcode?: string; lng?: number; lat?: number
+    locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
+    coordinateType?: string; locationProvider?: string
   }) {
     if (dto.slogan && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
     const st = new Date(dto.startTime), et = new Date(dto.endTime)
@@ -175,6 +180,20 @@ export class ActivityService implements OnModuleInit {
       groupQrImageUrl: dto.groupQrImageUrl || null,
       groupQrTitle: dto.groupQrTitle || '加入活动群',
       groupQrDescription: dto.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
+      certificateTemplateId: dto.certificateTemplateId ?? null,
+      provinceName: dto.provinceName || dto.province || null,
+      provinceCode: dto.provinceCode || null,
+      cityName: dto.cityName || dto.city || null,
+      cityCode: dto.cityCode || null,
+      adcode: dto.adcode || null,
+      lng: dto.lng ?? null,
+      lat: dto.lat ?? null,
+      locationName: dto.locationName || null,
+      locationAddress: dto.locationAddress || null,
+      locationLat: dto.locationLat ?? null,
+      locationLng: dto.locationLng ?? null,
+      coordinateType: dto.coordinateType || 'gcj02',
+      locationProvider: dto.locationProvider || 'manual',
       status: 'DRAFT',
     } as any)
     const saved: any = await this.activityRepo.save(a)
@@ -190,6 +209,11 @@ export class ActivityService implements OnModuleInit {
     memoryImages?: string; memoryText?: string
     requiredUserInfoFields?: string[]; groupQrType?: string; groupQrImageUrl?: string
     groupQrTitle?: string; groupQrDescription?: string
+    certificateTemplateId?: number
+    provinceName?: string; provinceCode?: string; cityName?: string; cityCode?: string
+    adcode?: string; lng?: number; lat?: number
+    locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
+    coordinateType?: string; locationProvider?: string
   }) {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
@@ -232,6 +256,20 @@ export class ActivityService implements OnModuleInit {
     if (dto.groupQrImageUrl !== undefined) a.groupQrImageUrl = dto.groupQrImageUrl || null
     if (dto.groupQrTitle !== undefined) a.groupQrTitle = dto.groupQrTitle
     if (dto.groupQrDescription !== undefined) a.groupQrDescription = dto.groupQrDescription
+    if (dto.certificateTemplateId !== undefined) a.certificateTemplateId = dto.certificateTemplateId
+    if (dto.provinceName !== undefined) { a.provinceName = dto.provinceName; a.province = dto.provinceName }
+    if (dto.provinceCode !== undefined) a.provinceCode = dto.provinceCode
+    if (dto.cityName !== undefined) { a.cityName = dto.cityName; a.city = dto.cityName }
+    if (dto.cityCode !== undefined) a.cityCode = dto.cityCode
+    if (dto.adcode !== undefined) a.adcode = dto.adcode
+    if (dto.lng !== undefined) a.lng = dto.lng
+    if (dto.lat !== undefined) a.lat = dto.lat
+    if (dto.locationName !== undefined) a.locationName = dto.locationName
+    if (dto.locationAddress !== undefined) a.locationAddress = dto.locationAddress
+    if (dto.locationLat !== undefined) a.locationLat = dto.locationLat
+    if (dto.locationLng !== undefined) a.locationLng = dto.locationLng
+    if (dto.coordinateType !== undefined) a.coordinateType = dto.coordinateType
+    if (dto.locationProvider !== undefined) a.locationProvider = dto.locationProvider
 
     await this.activityRepo.save(a)
     return { id, updated: true }

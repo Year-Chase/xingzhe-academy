@@ -1,7 +1,8 @@
 import { View, Text, Input, Picker } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { getUserId, ensureUserId } from '../../../utils/user'
+import { getUserId, isLoggedIn } from '../../../utils/user'
+import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -26,7 +27,7 @@ const phoneRx = /^1\d{10}$/
 function safeFields(raw: any): string[] {
   if (Array.isArray(raw)) return raw
   if (!raw) return []
-  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (_e) { return [] }
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (e) { console.error('[registration-info] parse error', e); return [] }
 }
 
 interface FormData { [key: string]: string }
@@ -39,18 +40,21 @@ export default function RegistrationInfoPage() {
   const [errors, setErrors] = useState<FormData>({})
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [activity, setActivity] = useState<any>(null)
 
-  // Parse activityId from URL; fetch requiredUserInfoFields from API
+  // Parse activityId from URL; fetch activity detail + requiredUserInfoFields from API
   useEffect(() => {
     const p = router.params as any
     const id = Number(p.activityId)
     if (!id || Number.isNaN(id)) return
     setActivityId(id)
-    // Read required fields from activity detail
+    // Fetch activity detail — store full data (location fields included) + extract requiredFields
     Taro.request({ url: `${API}/activity/${id}` }).then(res => {
-      const fields = safeFields((res.data as any)?.requiredUserInfoFields)
+      const data = (res.data as any) || {}
+      setActivity(data)
+      const fields = safeFields(data?.requiredUserInfoFields)
       setRequiredFields(fields)
-    }).catch(() => {})
+    }).catch((e) => { console.error('[registration-info] activity fetch', e) })
   }, [router.params])
 
   const updateField = (key: string, value: string) => {
@@ -86,8 +90,11 @@ export default function RegistrationInfoPage() {
 
   // Directly call enrollPay from this page
   const handleSubmit = async () => {
-    const uid = await ensureUserId()
-    if (!uid) return
+    if (!isLoggedIn()) {
+      Taro.reLaunch({ url: '/pages/auth/login/index' })
+      return
+    }
+    const uid = getUserId()
 
     setSubmitting(true)
     try {
@@ -114,7 +121,8 @@ export default function RegistrationInfoPage() {
       } else if ((res.data as any)?.message) {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
-    } catch (_e) {
+    } catch (e) {
+      console.error('[registration-info]', e)
       Taro.showToast({ title: '操作失败，请重试', icon: 'none' })
     } finally {
       setSubmitting(false)
@@ -193,6 +201,20 @@ export default function RegistrationInfoPage() {
           本信息仅用于本次活动组织与安全保障。
         </Text>
       </View>
+
+      {/* V2.6E: 集合地点卡片 — full row clickable, icon replaces '导航' text */}
+      {activity && (
+        <View onClick={() => { if (canOpenActivityLocation(activity)) openActivityLocation(activity); else Taro.showToast({ title: '暂无可导航定位', icon: 'none' }) }}
+          style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: `1rpx solid ${C.border}` }}>
+          <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '18rpx' }}>集合地点</Text>
+          <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ flex: 1, fontSize: '26rpx', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activity.locationName || activity.location || activity.province + (activity.city ? ' ' + activity.city : '') || '活动地点待确认'}
+            </Text>
+            <Text style={{ flexShrink: 0, fontSize: '32rpx', color: C.green, marginLeft: '12rpx' }}>↗</Text>
+          </View>
+        </View>
+      )}
 
       <View style={{ margin: '0 32rpx', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: `1rpx solid ${C.border}` }}>
         {requiredFields.map(renderField)}

@@ -1,7 +1,8 @@
 import { View, Text, Button, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { getUserId, ensureUserId } from '../../../utils/user'
+import { getUserId, isLoggedIn } from '../../../utils/user'
+import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -20,11 +21,12 @@ function imgUrl(cover: string | undefined): string {
 function safeFields(raw: any): string[] {
   if (Array.isArray(raw)) return raw
   if (!raw) return []
-  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (_e) { return [] }
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (e) { console.error('[activity-detail] parse error', e); return [] }
 }
 
 interface ActivityData {
   id: number; title: string; description: string; location: string
+  locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
   startTime: string; endTime: string; capacity: number; registeredCount: number
   coverImage: string; status: string; effectivePrice: number; effectivePriceLabel: string
   requiredUserInfoFields?: any; hasGroupQr?: boolean
@@ -89,13 +91,15 @@ export default function ActivityDetail() {
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
       setParticipants((p.data as Participant[]) || [])
-    } catch (_e) { setError('加载失败，请下拉重试') }
+    } catch (e) { console.error('[activity-detail] load', e); setError('加载失败，请下拉重试') }
     finally { setLoading(false) }
   }, [])
 
   const handleEnroll = async () => {
-    const uid = await ensureUserId()
-    if (!uid) return
+    if (!isLoggedIn()) {
+      Taro.reLaunch({ url: '/pages/auth/login/index' })
+      return
+    }
     const cap = activity?.capacity ?? 0
     const reg = activity?.registeredCount ?? 0
     if (cap > 0 && reg >= cap) { Taro.showToast({ title: '活动名额已满', icon: 'none' }); return }
@@ -129,7 +133,7 @@ export default function ActivityDetail() {
       } else if ((res.data as any)?.message) {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
-    } catch (_e) { Taro.showToast({ title: '操作失败，请重试', icon: 'none' }) }
+    } catch (e) { console.error('[activity-detail] pay', e); Taro.showToast({ title: '操作失败，请重试', icon: 'none' }) }
     finally { setActing(false) }
   }
 
@@ -205,9 +209,14 @@ export default function ActivityDetail() {
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>活动时间</Text>
           <Text style={{ flex: 1, fontSize: '26rpx', color: C.body, lineHeight: '1.5' }}>{fmtTimeRange(activity.startTime, activity.endTime)}</Text>
         </View>
-        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
+        {/* V2.6E: Location card — full row clickable, icon replaces '导航' text */}
+        <View onClick={() => { if (canOpenActivityLocation(activity)) openActivityLocation(activity); else Taro.showToast({ title: '暂无可导航定位', icon: 'none' }) }}
+          style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>地点</Text>
-          <Text style={{ flex: 1, fontSize: '26rpx', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.location || '待定'}</Text>
+          <Text style={{ flex: 1, fontSize: '26rpx', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {(activity as any).locationName || activity.location || '活动地点待确认'}
+          </Text>
+          <Text style={{ flexShrink: 0, fontSize: '32rpx', color: C.green, marginLeft: '12rpx' }}>↗</Text>
         </View>
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>名额</Text>
@@ -324,16 +333,17 @@ export default function ActivityDetail() {
               </View>
             </View>
             <Text style={{ fontSize: '34rpx', fontWeight: '700', color: C.dark, textAlign: 'center', marginTop: '24rpx' }}>
-              {modalUser.name}{isSelf(modalUser) ? '（我）' : ''}
+              {modalUser.nickname || '行者'}{isSelf(modalUser) ? '（我）' : ''}
               {modalUser.gender !== '未知' && <Text style={{ fontSize: '26rpx', color: C.green, marginLeft: '8rpx' }}>{GENDER_ICON[modalUser.gender] || ''}</Text>}
             </Text>
             {!isSelf(modalUser) && (
               <Text style={{ fontSize: '26rpx', color: C.green, textAlign: 'center', marginTop: '14rpx' }}>共同参加 {modalUser.commonActivityCount} 场活动</Text>
             )}
-            <View style={{ background: '#FBFAF6', border: '1rpx solid #EDE9DF', borderRadius: '18rpx', padding: '24rpx', marginTop: '28rpx' }}>
-              <Text style={{ fontSize: '26rpx', fontWeight: '600', color: C.dark, display: 'block' }}>金句</Text>
-              <Text style={{ fontSize: '26rpx', color: C.body, lineHeight: '1.6', marginTop: '12rpx' }}>{modalUser.motto ? `"${modalUser.motto}"` : '他还没有留下金句。'}</Text>
-            </View>
+            {modalUser.motto ? (
+              <View style={{ background: '#FBFAF6', border: '1rpx solid #EDE9DF', borderRadius: '18rpx', padding: '24rpx', marginTop: '28rpx' }}>
+                <Text style={{ fontSize: '26rpx', color: C.body, lineHeight: '1.6' }}>"{modalUser.motto}"</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       )}

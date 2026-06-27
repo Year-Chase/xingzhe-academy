@@ -2,6 +2,7 @@ import { View, Text, Button, Image } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useState, useEffect, useCallback } from 'react'
 import { getUserId } from '../../../utils/user'
+import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -23,6 +24,8 @@ export default function QRPage() {
   const [error, setError] = useState('')
   const [location, setLocation] = useState('')
   const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [activity, setActivity] = useState<any>(null)
   // V2.5C: group QR
   const [groupQr, setGroupQr] = useState<any>(null)
   const [showGroupQr, setShowGroupQr] = useState(false)
@@ -53,6 +56,8 @@ export default function QRPage() {
       setTitle(d.title || title)
       setLocation(d.location || '')
       setStartTime(d.startTime || '')
+      setEndTime(d.endTime || '')
+      setActivity(d)
       // V2.5.1: check if finished
       if (d.endTime && new Date(d.endTime).getTime() < Date.now()) setIsFinished(true)
       // V2.5C: capture group QR info
@@ -67,14 +72,15 @@ export default function QRPage() {
         const st = (s.data as any)?.status
         setQrStatus(st === 'CHECKED_IN' ? 'CHECKED_IN' : 'EXPIRED')
       }
-    } catch (_e) {
+    } catch (e) {
+      console.error('[activity-qr] load', e)
       try {
         const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
         const st = (s.data as any)?.status
         if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
         else if (st === 'EXPIRED') setQrStatus('EXPIRED')
         else setQrStatus('ACTIVE')
-      } catch (_e) { setError('加载失败'); setQrStatus('EXPIRED') }
+      } catch (e2) { console.error('[activity-qr] status fallback', e2); setError('加载失败'); setQrStatus('EXPIRED') }
     }
   }, [])
 
@@ -83,7 +89,7 @@ export default function QRPage() {
     try {
       const res = await Taro.request({ method: 'POST', url: `${API}/activity/${activityId}/checkin`, data: { code } })
       if (res.data?.status === 'CHECKED_IN') { setQrStatus('CHECKED_IN'); Taro.showToast({ title: '签到成功', icon: 'success' }) }
-    } catch (_e) { Taro.showToast({ title: '签到失败，请重试', icon: 'none' }) }
+    } catch (e) { console.error('[activity-qr] checkin', e); Taro.showToast({ title: '签到失败，请重试', icon: 'none' }) }
     finally { setActing(false) }
   }
 
@@ -151,12 +157,36 @@ export default function QRPage() {
       {/* ── Activity info card ── */}
       <View style={{ margin: '24rpx 32rpx', background: C.white, borderRadius: '24rpx', padding: '24rpx 28rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)' }}>
         <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark, display: 'block' }}>{title}</Text>
-        {(startTime || location) && (
+        {/* Activity time — start + end with same-day dedup */}
+        {(startTime || endTime) && (
           <View style={{ marginTop: '16rpx' }}>
-            {startTime && <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', lineHeight: '1.5' }}>📅 {fmtDate(startTime)}</Text>}
-            {location && <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', lineHeight: '1.5', marginTop: startTime ? '6rpx' : 0 }}>📍 {location}</Text>}
+            <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', lineHeight: '1.5' }}>
+              📅 {(() => {
+                if (!startTime) return '活动时间待确认'
+                const pad = (n: number) => String(n).padStart(2, '0')
+                const fmtDT = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+                const fmtT = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+                const sd = new Date(startTime)
+                if (isNaN(sd.getTime())) return '活动时间待确认'
+                if (!endTime) return fmtDT(sd)
+                const ed = new Date(endTime)
+                if (isNaN(ed.getTime())) return fmtDT(sd)
+                const sameDay = sd.getFullYear() === ed.getFullYear() && sd.getMonth() === ed.getMonth() && sd.getDate() === ed.getDate()
+                return sameDay ? `${fmtDT(sd)} - ${fmtT(ed)}` : `${fmtDT(sd)} - ${fmtDT(ed)}`
+              })()}
+            </Text>
           </View>
         )}
+        {/* Location row — full-row clickable with navigation icon */}
+        {(activity as any)?.locationName || location ? (
+          <View onClick={() => { if (canOpenActivityLocation(activity)) openActivityLocation(activity); else Taro.showToast({ title: '暂无可导航定位', icon: 'none' }) }}
+            style={{ marginTop: (startTime || endTime) ? '10rpx' : '16rpx', display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ flex: 1, fontSize: '24rpx', color: C.neutral, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              📍 {(activity as any)?.locationName || location || '活动地点待确认'}
+            </Text>
+            <Text style={{ flexShrink: 0, fontSize: '28rpx', color: C.green, marginLeft: '8rpx' }}>↗</Text>
+          </View>
+        ) : null}
         <View style={{ marginTop: '16rpx', padding: '4rpx 14rpx', background: C.lightGreen, borderRadius: '999rpx', alignSelf: 'flex-start', display: 'inline-block' }}>
           <Text style={{ fontSize: '22rpx', color: C.green }}>{qrStatus === 'ACTIVE' ? '有效' : qrStatus === 'CHECKED_IN' ? '已签到' : '已失效'}</Text>
         </View>

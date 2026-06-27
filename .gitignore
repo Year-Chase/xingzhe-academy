@@ -20,3 +20,10 @@ backend/data/
 
 # Local dev config & QA agent secrets
 .local/
+
+# Runtime uploads
+backend/uploads/
+
+# Environment variants
+.env.*
+!.env.example

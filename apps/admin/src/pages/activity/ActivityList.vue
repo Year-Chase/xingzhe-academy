@@ -53,6 +53,11 @@ interface FormData {
   prepayAmount: number; remainingAmount: number; remainingPayDate: string
   requiredUserInfoFields: string[]
   groupQrType: string; groupQrImageUrl: string; groupQrTitle: string; groupQrDescription: string
+  certificateTemplateId: number | null
+  provinceCode: string; cityCode: string; provinceName: string; cityName: string
+  adcode: string; lng: number | null; lat: number | null
+  locationName: string; locationAddress: string; locationLat: number | null; locationLng: number | null
+  coordinateType: string; locationProvider: string
 }
 
 // ── state ──
@@ -73,11 +78,17 @@ const form = reactive<FormData>({
   prepayAmount: 0, remainingAmount: 0, remainingPayDate: '',
   requiredUserInfoFields: [],
   groupQrType: 'NONE', groupQrImageUrl: '', groupQrTitle: '加入活动群', groupQrDescription: '活动通知、集合安排和现场事项将在群内同步',
+  certificateTemplateId: null,
+  provinceCode: '', cityCode: '', provinceName: '', cityName: '',
+  adcode: '', lng: null, lat: null,
+  locationName: '', locationAddress: '', locationLat: null, locationLng: null,
+  coordinateType: 'gcj02', locationProvider: 'manual',
 })
 // ── V2.5B: Memory drawer ──
 const memoryDrawer = ref(false); const memoryId = ref(0); const memoryTitle = ref('')
 const memoryImages = ref<any[]>([]); const memoryText = ref(''); const memoryUploadLoading = ref(false)
 const memoryLoading = ref(false); const memoryError = ref('')
+const certTemplates = ref<any[]>([]); const certTemplatesLoading = ref(false)
 
 const statusOptions = [
   { label: '全部', value: '' }, { label: '未发布', value: 'DRAFT' },
@@ -87,6 +98,7 @@ const qrTypeOptions = [
   { label: '不展示', value: 'NONE' }, { label: '微信群二维码', value: 'WECHAT_GROUP' },
   { label: '企业微信群二维码', value: 'WECOM_GROUP' }, { label: '企业微信群活码', value: 'WECOM_LIVE_CODE' },
 ]
+
 const regFieldOptions = [
   { label: '真实姓名', value: 'realName' }, { label: '手机号', value: 'phone' },
   { label: '身份证号', value: 'idCardNo' }, { label: '出发城市', value: 'departureCity' },
@@ -140,6 +152,11 @@ const resetForm = () => {
   form.prepayAmount = 0; form.remainingAmount = 0; form.remainingPayDate = ''
   form.requiredUserInfoFields = []
   form.groupQrType = 'NONE'; form.groupQrImageUrl = ''; form.groupQrTitle = '加入活动群'; form.groupQrDescription = '活动通知、集合安排和现场事项将在群内同步'
+  form.certificateTemplateId = null
+  form.provinceCode = ''; form.cityCode = ''; form.provinceName = ''; form.cityName = ''
+  form.adcode = ''; form.lng = null; form.lat = null
+  form.locationName = ''; form.locationAddress = ''; form.locationLat = null; form.locationLng = null
+  form.coordinateType = 'gcj02'; form.locationProvider = 'manual'
   coverPreview.value = ''; qrPreview.value = ''; formError.value = ''
 }
 const openCreate = () => { resetForm(); formMode.value = 'create'; formId.value = 0; formDrawer.value = true }
@@ -156,6 +173,13 @@ const openEdit = (row: ActivityItem) => {
   form.groupQrImageUrl = row.groupQrImageUrl || ''
   form.groupQrTitle = row.groupQrTitle || '加入活动群'
   form.groupQrDescription = row.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'
+  form.certificateTemplateId = (row as any).certificateTemplateId ?? null
+  form.locationName = (row as any).locationName || ''
+  form.locationAddress = (row as any).locationAddress || ''
+  form.locationLat = (row as any).locationLat ?? null
+  form.locationLng = (row as any).locationLng ?? null
+  form.coordinateType = (row as any).coordinateType || 'gcj02'
+  form.locationProvider = (row as any).locationProvider || 'manual'
   form.startTime = toLocal(row.startTime); form.endTime = toLocal(row.endTime)
   form.registrationStartTime = toLocal(row.registrationStartTime); form.registrationEndTime = toLocal(row.registrationEndTime)
   form.coverImage = row.coverImage || ''; coverPreview.value = row.coverImage || ''
@@ -165,24 +189,45 @@ const openEdit = (row: ActivityItem) => {
   formError.value = ''; formDrawer.value = true
 }
 const submitForm = async () => {
-  if (!form.title || !form.location || !form.startTime || !form.endTime || !form.registrationStartTime || !form.registrationEndTime || !form.capacity || form.capacity <= 0) { formError.value = '标题、地点、活动开始/结束时间、报名开始/结束时间、人数（>0）为必填项'; return }
+  if (!form.title || !form.startTime || !form.endTime || !form.registrationStartTime || !form.registrationEndTime || !form.capacity || Number(form.capacity) <= 0) { formError.value = '标题、活动开始/结束时间、报名开始/结束时间、人数（>0）为必填项'; return }
+  if (!form.province?.trim() || !form.city?.trim()) { formError.value = '请填写活动省份和城市'; return }
   if (new Date(form.endTime) <= new Date(form.startTime)) { formError.value = '活动结束时间必须晚于活动开始时间'; return }
   if (new Date(form.registrationEndTime) <= new Date(form.registrationStartTime)) { formError.value = '报名结束时间必须晚于报名开始时间'; return }
   if (form.paymentMode === 'PREPAY' && (form.prepayAmount == null || form.prepayAmount === undefined || form.remainingAmount == null || form.remainingAmount === undefined)) { formError.value = '预付+后付模式下，预付金额和后付金额为必填项'; return }
+  if (!form.locationName?.trim()) { formError.value = '请填写活动地点名称'; return }
+  // LOCATION-GUARD-003: validate raw coordinate values first, reject 0,0
+  const rawLng = String(form.locationLng ?? '').trim()
+  const rawLat = String(form.locationLat ?? '').trim()
+  if (!rawLng || !rawLat) { formError.value = '请填写活动地点经纬度'; return }
+  const lng = Number(rawLng)
+  const lat = Number(rawLat)
+  if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90 || (lng === 0 && lat === 0)) { formError.value = '请填写活动地点经纬度'; return }
   formLoading.value = true; formError.value = ''
+  const normalizedLocationName = String(form.locationName || '').trim()
+  const normalizedLocationAddress = normalizedLocationName
+  const syncLocation = normalizedLocationName
+  const syncProvince = String(form.province || '').trim()
+  const syncCity = String(form.city || '').trim()
   const body: any = {
-    title: form.title, slogan: form.slogan || undefined, province: form.province || undefined,
-    description: form.description, location: form.location, city: form.city || undefined,
-    capacity: form.capacity, coverImage: form.coverImage || undefined,
+    title: form.title, slogan: form.slogan || undefined, province: syncProvince || undefined,
+    description: form.description, location: syncLocation, city: syncCity || undefined,
+    capacity: Number(form.capacity), coverImage: form.coverImage || undefined,
     price: form.price, memberPrice: form.memberPrice, lifetimeMemberPrice: form.lifetimeMemberPrice,
     paymentMode: form.paymentMode,
     prepayAmount: form.prepayAmount, remainingAmount: form.remainingAmount,
     remainingPayDate: form.remainingPayDate || undefined,
     requiredUserInfoFields: form.requiredUserInfoFields,
     groupQrType: form.groupQrType || 'NONE',
-    groupQrImageUrl: form.groupQrImageUrl,     // send explicitly — even '' to clear
+    groupQrImageUrl: form.groupQrImageUrl,
     groupQrTitle: form.groupQrTitle,
     groupQrDescription: form.groupQrDescription,
+    certificateTemplateId: form.certificateTemplateId ?? undefined,
+    provinceName: syncProvince || '', provinceCode: '',
+    cityName: syncCity || '', cityCode: '',
+    adcode: '', lng: null, lat: null,
+    locationName: normalizedLocationName, locationAddress: normalizedLocationAddress,
+    locationLat: lat, locationLng: lng,
+    coordinateType: form.coordinateType || 'gcj02', locationProvider: form.locationProvider || 'manual',
   }
   if (formMode.value === 'edit') {
     body.startTime = form.startTime !== toLocal(origStart.value) ? new Date(form.startTime).toISOString() : origStart.value
@@ -248,7 +293,14 @@ const columns = [
   { colKey: 'actions', title: '操作', width: 260, fixed: 'right' as const },
 ]
 
-onMounted(fetchList)
+const fetchCertTemplates = async () => {
+  certTemplatesLoading.value = true
+  try { certTemplates.value = await get<any[]>('/admin/certificate-templates') }
+  catch (_e) { /* ignore */ }
+  finally { certTemplatesLoading.value = false }
+}
+
+onMounted(() => { fetchList(); fetchCertTemplates() })
 </script>
 
 <template>
@@ -316,8 +368,11 @@ onMounted(fetchList)
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px;">基础信息</div>
         <div><label style="color: #8A9288; font-size: 13px;">活动标题 *</label><t-input v-model="form.title" placeholder="例如：晨跑打卡" /></div>
         <div><label style="color: #8A9288; font-size: 13px;">Slogan</label><t-input v-model="form.slogan" placeholder="少于100字" maxlength="100" /></div>
-        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">省份</label><t-input v-model="form.province" placeholder="例如：北京" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">城市</label><t-input v-model="form.city" placeholder="例如：北京" /></div></div>
-        <div><label style="color: #8A9288; font-size: 13px;">活动地点 *</label><t-input v-model="form.location" placeholder="例如：北京奥森" /></div>
+        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">省份</label><t-input v-model="form.province" placeholder="手动填写，如 重庆市 / 四川省" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">城市</label><t-input v-model="form.city" placeholder="手动填写，如 重庆 / 成都" /></div></div>
+        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动地点与坐标</div>
+        <div><label style="color: #8A9288; font-size: 13px;">地点名称 *</label><t-input v-model="form.locationName" placeholder="例如：奥林匹克森林公园南门" /></div>
+        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">经度 longitude *</label><t-input v-model="form.locationLng" placeholder="106.58" type="text" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">纬度 latitude *</label><t-input v-model="form.locationLat" placeholder="29.56" type="text" /></div></div>
+        <span style="font-size: 11px; color: #8A9288; display: block; margin-top: 4px;">高德/腾讯坐标通常为：经度,纬度。例如高德返回 106.58,29.56 时：经度 longitude 填 106.58，纬度 latitude 填 29.56。请勿填写反。不使用百度地图坐标，会产生偏移。</span>
         <div><label style="color: #8A9288; font-size: 13px;">活动描述</label><t-textarea v-model="form.description" placeholder="活动详细描述" :autosize="{ minRows: 2, maxRows: 4 }" /></div>
         <div><label style="color: #8A9288; font-size: 13px;">封面图</label>
           <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;"><input type="file" accept="image/jpeg,image/png,image/webp" @change="handleUpload" style="font-size: 13px;" /></div>
@@ -341,6 +396,10 @@ onMounted(fetchList)
           <div v-if="form.groupQrImageUrl" style="margin-top: 4px;"><img :src="form.groupQrImageUrl" style="max-width: 160px; max-height: 160px; border-radius: 8px; border: 1px solid #EDE9DF;" /></div>
           <div><label style="color: #8A9288; font-size: 13px;">入群标题</label><t-input v-model="form.groupQrTitle" placeholder="加入活动群" /></div>
           <div><label style="color: #8A9288; font-size: 13px;">入群说明</label><t-input v-model="form.groupQrDescription" placeholder="活动通知、集合安排和现场事项将在群内同步" /></div></template>
+
+        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">证书模板</div>
+        <div><t-select v-model="form.certificateTemplateId" :options="[{ label: '默认模板', value: null }, ...certTemplates.filter((t: any) => t.enabled).map((t: any) => ({ label: t.name, value: t.id }))]" placeholder="选择证书模板" clearable style="width: 100%;" /></div>
+
         <div v-if="formError" style="color: #B35B4B; font-size: 13px; margin-top: 4px;">{{ formError }}</div>
         <div style="display: flex; gap: 12px; margin-top: 8px;"><t-button @click="formDrawer = false" style="flex: 1; height: 40px;">取消</t-button><t-button @click="submitForm" :loading="formLoading" style="flex: 1; height: 40px; background: #2E7D5A; border-color: #2E7D5A; color: #fff;">{{ formMode === 'create' ? '创建' : '保存' }}</t-button></div>
       </div>

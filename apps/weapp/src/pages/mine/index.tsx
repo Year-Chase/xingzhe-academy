@@ -1,7 +1,7 @@
 import { View, Text, Image, Input, Picker } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro from '@tarojs/taro'
-import { getUserId, ensureUserId } from '../../utils/user'
+import { getUserId, isLoggedIn, logoutUser } from '../../utils/user'
 
 const API = 'http://172.20.10.10:3000'
 
@@ -57,16 +57,15 @@ export default function MinePage() {
   const [editGender, setEditGender] = useState(0)
   const [saving, setSaving] = useState(false)
 
-  // ── Load profile, login if needed ──
+  // ── Load profile ──
   const loadProfile = async () => {
-    let uid = getUserId()
-    if (!uid) uid = await ensureUserId(false)
-    if (!uid) { setError('请先完成登录'); setLoading(false); return }
+    if (!isLoggedIn()) { setError('请先完成登录'); setLoading(false); return }
+    const uid = getUserId()
     setLoading(true); setError('')
     try {
       const res = await Taro.request({ url: `${API}/users/${uid}/profile` })
       setProfile(res.data as UserProfile)
-    } catch { setError('加载失败') }
+    } catch (e) { console.error('[mine]', e); setError('加载失败') }
     finally { setLoading(false) }
   }
 
@@ -117,6 +116,7 @@ export default function MinePage() {
       setProfile(p)
       Taro.setStorageSync('xingzhe_user_profile', p)
     } catch (e: any) {
+      console.error('[mine]', e)
       Taro.showToast({ title: e?.errMsg || '保存失败', icon: 'none' })
     } finally { setSaving(false) }
   }
@@ -128,18 +128,26 @@ export default function MinePage() {
     return <View style={fullCenter}><Text style={{ fontSize: '28rpx', color: C.secondary }}>加载中...</Text></View>
   }
 
-  // ── Error ──
-  if (error && !profile) {
-    return (
-      <View style={{ ...fullCenter, flexDirection: 'column', padding: '32rpx' }}>
-        <Text style={{ fontSize: '30rpx', color: C.body, display: 'block', marginBottom: '8rpx' }}>暂未登录</Text>
-        <Text style={{ fontSize: '26rpx', color: C.neutral, display: 'block', textAlign: 'center' }}>{error}</Text>
-      </View>
-    )
+  // V2.6B: Login / logout
+  const handleLogout = () => {
+    setProfile(null)
+    setError('')
+    setLoading(false)
+    logoutUser() // clears storage + reLaunches to login page
   }
 
-  if (!profile) {
-    return <View style={fullCenter}><Text style={{ fontSize: '28rpx', color: C.neutral }}>数据异常</Text></View>
+  // ── Not logged in (profile null, no error) ──
+  if (!profile && !loading) {
+    return (
+      <View style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48rpx' }}>
+        <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block', marginBottom: '8rpx' }}>登录行者学社</Text>
+        <Text style={{ fontSize: '26rpx', color: C.neutral, textAlign: 'center', display: 'block', marginBottom: '32rpx' }}>登录后查看你的报名、证书和行者之路</Text>
+        <View onClick={() => Taro.reLaunch({ url: '/pages/auth/login/index' })} style={{ padding: '18rpx 56rpx', background: C.green, borderRadius: '999rpx' }}>
+          <Text style={{ fontSize: '30rpx', fontWeight: '600', color: '#FFFFFF' }}>去登录</Text>
+        </View>
+        {error ? <Text style={{ fontSize: '24rpx', color: '#B35B4B', marginTop: '16rpx' }}>{error}</Text> : null}
+      </View>
+    )
   }
 
   // ── EDIT MODE ──
@@ -243,15 +251,37 @@ export default function MinePage() {
         <Row label='类型' value={profile.identityType} last />
       </View>
 
-      {/* Menu placeholder */}
+      {/* Menu */}
       <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', border: `1rpx solid ${C.border}`, overflow: 'hidden' }}>
-        <MenuRow label='我的订单' border />
-        <MenuRow label='我的证书' border />
-        <MenuRow label='我的足迹' border />
-        <MenuRow label='我的邀请' />
+        {/* 我的报名 */}
+        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
+          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的报名</Text>
+          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+        </View>
+        {/* 我的证书 — navigate to cert list page */}
+        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
+          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的证书</Text>
+          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+        </View>
+        {/* 我的订单 — not yet available */}
+        <View onClick={() => Taro.showToast({ title: '当前暂无订单', icon: 'none' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
+          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的订单</Text>
+          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+        </View>
+        {/* 我的邀请 — not yet available */}
+        <View onClick={() => Taro.showToast({ title: '当前暂无邀请记录', icon: 'none' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx' }}>
+          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的邀请</Text>
+          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+        </View>
       </View>
 
-      <View style={{ padding: '40rpx 32rpx', textAlign: 'center' }}>
+      <View style={{ marginTop: '32rpx', padding: '0 32rpx', textAlign: 'center' }}>
+        <View onClick={handleLogout} style={{ padding: '14rpx 0', borderRadius: '999rpx', border: `1rpx solid ${C.border}`, background: C.white }}>
+          <Text style={{ fontSize: '26rpx', color: '#B35B4B' }}>退出登录</Text>
+        </View>
+      </View>
+
+      <View style={{ padding: '20rpx 32rpx 40rpx', textAlign: 'center' }}>
         <Text style={{ fontSize: '24rpx', color: C.secondary }}>行者学社 · 把身体从屏幕里带出来</Text>
       </View>
     </View>
