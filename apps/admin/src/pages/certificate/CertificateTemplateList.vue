@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { get, post, patch } from '@/api/client'
+import { assetUrl } from '@/config/api'
 
 interface CertTemplate {
   id: number; name: string; description: string; imageUrl: string
@@ -102,7 +103,7 @@ const doDisable = async (row: CertTemplate) => {
 function imgUrl(url?: string): string {
   if (!url) return ''
   if (/^https?:\/\//.test(url)) return url
-  if (url.startsWith('/uploads/')) return 'http://localhost:3000' + url
+  if (url.startsWith('/uploads/')) return assetUrl(url)
   return url
 }
 

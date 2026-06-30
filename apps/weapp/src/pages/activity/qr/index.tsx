@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { getUserId } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
-const API = 'http://172.20.10.10:3000'
+import { API_BASE_URL as API } from '../../../config/api'
 
 type QRState = 'ACTIVE' | 'CHECKED_IN' | 'EXPIRED' | 'loading'
 

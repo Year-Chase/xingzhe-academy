@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { get, post, patch } from '@/api/client'
+import { assetUrl } from '@/config/api'
 
 // ── V2.5B helpers ──
 const yuan = (n: number) => '¥' + (n || 0).toFixed(2)
@@ -376,7 +377,7 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
         <div><label style="color: #8A9288; font-size: 13px;">活动描述</label><t-textarea v-model="form.description" placeholder="活动详细描述" :autosize="{ minRows: 2, maxRows: 4 }" /></div>
         <div><label style="color: #8A9288; font-size: 13px;">封面图</label>
           <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;"><input type="file" accept="image/jpeg,image/png,image/webp" @change="handleUpload" style="font-size: 13px;" /></div>
-          <div v-if="coverPreview" style="margin-top: 8px;"><img :src="'http://127.0.0.1:3000' + coverPreview" style="max-width: 200px; max-height: 120px; border-radius: 8px; border: 1px solid #EDE9DF;" /></div>
+          <div v-if="coverPreview" style="margin-top: 8px;"><img :src="assetUrl(coverPreview)" style="max-width: 200px; max-height: 120px; border-radius: 8px; border: 1px solid #EDE9DF;" /></div>
         </div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">时间与名额</div>
         <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动开始时间 *</label><t-input v-model="form.startTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动结束时间 *</label><t-input v-model="form.endTime" type="datetime-local" /></div></div>

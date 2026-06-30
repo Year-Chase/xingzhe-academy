@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import Taro from '@tarojs/taro'
 import { getUserId, isLoggedIn, logoutUser } from '../../utils/user'
 
-const API = 'http://172.20.10.10:3000'
+import { API_BASE_URL as API } from '../../config/api'
 
 // ── UI-STANDARD colors ──
 const C = {

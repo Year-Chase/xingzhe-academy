@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Patch, Param, Body, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage } from 'multer'
-import { extname, join } from 'path'
-import { mkdirSync, existsSync } from 'fs'
+import { extname } from 'path'
+import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
 import { CertificateService } from './certificate.service'
 
 @Controller('admin/certificate-templates')
@@ -43,8 +43,7 @@ export class CertificateController {
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (_req, _file, cb) => {
-        const dir = join(__dirname, '..', '..', 'uploads', 'certificate')
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        const dir = ensureUploadSubDir('certificate')
         cb(null, dir)
       },
       filename: (_req, file, cb) => {
@@ -63,6 +62,6 @@ export class CertificateController {
   }))
   upload(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException('No file uploaded')
-    return { url: '/uploads/certificate/' + file.filename }
+    return { url: toPublicUploadUrl('certificate', file.filename) }
   }
 }

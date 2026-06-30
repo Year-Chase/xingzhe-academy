@@ -1,6 +1,6 @@
 import Taro from '@tarojs/taro'
 
-const API = 'http://172.20.10.10:3000'
+import { API_BASE_URL as API } from '../config/api'
 
 /**
  * Read login state from Storage.

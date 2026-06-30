@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Taro from '@tarojs/taro'
 import { getUserId, isLoggedIn } from '../../../utils/user'
 
-const API = 'http://172.20.10.10:3000'
+import { API_BASE_URL as API } from '../../../config/api'
 
 const C = {
   bg: '#F7F5F1', card: '#FFFFFF', ink: '#18231E', body: '#4E5A52',

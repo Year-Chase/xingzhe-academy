@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { ensureUserId } from '../../utils/user'
 
-const API = 'http://172.20.10.10:3000'
+import { API_BASE_URL as API } from '../../config/api'
 
 interface ActivityCard {
   id: number; title: string; description: string; location: string

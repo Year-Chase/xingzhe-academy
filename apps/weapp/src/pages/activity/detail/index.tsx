@@ -4,7 +4,7 @@ import Taro, { useRouter } from '@tarojs/taro'
 import { getUserId, isLoggedIn } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
-const API = 'http://172.20.10.10:3000'
+import { API_BASE_URL as API } from '../../../config/api'
 
 function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; style: React.CSSProperties; mode?: string }) {
   const [failed, setFailed] = useState(false)

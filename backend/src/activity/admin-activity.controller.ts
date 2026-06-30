@@ -3,8 +3,8 @@ import { FileInterceptor } from '@nestjs/platform-express'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { diskStorage } from 'multer'
-import { extname, join } from 'path'
-import { mkdirSync, existsSync } from 'fs'
+import { extname } from 'path'
+import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
@@ -167,8 +167,7 @@ export class AdminActivityController {
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (_req, _file, cb) => {
-        const dir = join(__dirname, '..', '..', 'uploads', 'activity')
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        const dir = ensureUploadSubDir('activity')
         cb(null, dir)
       },
       filename: (_req, file, cb) => {
@@ -187,6 +186,6 @@ export class AdminActivityController {
   }))
   uploadCover(@UploadedFile() file: UploadedActivityImageFile)  {
     if (!file) throw new BadRequestException('No file uploaded')
-    return { url: '/uploads/activity/' + file.filename }
+    return { url: toPublicUploadUrl('activity', file.filename) }
   }
 }
