@@ -14,6 +14,10 @@ export class ActivityService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Only seed demo activities when explicitly enabled for local dev.
+    // Production must never auto-create fake data.
+    if (process.env.ENABLE_DEMO_SEED !== 'true') return
+
     const count = await this.activityRepo.count()
     if (count > 0) return
     const now = new Date()
@@ -69,7 +73,7 @@ export class ActivityService implements OnModuleInit {
         capacity: 12, status: 'PUBLISHED',
       },
     ] as any)
-    console.log('[ActivityService] Seeded 5 activities')
+    console.log('[ActivityService] Seeded 5 demo activities')
   }
 
   // ── WeApp facing ──
