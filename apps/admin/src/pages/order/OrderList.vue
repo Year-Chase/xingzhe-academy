@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useRouter } from 'vue-router'
 import { get, post } from '@/api/client'
 
-interface OrderItem { id: number; registrationId: number; userId: string; activityId: number; amount: number; refundedAmount: number; status: string; payType: string; createdAt: string; paidAt: string; refundedAt: string }
+interface OrderItem { id: number; registrationId: number; userId: string; userNickname: string; activityId: number; activityTitle: string; amount: number; refundedAmount: number; status: string; payType: string; createdAt: string; paidAt: string; refundedAt: string }
 interface PageData { items: OrderItem[]; total: number; page: number; limit: number }
 
 const list = ref<OrderItem[]>([]); const total = ref(0); const page = ref(1); const limit = ref(20); const loading = ref(false)
@@ -30,16 +31,23 @@ const doRefund = async () => {
 const statusLabel = (s: string) => ({ PENDING: '交易处理中', PAID: '已支付', FAILED: '支付失败', REFUNDED: '已退款', PARTIAL_REFUND: '部分退款' } as any)[s] || s
 const statusColor = (s: string) => ({ PAID: '#2E7D5A', REFUNDED: '#8A9288', PARTIAL_REFUND: '#C98255', PENDING: '#8A9288', FAILED: '#B35B4B' } as any)[s] || '#666'
 
+const router = useRouter()
+
 const columns = [
   { colKey: 'id', title: 'ID', width: 60 },
-  { colKey: 'userId', title: '用户', width: 80, cell: (_h: any, { row }: any) => row.userId || '-' },
-  { colKey: 'activityId', title: '活动', width: 60, cell: (_h: any, { row }: any) => row.activityId ?? '-' },
+  { colKey: 'userId', title: '用户ID', width: 100, cell: (_h: any, { row }: any) => {
+    const uid = row.userId || '-'
+    return uid.length > 18 ? uid.slice(0, 8) + '...' + uid.slice(-6) : uid
+  } },
+  { colKey: 'userNickname', title: '用户昵称', width: 90 },
+  { colKey: 'activityId', title: '活动ID', width: 65, cell: (_h: any, { row }: any) => row.activityId ?? '-' },
+  { colKey: 'activityTitle', title: '活动名称', width: 130, cell: (_h: any, { row }: any) => row.activityTitle || '-' },
   { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => `¥${row.amount}` },
   { colKey: 'refundedAmount', title: '已退', width: 80, cell: (_h: any, { row }: any) => `¥${row.refundedAmount || 0}` },
   { colKey: 'status', title: '状态', width: 110 },
   { colKey: 'payType', title: '类型', width: 60, cell: (_h: any, { row }: any) => ({ FULL: '全款', PREPAY: '预付' } as any)[row.payType] || row.payType },
-  { colKey: 'createdAt', title: '创建', width: 130, cell: (_h: any, { row }: any) => fmt(row.createdAt) },
-  { colKey: 'paidAt', title: '支付', width: 130, cell: (_h: any, { row }: any) => fmt(row.paidAt) },
+  { colKey: 'createdAt', title: '创建时间', width: 130, cell: (_h: any, { row }: any) => fmt(row.createdAt) },
+  { colKey: 'paidAt', title: '最近支付时间', width: 140, cell: (_h: any, { row }: any) => fmt(row.paidAt) },
   { colKey: 'actions', title: '操作', width: 80, fixed: 'right' as const },
 ]
 
@@ -54,6 +62,10 @@ onMounted(fetchList)
     <div style="background: #FFFFFF; border-radius: 12px; border: 1px solid #EDE9DF; overflow-x: auto;">
       <t-table :data="list" :columns="columns" row-key="id" hover stripe size="small" :loading="loading"
         :pagination="{ current: page, pageSize: limit, total, showJumper: true }" @page-change="onPageChange">
+        <template #userNickname="{ row }">
+          <span v-if="row.userId" style="color: #2E7D5A; cursor: pointer; text-decoration: underline;" @click="router.push('/crm/users/' + row.userId)">{{ row.userNickname || row.userId }}</span>
+          <span v-else style="color: #8A9288;">-</span>
+        </template>
         <template #status="{ row }">
           <span :style="{ color: statusColor(row.status), fontSize: '13px', fontWeight: 500 }">{{ statusLabel(row.status) }}</span>
         </template>

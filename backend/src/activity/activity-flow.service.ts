@@ -9,6 +9,7 @@ import { ActivityQR } from './entities/activity-qr.entity'
 import { ActivityRefund } from './entities/activity-refund.entity'
 import { ActivityInvoice, InvoiceStatus } from './entities/activity-invoice.entity'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
+import { User } from '../users/entities/user.entity'
 
 @Injectable()
 export class ActivityFlowService {
@@ -27,6 +28,8 @@ export class ActivityFlowService {
     private readonly invoiceRepo: Repository<ActivityInvoice>,
     @InjectRepository(ActivityRegistrationInfo)
     private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
   ) {}
 
   // ──── register ────
@@ -272,7 +275,27 @@ export class ActivityFlowService {
     if (filters?.endDate) qb.andWhere('o.createdAt <= :ed', { ed: filters.endDate })
     qb.skip((page - 1) * limit).take(limit)
     const [items, total] = await qb.getManyAndCount()
-    return { items, total }
+
+    // Light join: fetch User nicknames and Activity titles post-query
+    const userIds = [...new Set(items.map(o => o.userId).filter(Boolean))] as string[]
+    const activityIds = [...new Set(items.filter(o => o.activityId != null).map(o => o.activityId))] as number[]
+    const users = userIds.length > 0 ? await this.userRepo.find({ where: userIds.map(id => ({ id } as any)) }) : []
+    const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: activityIds.map(id => ({ id } as any)) }) : []
+    const userMap = new Map<string, any>()
+    const activityMap = new Map<number, any>()
+    for (const u of users) { userMap.set(u.id, u) }
+    for (const a of activities) { activityMap.set(a.id, a) }
+
+    const enriched = items.map(o => ({
+      id: o.id, registrationId: o.registrationId, userId: o.userId,
+      userNickname: (userMap.get(o.userId || '') as any)?.nickname || o.userId || '',
+      activityId: o.activityId,
+      activityTitle: o.activityId != null ? (activityMap.get(o.activityId) as any)?.title || '' : '',
+      amount: o.amount, refundedAmount: o.refundedAmount, status: o.status,
+      payType: o.payType, createdAt: o.createdAt, paidAt: o.paidAt, refundedAt: o.refundedAt,
+    }))
+
+    return { items: enriched, total }
   }
 
   // ──── Admin: refund ────

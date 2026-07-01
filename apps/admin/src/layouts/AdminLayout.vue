@@ -81,7 +81,7 @@ function isActive(path: string) {
         <span style="color: #8A9288; font-size: 14px;">Admin v1.0</span>
       </t-header>
 
-      <t-content style="background: #F7F6F2; padding: 24px;">
+      <t-content style="background: #F7F6F2; padding: 24px; overflow-x: auto; min-width: 0;">
         <router-view />
       </t-content>
     </t-layout>

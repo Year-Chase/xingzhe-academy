@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { get } from '@/api/client'
+import { assetUrl } from '@/config/api'
 
 interface UserItem {
   userId: string; nickname: string | null; avatarUrl: string | null
@@ -68,7 +69,11 @@ const onReset = () => {
 
 const columns = [
   { colKey: 'avatarUrl', title: '头像', width: 60 },
-  { colKey: 'userId', title: '用户ID', width: 110, cell: (_h: any, { row }: any) => row.userId || '-' },
+  { colKey: 'userId', title: '用户ID', width: 120, cell: (_h: any, { row }: any) => {
+    const uid = row.userId || '-'
+    if (uid.length > 20) return uid.slice(0, 10) + '...' + uid.slice(-8)
+    return uid
+  } },
   { colKey: 'nickname', title: '昵称', width: 90, cell: (_h: any, { row }: any) => row.nickname || '-' },
   { colKey: 'gender', title: '性别', width: 60, cell: (_h: any, { row }: any) => genderLabel(row.gender) },
   { colKey: 'phone', title: '手机号', width: 110, cell: (_h: any, { row }: any) => row.phone || '-' },
@@ -121,7 +126,7 @@ onMounted(fetchList)
       <t-table :data="list" :columns="columns" row-key="userId" hover stripe size="small" :loading="loading"
         :pagination="{ current: page, pageSize: limit, total, showJumper: true }" @page-change="onPageChange">
         <template #avatarUrl="{ row }">
-          <img v-if="row.avatarUrl" :src="row.avatarUrl" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" />
+          <img v-if="row.avatarUrl" :src="assetUrl(row.avatarUrl)" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" />
           <div v-else style="width:32px;height:32px;border-radius:50%;background:#EEF5EF;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A8178;">-</div>
         </template>
         <template #actions="{ row }">

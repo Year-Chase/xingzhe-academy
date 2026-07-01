@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { get, post, del, patch } from '@/api/client'
+import { assetUrl } from '@/config/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -156,7 +157,7 @@ onMounted(fetchDetail)
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="display: flex; align-items: flex-start; gap: 16px;">
             <div style="width: 64px; height: 64px; border-radius: 50%; background: #EEF5EF; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
-              <img v-if="data.avatarUrl" :src="data.avatarUrl" style="width:100%;height:100%;object-fit:cover;" />
+              <img v-if="data.avatarUrl" :src="assetUrl(data.avatarUrl)" style="width:100%;height:100%;object-fit:cover;" />
               <span v-else style="font-size: 24px; color: #A6AAA2;">-</span>
             </div>
             <div>
