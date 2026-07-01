@@ -54,18 +54,25 @@ PROJECT-CONSTITUTION
 
 5. 系统优先级
 
-当前阶段优先级：
+当前阶段优先级（V2.7.2 线上测试稳定版）：
 
-P1 活动报名支付闭环
-P2 订单 / 退款 / 财务 / 发票
-P3 CRM 用户运营
-P4 真实用户与微信登录
-P5 活动产品模型增强
-P6 真实支付与订单增强
-P7 证书传播
-P8 行者地图
-P9 邀请增长
-P10 云部署上线
+P1 活动报名支付闭环 ✅ 已完成
+P2 订单 / 退款 / 财务 / 发票 ✅ 已完成
+P3 CRM 用户运营 ✅ 已完成
+P4 真实用户与微信登录 ✅ 已完成
+P5 活动产品模型增强 ✅ 已完成
+P6 证书模板基础能力 ✅ 已完成（V2.7.3 需完整回归）
+P7 行者地图 / 足迹 / 活动地点 ✅ V2.6 已完成基础版
+P8 线上部署上线 ✅ V2.7 已完成（腾讯云 MySQL + Nginx + HTTPS）
+P9 真实支付（当前不接）
+P10 邀请增长（后续版本）
+
+V2.7.3 阶段原则：
+- 只做稳定性、回归、线上问题修复
+- 不扩展大功能
+- 不改主链路
+- 不接真实支付
+- 不新增 Entity / 大表结构
 
 6. 产品原则
 活动系统优先
@@ -138,7 +145,8 @@ Dev Agent：Claude
 代码实现
 接口实现
 前端实现
-运行 QA
+自查（不允许以"我已验证通过"替代 QA Agent 报告）
+完成后输出可交给 QA Agent 的检查清单
 
 QA Agent：tools/qa-agent + 豆包/火山方舟
 
@@ -148,6 +156,17 @@ QA Agent：tools/qa-agent + 豆包/火山方舟
 API 回归
 LLM 审查
 报告输出
+独立质量检查（Claude 不允许替代 QA Agent）
+
+正确开发流程：
+1. CEO Agent 输出需求文档
+2. Claude 执行开发
+3. Claude 自查
+4. QA Agent 独立检查
+5. CEO Agent 根据 QA 报告判断是否修复
+6. Claude 修复后重跑 QA
+7. QA blocking = 0 后人工验收
+8. Git 封版
 11. 文档优先级
 
 PROJECT-CONSTITUTION
@@ -172,9 +191,32 @@ ADMIN-PRD / ADMIN-API-CONTRACT
 
 当前版本：
 
-V2.3 本地运营框架版。
+V2.7.2 Online Test Release（线上测试稳定版）。
+
+当前不是 Demo，不是纯本地开发阶段。
+
+线上环境：
+- Admin：https://admin.tenselog.cn
+- API：https://api.tenselog.cn
+- 服务器：腾讯云 Ubuntu 24.04
+- 后端：NestJS + TypeORM + MySQL（生产）/ SQLite（本地开发）
+- 小程序体验版 2.7.2 已上传并设为体验版
+
+已完成线上验收：
+- Admin 真实 token 登录通过
+- fake-token 拒绝验证通过
+- 无 token 访问返回 401
+- 活动报名到核销主链路闭合
+- Admin 手机核销闭合
+- 财务退款开票基础闭环闭合
 
 下一阶段：
 
-P2.3.5 Documentation Sync
-V2.4 真实用户与微信登录
+V2.7.3 Stability & Regression（稳定性与回归）
+V2.8 活动内容 / 会员价格 / 发票 / 证书增强
+V2.9 真实微信支付与财务闭环
+V3.0 正式提审 / 增长 / CRM / 运营体系
+
+**历史版本说明**（已被 V2.7.2 替代）：以下 P2.3.5 / V2.4 为旧版本规划，均已执行完毕。
+- P2.3.5 Documentation Sync → 已完成（当前文档同步即其延续）
+- V2.4 真实用户与微信登录 → 已完成

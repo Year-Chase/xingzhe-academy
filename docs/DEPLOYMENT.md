@@ -3,22 +3,33 @@ DEPLOYMENT
 行者学社 DEPLOYMENT
 1. 当前部署状态
 
-当前版本：V2.3 本地运营框架版。
+当前版本：V2.7.2 Online Test Release。
 
 当前部署形态：
 
-本地开发
-本地 SQLite
-本地 uploads
-本地 Admin
-本地 WeApp 开发者工具
-本地 QA Agent
+腾讯云线上测试环境：
+- 服务器：腾讯云 Ubuntu 24.04，公网 IP：82.156.129.114
+- 后端目录：/srv/xingzhe/backend
+- Admin 静态目录：/var/www/xingzhe-admin
+- 上传目录：/data/xingzhe/uploads
+- 数据库：MySQL（腾讯云）
+- 进程管理：PM2
+- Web 服务器：Nginx
+- HTTPS：Certbot（Let's Encrypt）
+- HTTP 自动跳转 HTTPS
 
-当前不是生产部署。
+线上域名：
+- Admin：https://admin.tenselog.cn
+- API：https://api.tenselog.cn
+- 上传资源：https://api.tenselog.cn/uploads/...
 
-当前不是腾讯云数据库。
+本地开发环境：
+- macOS
+- SQLite（/backend/data/xingzhe.db）
+- Node.js 18.x
+- 后端端口 3000，Admin 端口 5173
 
-当前不是 COS 文件存储。
+**历史版本说明**：V2.3 版本时系统为纯本地开发，当前已进入线上测试稳定阶段。以下第 2-7 节保留为历史参考，部分规则仍适用。
 
 2. 本地开发路径
 
@@ -162,37 +173,51 @@ backend/uploads/
 .local/
 .env
 *.env
+*.pem
+*.key
 API key
 AppSecret
+Token
 数据库密码
 apps/weapp/project.private.config.json
-8. 生产部署目标
 
-V3.0 才进入正式云部署。
+8. 当前已完成部署
 
-目标包括：
+V2.7 系列已完成：
+- 腾讯云 MySQL 数据库
+- Nginx + HTTPS + Certbot
+- PM2 进程管理
+- 后端部署（/srv/xingzhe/backend）
+- Admin 静态部署（/var/www/xingzhe-admin）
+- 小程序体验版上传
+- Admin / API 域名配置
+- 上传资源公开访问
 
-腾讯云数据库
-COS 图片/证书存储
-HTTPS
-后端部署
-Admin 静态部署
-小程序正式 API 域名
-日志
-监控
-备份
-数据恢复
-权限
-安全审计
-小程序提审
-9. 部署前置条件
+V3.0 部署目标：
+- COS 图片/证书存储（当前使用本地 /data/xingzhe/uploads）
+- 日志 / 监控
+- 备份 / 数据恢复
+- 安全审计
+- 小程序正式提审
 
-在 V3.0 前必须完成：
+9. V2.7.3 运维固化
 
-真实 User
-真实微信登录
-生产支付方案
-证书图片存储方案
-数据库迁移方案
-Admin 权限与安全审计
-QA Agent blocking = 0
+待完成：
+- pm2 save（固化 PM2 进程列表）
+- MySQL 备份脚本（mysqldump + crontab）
+- uploads 备份策略（rsync / tar + crontab）
+- 数据库表结构备份
+- 恢复说明文档
+
+10. 部署前置条件
+
+已完成：
+- 真实 User ✅（V2.4）
+- 真实微信登录（mock 模式已支持，real 模式需 AppSecret）✅
+- Admin Auth ✅（V2.7.1）
+- QA Agent blocking = 0 ✅
+
+待完成：
+- 生产支付方案（V2.9）
+- 证书图片存储方案（V2.8）
+- Admin 权限与安全审计（V2.8+）

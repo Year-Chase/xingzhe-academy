@@ -3,20 +3,21 @@ SYSTEM
 行者学社 SYSTEM
 1. 当前系统形态
 
-当前版本：V2.5 活动产品模型增强版。
+当前版本：V2.7.2 Online Test Release。
 
 系统组成：
 
-WeApp 小程序
-Admin PC 管理后台
-NestJS Backend
-SQLite 本地数据库
-本地 uploads
+WeApp 小程序（体验版已上传）
+Admin PC 管理后台（https://admin.tenselog.cn）
+NestJS Backend（https://api.tenselog.cn）
+MySQL 数据库（腾讯云，本地开发用 SQLite）
+本地 /data/xingzhe/uploads 上传目录
 QA Regression Agent
+Nginx + HTTPS + PM2 + Certbot
 
 backend 是唯一业务中枢。
 
-Admin 和 WeApp 均通过 backend API 访问业务数据。
+Admin 和 WeApp 均通过 backend API 访问业务数据。Admin 所有 /admin/* 路由受 JwtAuthGuard 保护。
 
 2. 当前目录
 
@@ -44,29 +45,40 @@ QA Agent：
 
 已完成基础能力：
 
-活动系统
-报名系统
-订单系统
-二维码系统
-签到/核销系统
-退款系统
-财务系统
-发票系统
-CRM 用户运营系统
-QA 回归系统
+活动系统 ✅
+报名系统 ✅
+订单系统 ✅
+二维码系统 ✅
+签到/核销系统 ✅
+退款系统 ✅
+财务系统 ✅
+发票系统 ✅
+CRM 用户运营系统 ✅
+QA 回归系统 ✅
+真实用户系统 ✅（V2.4）
+mock 微信登录 ✅（V2.4，WECHAT_LOGIN_MODE=mock）
+证书模板系统 ✅（V2.6，基础版）
+活动地点导航 ✅（V2.6）
+Admin 认证系统 ✅（V2.7.1，HMAC-SHA256 token + JwtAuthGuard）
+线上部署 ✅（V2.7，腾讯云 MySQL + Nginx + HTTPS）
 
 未完成完整能力：
 
-真实用户系统
-真实微信登录
-真实支付系统
-PaymentRecord
-证书系统
+真实微信支付系统
+PaymentRecord 支付流水
+完整证书图片生成
+核销后自动生成证书
 足迹系统
 行者地图
 同行者统计
 邀请增长闭环
-云部署
+COS 对象存储
+
+关键系统规则：
+- ActivityFlowService 是状态流转核心，controller 不允许直接改 status
+- 0 元活动也必须走 enroll-pay，0 元订单也是真订单
+- 退款不修改 Registration、不修改 QR、不修改 CHECKED_IN
+- Admin 所有 /admin/* 路由受 JwtAuthGuard 保护，无 token 返回 401
 4. 当前业务流程
 
 活动创建
@@ -121,20 +133,40 @@ backend/src/activity/
 
 当前包含：
 
-Activity
-Registration
-Order
-QR
-Refund
-Invoice
-CRM
-UserTag
-UserNote
-UserProfile
-UserInviteRecord
-ActivityInviteRecord
+Activity + ActivityService（活动管理）
+ActivityRegistration（报名事实源）
+ActivityOrder（支付记录）
+ActivityQR（核销二维码）
+ActivityRefund（退款事实源）
+ActivityInvoice（发票事实源）
+ActivityRegistrationInfo（报名信息快照）
+ActivityFlowService（状态流转核心，enrollPay / refund / checkin / checkinForActivity / getOrders / financeSummary）
+AdminActivityController（/admin/activity/* + /admin/activity/:id/checkin）
+activity.controller.ts（小程序公开路由 /activity/*）
 
-当前 users 模块仍不是完整真实用户系统。V2.4 将升级。
+backend/src/users/
+
+User Entity（主表，id 为 user_xxx，openid 唯一）
+UsersService（微信登录 / profile 查询 / mock openid 解析）
+UsersController（/users/* 公开路由）
+
+backend/src/certificate/
+
+CertificateTemplate Entity
+CertificateService（模板 CRUD）
+CertificateController（/admin/certificate-templates/*）
+
+backend/src/auth/
+
+AdminAuthController（POST /admin/auth/login）
+AdminTokenService（HMAC-SHA256 自签名 token）
+JwtAuthGuard（守卫 /admin/* 路由）
+AuthModule
+
+backend/src/config/
+
+env.ts（.env 加载，不覆盖已存在的环境变量）
+upload-path.ts（UPLOAD_DIR / PUBLIC_UPLOAD_BASE_URL）
 
 7. 当前 Admin 模块
 
@@ -239,48 +271,24 @@ V3.0：
 
 ---
 
-## V2.5 系统边界
+## V2.7.3 重点风险与排查事项
 
-### V2.5 不做事项
+### V2.7.3 重点风险
 
-- 活动模板 / ActivityTemplate
-- 真实微信支付 / PaymentRecord
-- 真实后付支付流水 / 后付提醒
-- 证书生成 / 证书模板
-- 企业微信 API / 自动建群 / 自动拉人 / 自动退群 / 群成员同步
-- COS / 对象存储正式接入
-- 身份证实名联网核验 / OCR
-- 权限系统重构
-- CRM 大重构
+- Admin 卡顿排查（线上 MySQL 连接池 / N+1 查询 / 大表全表扫描）
+- 证书链路完整回归（Admin 模板管理 + 小程序证书列表 / 详情）
+- 已报名行者头像修复（getParticipants 硬编码 → 查询真实 User）
+- 用户详情订单记录 0 元订单展示（当前按 userId 全量查询，应正常展示）
+- 0 元订单退款按钮过滤（amount=0 或 全额退款后仍显示退款按钮）
+- PM2 / MySQL / uploads 备份固化
 
-### 身份证号保护规则
+### 禁止事项（V2.7.3 及全局）
 
-格式覆盖：15位数字 / 18位数字 / 17位数字+X / 17位数字+x
-
-规则：
-- 可以通过 POST body 提交完整身份证号
-- 不得出现在 URL query
-- 不得写入小程序 Storage（包括 xingzhe_reginfo_pending）
-- 不得 console.log
-- 不得进入 QA latest.md / latest.json
-- Admin 和小程序展示时必须脱敏
-
-正则：`/^(?:\d{15}|\d{17}[\dXx])$/`
-脱敏：`110***********1234` / `110***********123X`
-
-### 小程序 Storage 规则
-
-允许存储：xingzhe_user_id, xingzhe_user_profile
-
-禁止存储：idCardNo, registrationInfo, xingzhe_reginfo_pending
-
-### QA Agent
-
-命令：`cd /Users/chen/projects/xingzhe-v3 && node tools/qa-agent/qa-runner.js`
-
-报告：`.local/qa-agent/reports/latest.md` / `.local/qa-agent/reports/latest.json`
-
-V2.5A QA：Activity 字段、ActivityRegistrationInfo、enrollPay registrationInfo、groupQr、idCardNo 脱敏
-V2.5B QA：Admin 表单、requiredUserInfoFields、groupQr、memoryImages/memoryText、活动回忆独立入口
-V2.5C QA：小程序报名信息页、registrationInfo body、无 storage 敏感信息、groupQr 弹窗、签到码入口
+- 真实微信支付 / 真实退款调用
+- 恢复 mock_token
+- 恢复模拟签到
+- 绕过 ActivityFlowService 直接改 status
+- controller 直接操作 repo 修改 Registration / Order 状态
+- 提交 .env / pem / key / secret
+- 对 0 元订单产生真实退款调用
 

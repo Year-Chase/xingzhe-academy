@@ -193,17 +193,51 @@ register/pay 旧接口恢复必须 blocking
 CRM 修改核心实体状态必须 blocking
 8. 当前状态
 
-当前版本：V2.3 本地运营框架版。
+当前版本：V2.7.2 Online Test Release。
 
 已完成：
 
-活动报名支付基础闭环
-订单系统
-退款 / 财务 / 发票
-CRM 用户运营框架
-QA Agent v1
+活动报名支付基础闭环 ✅
+订单系统 ✅
+退款 / 财务 / 发票 ✅
+CRM 用户运营框架 ✅
+QA Agent v1 ✅
+真实用户与微信登录（V2.4）✅
+活动产品模型增强（V2.5）✅
+证书模板基础能力（V2.6）✅
+活动地点导航（V2.6）✅
+线上部署（V2.7，腾讯云 MySQL + Nginx + HTTPS）✅
+Admin 安全核销 + 手机核销（V2.7.1）✅
+Admin 体验优化（V2.7.2）✅
 
-下一阶段：
+当前阶段：
 
-P2.3.5 Documentation Sync
-V2.4 真实用户与微信登录
+V2.7.3 Stability & Regression
+
+9. Claude 开发规则补充
+
+Claude 工作要求：
+- 所有命令必须一步一步给
+- 所有命令必须使用完整路径
+- 涉及 Git 写操作前，必须先检查 .git/index.lock
+- 不允许使用 git add .
+- 不允许恢复 mock_token
+- 不允许恢复模拟签到
+- 不允许绕过 ActivityFlowService
+- 不允许 controller 直接改 status
+- 不允许接真实微信支付
+- 不允许对 0 元订单产生真实退款调用
+- 不允许用"我已验证通过"替代 QA Agent 报告
+
+Claude 完成后必须输出：
+- 改动文件清单
+- 每个改动的目的
+- 各改动的 QA Agent 检查清单
+- 不变的部分说明
+
+用户协作约定：
+- 用户不是程序员，命令一步一步给
+- 不一次性铺完整流程
+- 不默认用户懂 Python
+- 不让用户手动拼 JSON
+- 账号、密码、密钥、.env、pem、key、secret 不让用户发到聊天里

@@ -4,17 +4,21 @@
 
 ### 当前版本
 
-当前版本：V2.5 活动产品模型增强版。
+当前版本：V2.7.2 Online Test Release。
 
 当前状态：
 
-- 本地 SQLite 可运行
-- Admin + WeApp + Backend 可联动
-- QA Agent blocking = 0（本地后端运行时）
-- 尚未云部署
-- 尚未真实微信支付完整版
-- 尚未证书传播闭环
-- 尚未行者地图
+- 腾讯云线上环境（MySQL + Nginx + HTTPS + PM2）
+- Admin + API 走 tenselog.cn 域名
+- 小程序体验版 2.7.2 已上传并设为体验版
+- 线上闭环已通过：活动报名 → 订单 → 二维码 → 核销 → 退款 → 开票
+- Admin 真实 token 登录通过，fake-token 拒绝，无 token 返回 401
+- QA Agent blocking = 0（线上后端运行时）
+- 尚未接真实微信支付
+- 尚未完整证书传播闭环
+- 尚未行者地图完整版
+- 尚未邀请增长
+- 预览版线上测试运行中
 
 ---
 
@@ -216,9 +220,108 @@ V2.5D：Documentation Update
 
 ---
 
+### V2.6：活动地点 / 证书模板 / 行者之路
+
+已完成：
+- Activity 新增 locationName、locationAddress、locationLat、locationLng、coordinateType、locationProvider 等地点字段
+- Admin 活动创建/编辑增加手动坐标录入（GCJ-02）
+- 小程序活动详情页展示地点名称和导航（Taro.openLocation）
+- CertificateTemplate Entity、CertificateService、CertificateController
+- Admin 证书模板管理（列表/创建/编辑/上传/设默认/禁用）
+- 小程序证书列表页（mine/certificates）
+- 小程序证书详情页（journey/certificate）
+- 小程序行者之路页面（trail/index.tsx）
+- 小程序活动回忆页（trail/memories）
+- UsersService 支持真实用户头像、昵称查询
+- 小程序 user.ts 缓存用户 profile
+
+---
+
+### V2.7：线上环境部署版
+
+已完成：
+- MySQL 生产模式（TypeORM 双模式：MySQL 生产 / SQLite 本地开发）
+- DB_HOST / DB_PORT / DB_USERNAME / DB_PASSWORD / DB_DATABASE 环境变量
+- DB_SYNCHRONIZE 建表开关（首次空库可临时开启，建完后关闭）
+- UPLOAD_DIR / PUBLIC_UPLOAD_BASE_URL 上传路径分离
+- NODE_ENV=production 判断
+- CORS_ORIGIN 跨域配置
+- 腾讯云服务器部署（Nginx + HTTPS + PM2 + Certbot）
+- Admin 域名：https://admin.tenselog.cn
+- API 域名：https://api.tenselog.cn
+- uploads 公开访问：https://api.tenselog.cn/uploads/...
+- 后端 .env.example 完整字段模板
+- ENABLE_DEMO_SEED=false 生产环境强制关闭演示数据
+
+---
+
+### V2.7.1：Admin 安全核销与线上加固
+
+已完成：
+- AdminAuthController（POST /admin/auth/login）
+- AdminTokenService（HMAC-SHA256 自签名 token，非 JWT 标准）
+- JwtAuthGuard（守卫 /admin/* 路由）
+- ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_TOKEN_SECRET 环境变量
+- ADMIN_TOKEN_EXPIRES_SECONDS 默认 86400 秒
+- fake-token 验证拒绝（签名不匹配 → 401）
+- 无 token 访问 /admin/* → 401
+- Bearer token 格式校验
+- 时序安全的签名比对（timingSafeEqual）
+- AdminActivityController 全局应用 @UseGuards(JwtAuthGuard)
+- Admin 手机核销页 MobileCheckin.vue（选择活动 + 输入核销码 + 签到结果）
+- POST /admin/activity/:id/checkin 后端校验 activityId 归属
+- 小程序体验版 V2.7.1 上传并设为体验版
+- Admin Layout 增加登录/退出逻辑
+- admin_token 存储在 localStorage
+
+---
+
+### V2.7.2：Admin 体验优化与订单展示增强
+
+已完成：
+- Admin 订单列表增加用户昵称列（userNickname），点击可跳转 CRM 用户详情
+- Admin 订单列表增加活动名称列（activityTitle）
+- Admin 订单列表用户 ID 缩略展示（前 8 位 + ... + 后 6 位）
+- Admin 订单列表列标题优化（"创建"→"创建时间"，"支付"→"最近支付时间"）
+- ActivityFlowService.getOrders 注入 User repo，post-query 批量补充 nickname 和 title
+- CRM 用户详情页头像使用 assetUrl() 包装
+- Admin 订单列表表格支持横向滚动
+- 小程序体验版 V2.7.2 上传并设为体验版
+
+---
+
 ### 后续版本
 
-- V2.6：证书 / 活动回忆在小程序展示 / 传播增强
-- V2.7：真实支付与 PaymentRecord
-- V2.8：部署 / HTTPS / 对象存储 / 生产安全
-- V2.x：企业微信 API / 自动入群 / 权限收紧
+历史规划（以下版本均已执行完毕，仅保留为历史参考）：
+
+**V2.6**：证书 / 活动回忆在小程序展示 / 传播增强 → ✅ 已完成（见上方）
+
+**V2.7**：真实支付与 PaymentRecord → 拆分为 V2.7 线上部署版（已完成）+ V2.9 真实支付版（后续）
+
+---
+
+### V2.7.3 Stability & Regression（下一阶段 / 进行中）
+
+目标：线上测试稳定版的稳定性修复与回归验证。
+
+计划内容：
+- Admin 卡顿排查（线上 MySQL 连接池 / 查询性能）
+- 证书链路完整回归（Admin 模板管理 + 小程序证书展示）
+- 已报名行者头像修复（getParticipants 改为查询真实 User 数据）
+- 用户详情订单记录展示 0 元订单（不因 amount=0 隐藏）
+- 0 元订单退款按钮过滤（amount=0 或已全额退款时隐藏退款按钮）
+- PM2 / MySQL / uploads 备份固化
+- QA Agent 回归校验
+
+不做事项：
+- 真实微信支付 / PaymentRecord
+- 真实微信退款回调
+- 会员价格差异化
+- 发票系统增强
+- RBAC / 多管理员 / 操作日志
+- 新 Entity / 大表结构
+
+推荐路线（V2.7.3 完成后）：
+- V2.8：活动内容增强 / 会员价格 / 发票 / 证书证书图片生成
+- V2.9：真实微信支付与财务闭环
+- V3.0：正式提审 / 增长 / CRM 运营体系强化 / 云部署完整化
