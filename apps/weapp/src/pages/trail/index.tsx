@@ -60,7 +60,7 @@ export default function TrailPage() {
   // ── Computed values ──
   const memoryPreviewImages = useMemo(() => {
     if (!data?.memories) return []
-    return data.memories.flatMap(m => safeImgs(m.memoryImages)).filter(Boolean).slice(0, 3)
+    return [...data.memories].reverse().flatMap(m => safeImgs(m.memoryImages)).filter(Boolean).slice(0, 3)
   }, [data?.memories])
 
   // Sort certificates by activity end time (issuedAt) desc, then take latest 3

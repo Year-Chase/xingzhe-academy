@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { get, post, patch } from '@/api/client'
-import { assetUrl } from '@/config/api'
+import { assetUrl, API_BASE_URL } from '@/config/api'
 
 // ── V2.5B helpers ──
 const yuan = (n: number) => '¥' + (n || 0).toFixed(2)
@@ -131,7 +131,7 @@ const openDetail = async (row: ActivityItem) => {
 
 // ── upload (reused for both cover and memory) ──
 const doUpload = async (file: File): Promise<string | null> => {
-  try { const fd = new FormData(); fd.append('file', file); const res = await fetch('/api/admin/activity/upload-cover', { method: 'POST', body: fd }); const data = await res.json(); return data.url }
+  try { const fd = new FormData(); fd.append('file', file); const res = await fetch(`${API_BASE_URL}/admin/activity/upload-cover`, { method: 'POST', body: fd }); const data = await res.json(); return data.url }
   catch { MessagePlugin.error('上传失败'); return null }
 }
 const handleUpload = async (e: Event) => {
@@ -323,7 +323,7 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
           <t-space size="small">
             <t-button theme="default" variant="text" size="small" @click="openDetail(row)">详情</t-button>
             <t-button theme="default" variant="text" size="small" @click="openEdit(row)">编辑</t-button>
-            <t-button theme="default" variant="text" size="small" @click="openMemory(row)">回忆</t-button>
+            <t-button theme="default" variant="text" size="small" @click="openMemory(row)">上传</t-button>
             <t-button v-if="row.status === 'DRAFT'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">发布</t-button>
             <t-button v-if="row.status === 'PUBLISHED'" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="doClose(row)">下架</t-button>
             <t-button v-if="row.status === 'CLOSED'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">重新发布</t-button>

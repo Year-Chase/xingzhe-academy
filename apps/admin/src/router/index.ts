@@ -21,6 +21,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'crm/users', name: 'UserList', component: () => import('@/pages/crm/UserList.vue') },
       { path: 'crm/users/:userId', name: 'UserDetail', component: () => import('@/pages/crm/UserDetail.vue') },
       { path: 'certificate-templates', name: 'CertificateTemplateList', component: () => import('@/pages/certificate/CertificateTemplateList.vue') },
+      { path: 'checkin', name: 'MobileCheckin', component: () => import('@/pages/MobileCheckin.vue') },
     ],
   },
 ]

@@ -220,7 +220,12 @@ export default function ActivityDetail() {
         </View>
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>名额</Text>
-          <Text style={{ fontSize: '26rpx', color: C.body }}><Text style={{ fontWeight: '700', color: C.dark }}>{reg}</Text><Text style={{ color: C.secondary }}> / {cap} 人已报名</Text></Text>
+          <Text style={{ fontSize: '26rpx', color: C.body }}>
+            {cap > 0 && (reg / cap) >= 0.6
+              ? <Text><Text style={{ fontWeight: '700', color: C.dark }}>已报名 {reg}</Text><Text style={{ color: C.secondary }}> / {cap}</Text></Text>
+              : <Text style={{ color: C.secondary }}>{cap > 0 ? `${cap} 个名额` : '名额不限'}</Text>
+            }
+          </Text>
         </View>
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>价格</Text>

@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { get, post, patch } from '@/api/client'
-import { assetUrl } from '@/config/api'
+import { assetUrl, API_BASE_URL } from '@/config/api'
 
 interface CertTemplate {
   id: number; name: string; description: string; imageUrl: string
@@ -63,7 +63,7 @@ const handleUpload = async (e: Event) => {
   uploadLoading.value = true
   try {
     const fd = new FormData(); fd.append('file', file)
-    const res = await fetch('/api/admin/certificate-templates/upload', { method: 'POST', body: fd })
+    const res = await fetch(`${API_BASE_URL}/admin/certificate-templates/upload`, { method: 'POST', body: fd })
     const data = await res.json()
     form.imageUrl = data.url || data?.data?.url || data?.imageUrl || ''
     if (!form.imageUrl) { MessagePlugin.error('证书底图上传失败'); return }

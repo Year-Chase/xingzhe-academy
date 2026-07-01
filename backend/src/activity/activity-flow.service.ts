@@ -107,6 +107,41 @@ export class ActivityFlowService {
     return { status: 'CHECKED_IN', registrationId: qr.registrationId, userId: reg?.userId, activityId: reg?.activityId }
   }
 
+  // ──── checkinForActivity (Admin): validate activityId BEFORE modifying state ────
+  async checkinForActivity(activityId: number, code: string) {
+    // Step 1: look up the QR code — read-only, no state change
+    const qr = await this.qrRepo.findOne({ where: { code }, relations: ['registration'] })
+    if (!qr) throw new NotFoundException('无效二维码，核销码不存在')
+    if (qr.registration?.activityId !== activityId) {
+      throw new BadRequestException('该核销码不属于当前活动')
+    }
+
+    // Step 2: check QR status — already used?
+    if (qr.status !== 'ACTIVE') {
+      if (qr.status === 'USED') throw new BadRequestException('该核销码已签到，请勿重复核销')
+      throw new BadRequestException('该核销码已失效')
+    }
+
+    // Step 3: check expiration
+    if (qr.expiresAt && new Date() > qr.expiresAt) {
+      qr.status = 'EXPIRED'
+      await this.qrRepo.save(qr)
+      throw new BadRequestException('核销码已过期')
+    }
+
+    // Step 4: only now, after all validations pass — execute the actual checkin
+    qr.status = 'USED'
+    await this.qrRepo.save(qr)
+
+    const reg = await this.regRepo.findOne({ where: { id: qr.registrationId } })
+    if (reg) {
+      reg.status = 'CHECKED_IN'
+      await this.regRepo.save(reg)
+    }
+
+    return { status: 'CHECKED_IN', registrationId: qr.registrationId, userId: reg?.userId, activityId: reg?.activityId }
+  }
+
   // ──── getUserStatus ────
   async getUserStatus(userId: string, activityId: number) {
     const reg = await this.regRepo.findOne({ where: { userId, activityId }, relations: ['qr'] })

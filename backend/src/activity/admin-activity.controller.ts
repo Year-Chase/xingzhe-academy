@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, ParseIntPipe, BadRequestException, UseInterceptors, UploadedFile } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Query, Body, ParseIntPipe, BadRequestException, UseInterceptors, UploadedFile, UseGuards } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
@@ -8,6 +8,7 @@ import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 type UploadedActivityImageFile = {
   originalname: string
@@ -29,6 +30,7 @@ function safeParseJsonArray(str: string | null): string[] {
 }
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard)
 export class AdminActivityController {
   constructor(
     private readonly activitySvc: ActivityService,
@@ -160,6 +162,17 @@ export class AdminActivityController {
   @Post('activity/:id/close')
   async close(@Param('id', ParseIntPipe) id: number) {
     return this.activitySvc.adminClose(id)
+  }
+
+  // POST /admin/activity/:id/checkin — Admin mobile verification
+  @Post('activity/:id/checkin')
+  async adminCheckin(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('code') code: string,
+  ) {
+    if (!code) throw new BadRequestException('请提供核销码')
+    const result = await this.flow.checkinForActivity(id, code)
+    return { success: true, message: '签到成功', ...result }
   }
 
   // POST /admin/activity/upload-cover

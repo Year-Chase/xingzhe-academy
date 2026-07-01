@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { API_BASE_URL } from '@/config/api'
+import axios from 'axios'
 
 const router = useRouter()
 const username = ref('')
@@ -8,22 +10,30 @@ const password = ref('')
 const loading = ref(false)
 const error = ref('')
 
-function handleLogin() {
+async function handleLogin() {
   if (!username.value || !password.value) {
     error.value = '请输入账号和密码'
     return
   }
   loading.value = true
   error.value = ''
-  setTimeout(() => {
-    if (username.value === 'admin' && password.value === 'admin123') {
-      localStorage.setItem('admin_token', 'mock_token_' + Date.now())
-      router.push('/')
+  try {
+    const res = await axios.post(`${API_BASE_URL}/admin/auth/login`, {
+      username: username.value,
+      password: password.value,
+    })
+    localStorage.setItem('admin_token', res.data.token)
+    router.push('/')
+  } catch (e: any) {
+    const status = e?.response?.status
+    if (status === 401) {
+      error.value = '账号或密码错误'
     } else {
-      error.value = '账号或密码错误（提示：admin / admin123）'
+      error.value = e?.response?.data?.message || e?.message || '登录失败，请稍后重试'
     }
+  } finally {
     loading.value = false
-  }, 600)
+  }
 }
 </script>
 
@@ -71,10 +81,6 @@ function handleLogin() {
           </t-button>
         </t-form-item>
       </t-form>
-
-      <div style="text-align: center; font-size: 12px; color: #A6AAA2; margin-top: 24px;">
-        mock 账号：admin / admin123
-      </div>
     </div>
   </div>
 </template>

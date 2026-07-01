@@ -22,6 +22,7 @@ import { CertificateTemplate } from './certificate/entities/certificate-template
 import { ActivityModule } from './activity/activity.module'
 import { UsersModule } from './users/users.module'
 import { CertificateModule } from './certificate/certificate.module'
+import { AuthModule } from './auth/auth.module'
 
 const entities = [Activity, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, CertificateTemplate, User]
 
@@ -54,6 +55,7 @@ const dbConfig: any = isProduction
     ActivityModule,
     UsersModule,
     CertificateModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

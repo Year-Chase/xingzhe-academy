@@ -131,9 +131,10 @@ export default function Index() {
                     <Text style={{ fontSize: '23rpx', color: '#8A9288', lineHeight: '1.4', marginTop: '4rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.location}</Text>
                   ) : null}
                 </View>
+                {a.capacity > 0 && ((a.registeredCount ?? 0) / a.capacity) >= 0.6 ? (
                 <Text style={{ fontSize: '24rpx', fontWeight: '500', color: '#18231E', flexShrink: 0, marginLeft: '16rpx' }}>
-                  {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity} 人</Text>
-                </Text>
+                  已报名 {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity}</Text>
+                </Text>) : null}
               </View>
             </View>
           </View>

@@ -268,11 +268,7 @@ export default function MinePage() {
           <Text style={{ fontSize: '28rpx', color: C.dark }}>我的订单</Text>
           <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
         </View>
-        {/* 我的邀请 — not yet available */}
-        <View onClick={() => Taro.showToast({ title: '当前暂无邀请记录', icon: 'none' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx' }}>
-          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的邀请</Text>
-          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
-        </View>
+{/* 我的邀请 — temporarily hidden (V2.7.1) */}
       </View>
 
       <View style={{ marginTop: '32rpx', padding: '0 32rpx', textAlign: 'center' }}>

@@ -14,6 +14,7 @@ const menuItems = [
   { path: '/invoices', name: 'InvoiceList', label: '发票管理' },
   { path: '/crm/users', name: 'UserList', label: '用户运营' },
   { path: '/certificate-templates', name: 'CertificateTemplateList', label: '证书模板' },
+  { path: '/checkin', name: 'MobileCheckin', label: '手机核销' },
 ]
 
 function logout() {
@@ -54,6 +55,7 @@ function isActive(path: string) {
             <span v-else-if="item.path === '/invoices'">🧾</span>
             <span v-else-if="item.path === '/crm/users'">👥</span>
             <span v-else-if="item.path === '/certificate-templates'">🏅</span>
+            <span v-else-if="item.path === '/checkin'">✅</span>
           </template>
           {{ item.label }}
         </t-menu-item>

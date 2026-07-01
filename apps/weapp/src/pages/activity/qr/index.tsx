@@ -20,7 +20,6 @@ export default function QRPage() {
   const [title, setTitle] = useState('')
   const [code, setCode] = useState('')
   const [qrStatus, setQrStatus] = useState<QRState>('loading')
-  const [acting, setActing] = useState(false)
   const [error, setError] = useState('')
   const [location, setLocation] = useState('')
   const [startTime, setStartTime] = useState('')
@@ -84,14 +83,7 @@ export default function QRPage() {
     }
   }, [])
 
-  const doCheckin = async () => {
-    if (acting || !code) return; setActing(true)
-    try {
-      const res = await Taro.request({ method: 'POST', url: `${API}/activity/${activityId}/checkin`, data: { code } })
-      if (res.data?.status === 'CHECKED_IN') { setQrStatus('CHECKED_IN'); Taro.showToast({ title: '签到成功', icon: 'success' }) }
-    } catch (e) { console.error('[activity-qr] checkin', e); Taro.showToast({ title: '签到失败，请重试', icon: 'none' }) }
-    finally { setActing(false) }
-  }
+  // checkin is done by Admin via /admin/activity/:id/checkin — no user self-checkin
 
   const fmtDate = (d: string) => {
     if (!d) return ''; const dt = new Date(d)
@@ -216,7 +208,13 @@ export default function QRPage() {
           )}
         </View>
         {code && (
-          <Text style={{ fontSize: '22rpx', fontFamily: 'monospace', color: C.secondary, wordBreak: 'break-all', marginTop: '20rpx', display: 'block' }}>签到码：{code.slice(0, 8)}...</Text>
+          <View style={{ marginTop: '20rpx' }}>
+            <Text style={{ fontSize: '22rpx', fontFamily: 'monospace', color: C.secondary, wordBreak: 'break-all', display: 'block', userSelect: 'all' }} selectable>
+              核销码：{code}
+            </Text>
+            <Text onClick={() => { Taro.setClipboardData({ data: code }); Taro.showToast({ title: '已复制核销码', icon: 'success' }) }}
+              style={{ fontSize: '22rpx', color: C.green, marginTop: '8rpx', display: 'inline-block' }}>复制核销码</Text>
+          </View>
         )}
       </View>
 
@@ -229,11 +227,6 @@ export default function QRPage() {
 
       {/* ── Actions ── */}
       <View style={{ padding: '40rpx 32rpx', textAlign: 'center' }}>
-        {!isFinished && qrStatus === 'ACTIVE' && (
-          <Button onClick={doCheckin} disabled={acting}
-            style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.dark, color: '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none' }}
-          >{acting ? '...' : '模拟签到'}</Button>
-        )}
         {/* V2.5C: group QR entry — disabled if finished */}
         {groupQr && (
           <Button onClick={() => { if (!isFinished) setShowGroupQr(true) }}

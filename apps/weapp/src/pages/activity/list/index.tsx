@@ -123,9 +123,10 @@ export default function ActivityList() {
                 {a.location ? (
                   <Text style={{ fontSize: '23rpx', color: ended ? '#A6AAA2' : '#666666', lineHeight: '1.4', marginTop: '6rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {a.location}</Text>
                 ) : null}
+                {a.capacity > 0 && ((a.registeredCount ?? 0) / a.capacity) >= 0.6 ? (
                 <Text style={{ fontSize: '24rpx', fontWeight: '500', color: ended ? '#A6AAA2' : '#18231E', marginTop: 'auto', alignSelf: 'flex-end' }}>
-                  {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity} 人</Text>
-                </Text>
+                  已报名 {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity}</Text>
+                </Text>) : null}
               </View>
             </View>
           )
