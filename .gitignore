@@ -27,3 +27,8 @@ backend/uploads/
 # Environment variants
 .env.*
 !.env.example
+
+# Security / certificates
+*.pem
+*.crt
+*.key
