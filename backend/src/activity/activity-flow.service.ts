@@ -257,10 +257,23 @@ export class ActivityFlowService {
   // ──── getParticipants ────
   async getParticipants(activityId: number, _currentUserId: string) {
     const regs = await this.regRepo.find({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
-    return regs.map((r) => ({
-      userId: r.userId, avatarUrl: '', nickname: '行者', name: '行者',
-      gender: '未知', commonActivityCount: 0, motto: '把身体从屏幕里带出来。', status: r.status,
-    }))
+    const userIds = [...new Set(regs.map(r => r.userId).filter(Boolean))] as string[]
+    const users = userIds.length > 0 ? await this.userRepo.find({ where: userIds.map(id => ({ id } as any)) }) : []
+    const userMap = new Map<string, User>()
+    for (const u of users) { userMap.set(u.id, u) }
+    return regs.map((r) => {
+      const u = userMap.get(r.userId)
+      return {
+        userId: r.userId,
+        avatarUrl: u?.avatarUrl || '',
+        nickname: u?.nickname || '行者',
+        name: u?.nickname || '行者',
+        gender: u?.gender || '未知',
+        commonActivityCount: 0,
+        motto: '把身体从屏幕里带出来。',
+        status: r.status,
+      }
+    })
   }
 
   // ──── Admin: getOrders ────

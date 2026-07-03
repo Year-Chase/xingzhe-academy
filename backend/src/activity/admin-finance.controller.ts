@@ -1,7 +1,9 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common'
+import { Controller, Get, Param, ParseIntPipe, UseGuards } from '@nestjs/common'
 import { ActivityFlowService } from './activity-flow.service'
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 @Controller('admin/finance')
+@UseGuards(JwtAuthGuard)
 export class AdminFinanceController {
   constructor(private readonly flow: ActivityFlowService) {}
 

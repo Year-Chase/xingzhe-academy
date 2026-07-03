@@ -1,8 +1,10 @@
-import { Controller, Get, Post, Param, Query, Body, ParseIntPipe, BadRequestException } from '@nestjs/common'
+import { Controller, Get, Post, Param, Query, Body, ParseIntPipe, BadRequestException, UseGuards } from '@nestjs/common'
 import { ActivityFlowService } from './activity-flow.service'
 import { ActivityService } from './activity.service'
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard)
 export class AdminOrderController {
   constructor(
     private readonly flow: ActivityFlowService,

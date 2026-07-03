@@ -309,7 +309,11 @@ export default function ActivityDetail() {
                   return (
                     <View key={i} onClick={() => setModalUser(p)} style={{ width: '96rpx', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
                       <View style={{ width: '72rpx', height: '72rpx', borderRadius: '50%', background: self ? '#D9EADD' : C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        <Text style={{ fontSize: '32rpx' }}>👤</Text>
+                        {p.avatarUrl ? (
+                          <Image src={imgUrl(p.avatarUrl)} mode="aspectFill" style={{ width: '72rpx', height: '72rpx' }} />
+                        ) : (
+                          <Text style={{ fontSize: '32rpx' }}>👤</Text>
+                        )}
                       </View>
                       <Text style={{ fontSize: '22rpx', color: C.body, marginTop: '10rpx', maxWidth: '88rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
                         {p.nickname}{self ? '（我）' : ''}
@@ -333,8 +337,12 @@ export default function ActivityDetail() {
               </View>
             </View>
             <View style={{ display: 'flex', justifyContent: 'center', marginTop: '12rpx' }}>
-              <View style={{ width: '128rpx', height: '128rpx', borderRadius: '50%', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: '56rpx' }}>👤</Text>
+              <View style={{ width: '128rpx', height: '128rpx', borderRadius: '50%', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {modalUser.avatarUrl ? (
+                  <Image src={imgUrl(modalUser.avatarUrl)} mode="aspectFill" style={{ width: '128rpx', height: '128rpx' }} />
+                ) : (
+                  <Text style={{ fontSize: '56rpx' }}>👤</Text>
+                )}
               </View>
             </View>
             <Text style={{ fontSize: '34rpx', fontWeight: '700', color: C.dark, textAlign: 'center', marginTop: '24rpx' }}>

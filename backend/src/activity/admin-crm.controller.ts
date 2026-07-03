@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Patch, Query, Param, Body, BadRequestException } from '@nestjs/common'
+import { Controller, Get, Post, Delete, Patch, Query, Param, Body, BadRequestException, UseGuards } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, In } from 'typeorm'
 import { ActivityRegistration } from './entities/activity-registration.entity'
@@ -11,6 +11,7 @@ import { UserProfile } from './entities/user-profile.entity'
 import { UserInviteRecord } from './entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './entities/activity-invite-record.entity'
 import { User } from '../users/entities/user.entity'
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 // ── Helpers ──
 function computeAge(birthYM: string | null): number | null {
@@ -45,6 +46,7 @@ function mergeUserFields(u: User | null, p: UserProfile | null, userId: string) 
 }
 
 @Controller('admin/crm')
+@UseGuards(JwtAuthGuard)
 export class AdminCrmController {
   constructor(
     @InjectRepository(ActivityRegistration)

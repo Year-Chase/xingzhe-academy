@@ -31,6 +31,13 @@ const doRefund = async () => {
 const statusLabel = (s: string) => ({ PENDING: '交易处理中', PAID: '已支付', FAILED: '支付失败', REFUNDED: '已退款', PARTIAL_REFUND: '部分退款' } as any)[s] || s
 const statusColor = (s: string) => ({ PAID: '#2E7D5A', REFUNDED: '#8A9288', PARTIAL_REFUND: '#C98255', PENDING: '#8A9288', FAILED: '#B35B4B' } as any)[s] || '#666'
 
+const canRefund = (row: OrderItem) => {
+  const amount = Number(row.amount || 0)
+  const refundedAmount = Number(row.refundedAmount || 0)
+  const remaining = amount - refundedAmount
+  return (row.status === 'PAID' || row.status === 'PARTIAL_REFUND') && remaining > 0
+}
+
 const router = useRouter()
 
 const columns = [
@@ -70,7 +77,7 @@ onMounted(fetchList)
           <span :style="{ color: statusColor(row.status), fontSize: '13px', fontWeight: 500 }">{{ statusLabel(row.status) }}</span>
         </template>
         <template #actions="{ row }">
-          <t-button v-if="row.status === 'PAID' || row.status === 'PARTIAL_REFUND'" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="openRefund(row)">退款</t-button>
+          <t-button v-if="canRefund(row)" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="openRefund(row)">退款</t-button>
         </template>
       </t-table>
     </div>

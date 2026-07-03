@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Patch, Param, Body, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, UseInterceptors, UploadedFile, BadRequestException, UseGuards } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage } from 'multer'
 import { extname } from 'path'
 import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
 import { CertificateService } from './certificate.service'
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 @Controller('admin/certificate-templates')
+@UseGuards(JwtAuthGuard)
 export class CertificateController {
   constructor(private readonly certSvc: CertificateService) {}
 
