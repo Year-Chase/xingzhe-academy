@@ -91,8 +91,16 @@ const showCert = (cert: any) => {
 const goUser = (uid: string) => { if (uid) router.push('/crm/users/' + uid) }
 
 const yuan = (n: number) => '¥' + (n || 0).toFixed(2)
-const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
+const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
 const fmtFull = (s: string | null) => s ? new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
+const copyUserId = () => {
+  if (!data.value?.userId) return
+  navigator.clipboard.writeText(data.value.userId).then(() => {
+    MessagePlugin.success('用户ID已复制')
+  }).catch(() => {
+    MessagePlugin.error('复制失败，请手动复制')
+  })
+}
 const statusLabel = (s: string) => ({ REGISTERED: '已报名', PAID: '已支付', CHECKED_IN: '已签到', EXPIRED: '已过期' } as any)[s] || s
 const orderStatusLabel = (s: string) => ({ PENDING: '交易处理中', PAID: '已支付', FAILED: '支付失败', REFUNDED: '已退款', PARTIAL_REFUND: '部分退款' } as any)[s] || s
 const refundStatusLabel = (s: string) => ({ SUCCESS: '成功', FAILED: '失败' } as any)[s] || s
@@ -163,7 +171,7 @@ onMounted(fetchDetail)
             <div>
               <h3 style="font-size: 18px; font-weight: 600; color: #18231E; margin: 0 0 8px 0;">{{ data.nickname || '-' }}</h3>
               <div style="color: #8A9288; font-size: 13px; line-height: 1.9; display: grid; grid-template-columns: 80px 1fr; gap: 2px 12px;">
-                <span>用户ID:</span><span>{{ data.userId }}</span>
+                <span>用户ID:</span><span>{{ data.userId }} <t-button theme="default" variant="text" size="small" @click="copyUserId" style="font-size:12px;color:#2E7D5A;padding:0 4px;min-width:auto;">复制</t-button></span>
                 <span>性别:</span><span>{{ genderLabel(data.gender) }}</span>
                 <span>手机号:</span><span>{{ data.phone || '-' }}</span>
                 <span>出生年月:</span><span>{{ data.birthYearMonth || '-' }}</span>

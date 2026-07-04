@@ -41,14 +41,16 @@ export class ActivityController {
    }
    
   // Must be BEFORE /activity/:id to avoid "all" matching :id 
-  @Get('activity/all') 
-  async getAllActivities( 
-    @Query('page') page: string, 
-    @Query('limit') limit: string, 
-  ) { 
-    const p = Math.max(1, parseInt(page) || 1) 
-    const l = Math.min(100, Math.max(1, parseInt(limit) || 50)) 
-    const { items, total } = await this.activitySvc.getAll(p, l) 
+  @Get('activity/all')
+  async getAllActivities(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('ongoing') ongoingRaw: string,
+  ) {
+    const p = Math.max(1, parseInt(page) || 1)
+    const l = Math.min(100, Math.max(1, parseInt(limit) || 50))
+    const ongoing = ongoingRaw === 'true' || ongoingRaw === '1'
+    const { items, total } = await this.activitySvc.getAll(p, l, ongoing ? { ongoing: true } : undefined)
     const enriched = await Promise.all(
       items.map(async (a) => ({
         id: a.id,
@@ -107,6 +109,9 @@ export class ActivityController {
       groupQrDescription: a.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
       memoryImages: a.memoryImages || null,
       memoryText: a.memoryText || null,
+      // V2.8-B: activity content enhancement
+      imageUrls: a.imageUrls || null,
+      contentBlocks: a.contentBlocks || null,
       locationName: a.locationName || '',
       locationAddress: a.locationAddress || '',
       locationLat: a.locationLat ?? null,

@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect, useMemo } from 'react'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
 import { getUserId, isLoggedIn } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
@@ -56,6 +56,7 @@ export default function TrailPage() {
 
   useEffect(() => { loadJourney() }, [])
   useDidShow(() => { loadJourney() })
+  usePullDownRefresh(() => { loadJourney().then(() => Taro.stopPullDownRefresh()) })
 
   // ── Computed values ──
   const memoryPreviewImages = useMemo(() => {

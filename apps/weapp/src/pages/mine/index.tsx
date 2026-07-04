@@ -1,6 +1,6 @@
 import { View, Text, Image, Input, Picker } from '@tarojs/components'
 import { useState, useEffect } from 'react'
-import Taro from '@tarojs/taro'
+import Taro, { usePullDownRefresh } from '@tarojs/taro'
 import { getUserId, isLoggedIn, logoutUser } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
@@ -70,6 +70,7 @@ export default function MinePage() {
   }
 
   useEffect(() => { loadProfile() }, [])
+  usePullDownRefresh(() => { loadProfile().then(() => Taro.stopPullDownRefresh()) })
 
   // ── Enter edit mode ──
   const startEdit = () => {

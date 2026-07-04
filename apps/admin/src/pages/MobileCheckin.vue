@@ -20,7 +20,7 @@ onMounted(async () => {
     const data = await get<{ items: Activity[] }>('/admin/activity', { page: 1, limit: 200, status: 'PUBLISHED' })
     activities.value = (data.items || []).filter((a: Activity) => a.status === 'PUBLISHED')
     if (activities.value.length > 0) selectedActivityId.value = activities.value[0].id
-  } catch (e) { console.error('load activities', e) }
+  } catch (e) { MessagePlugin.error('加载活动列表失败') }
 })
 
 async function doCheckin() {

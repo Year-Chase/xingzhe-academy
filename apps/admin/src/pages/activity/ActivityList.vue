@@ -59,6 +59,7 @@ interface FormData {
   adcode: string; lng: number | null; lat: number | null
   locationName: string; locationAddress: string; locationLat: number | null; locationLng: number | null
   coordinateType: string; locationProvider: string
+  imageUrls: string[]; contentBlocks: { type: string; text?: string; url?: string }[]
 }
 
 // ── state ──
@@ -84,6 +85,7 @@ const form = reactive<FormData>({
   adcode: '', lng: null, lat: null,
   locationName: '', locationAddress: '', locationLat: null, locationLng: null,
   coordinateType: 'gcj02', locationProvider: 'manual',
+  imageUrls: [] as string[], contentBlocks: [] as { type: string; text?: string; url?: string }[],
 })
 // ── V2.5B: Memory drawer ──
 const memoryDrawer = ref(false); const memoryId = ref(0); const memoryTitle = ref('')
@@ -158,6 +160,7 @@ const resetForm = () => {
   form.adcode = ''; form.lng = null; form.lat = null
   form.locationName = ''; form.locationAddress = ''; form.locationLat = null; form.locationLng = null
   form.coordinateType = 'gcj02'; form.locationProvider = 'manual'
+  form.imageUrls = []; form.contentBlocks = []
   coverPreview.value = ''; qrPreview.value = ''; formError.value = ''
 }
 const openCreate = () => { resetForm(); formMode.value = 'create'; formId.value = 0; formDrawer.value = true }
@@ -175,6 +178,14 @@ const openEdit = (row: ActivityItem) => {
   form.groupQrTitle = row.groupQrTitle || '加入活动群'
   form.groupQrDescription = row.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'
   form.certificateTemplateId = (row as any).certificateTemplateId ?? null
+  form.imageUrls = safeArray((row as any).imageUrls || null) as string[]
+  form.contentBlocks = (() => {
+    const blocks = safeArray((row as any).contentBlocks || null) as any[]
+    if (blocks.length > 0) return blocks
+    // Fallback: old activity with description but no contentBlocks
+    if (row.description) return [{ type: 'text', text: row.description }]
+    return []
+  })()
   form.locationName = (row as any).locationName || ''
   form.locationAddress = (row as any).locationAddress || ''
   form.locationLat = (row as any).locationLat ?? null
@@ -226,6 +237,8 @@ const submitForm = async () => {
     provinceName: syncProvince || '', provinceCode: '',
     cityName: syncCity || '', cityCode: '',
     adcode: '', lng: null, lat: null,
+    imageUrls: JSON.stringify(form.imageUrls || []),
+    contentBlocks: JSON.stringify(form.contentBlocks || []),
     locationName: normalizedLocationName, locationAddress: normalizedLocationAddress,
     locationLat: lat, locationLng: lng,
     coordinateType: form.coordinateType || 'gcj02', locationProvider: form.locationProvider || 'manual',
@@ -378,6 +391,35 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
         <div><label style="color: #8A9288; font-size: 13px;">封面图</label>
           <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;"><input type="file" accept="image/jpeg,image/png,image/webp" @change="handleUpload" style="font-size: 13px;" /></div>
           <div v-if="coverPreview" style="margin-top: 8px;"><img :src="assetUrl(coverPreview)" style="max-width: 200px; max-height: 120px; border-radius: 8px; border: 1px solid #EDE9DF;" /></div>
+        </div>
+        <!-- V2.8-B: Multi-image upload for detail page swiper -->
+        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">详情轮播图</div>
+        <div style="font-size: 12px; color: #7A8178;">用于小程序活动详情顶部轮播，最多 6 张。上传后点击图片可删除。</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+          <div v-for="(img, idx) in form.imageUrls" :key="idx" style="position: relative; width: 80px; height: 60px; border-radius: 6px; overflow: hidden; border: 1px solid #EDE9DF; cursor: pointer;" :title="'点击删除: ' + img">
+            <img :src="assetUrl(img)" style="width:100%;height:100%;object-fit:cover;" @click="form.imageUrls.splice(idx, 1)" />
+          </div>
+          <div v-if="form.imageUrls.length < 6" style="width: 80px; height: 60px; border-radius: 6px; border: 1px dashed #C8CDC7; display: flex; align-items: center; justify-content: center; background: #F7F6F2;">
+            <label style="font-size: 11px; color: #8A9288; cursor: pointer; text-align: center;">+ 上传<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="(e) => { const f = (e.target as HTMLInputElement)?.files?.[0]; if (!f) return; uploadLoading = true; doUpload(f).then(url => { if (url) form.imageUrls.push(url) }); uploadLoading = false }" /></label>
+          </div>
+        </div>
+        <!-- V2.8-B: contentBlocks editor -->
+        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">图文介绍</div>
+        <div style="font-size: 12px; color: #7A8178;">活动详情图文内容。为空时使用上方"活动描述"纯文本。</div>
+        <div v-for="(block, idx) in form.contentBlocks" :key="idx" style="display: flex; gap: 8px; align-items: flex-start; margin-top: 8px;">
+          <t-select v-model="block.type" :options="[{label:'文本',value:'text'},{label:'图片',value:'image'}]" style="width: 80px;" size="small" />
+          <t-input v-if="block.type === 'text'" v-model="block.text" placeholder="输入文本段落" style="flex: 1;" size="small" />
+          <template v-else>
+            <t-input v-model="block.url" :placeholder="'图片URL' + (block.url ? '' : ' — 点击右侧上传')" style="flex: 1;" size="small" />
+            <label style="font-size: 12px; color: #2E7D5A; cursor: pointer; padding: 6px 8px; white-space: nowrap;">
+              上传<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="(e) => { const f = (e.target as HTMLInputElement)?.files?.[0]; if (!f) return; doUpload(f).then(url => { if (url) block.url = url }) }" />
+            </label>
+          </template>
+          <t-button theme="default" variant="text" size="small" style="color: #B35B4B; flex-shrink: 0;" @click="form.contentBlocks.splice(idx, 1)">×</t-button>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <t-button theme="default" variant="outline" size="small" @click="form.contentBlocks.push({ type: 'text', text: '' })">+ 文本块</t-button>
+          <t-button theme="default" variant="outline" size="small" @click="form.contentBlocks.push({ type: 'image', url: '' })">+ 图片块</t-button>
         </div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">时间与名额</div>
         <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动开始时间 *</label><t-input v-model="form.startTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动结束时间 *</label><t-input v-model="form.endTime" type="datetime-local" /></div></div>

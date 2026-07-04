@@ -19,6 +19,7 @@ client.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('admin_token')
+      sessionStorage.setItem('admin_login_message', '登录已过期，请重新登录')
       window.location.href = '/#/login'
     }
     return Promise.reject(error)

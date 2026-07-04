@@ -1,4 +1,4 @@
-import { View, Text, Button, ScrollView, Image } from '@tarojs/components'
+import { View, Text, Button, ScrollView, Image, Swiper, SwiperItem } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
 import { getUserId, isLoggedIn } from '../../../utils/user'
@@ -33,6 +33,7 @@ interface ActivityData {
   groupQrType?: string; groupQrImageUrl?: string; groupQrTitle?: string; groupQrDescription?: string
   registrationStartTime?: string; registrationEndTime?: string
   memoryImages?: any; memoryText?: string
+  imageUrls?: any; contentBlocks?: any
   createdAt: string
 }
 
@@ -167,6 +168,16 @@ export default function ActivityDetail() {
   const hasGroupQr = activity?.hasGroupQr && activity?.groupQrImageUrl
   const isPaid = userStatus === 'PAID' || userStatus === 'CHECKED_IN'
 
+  // V2.8-B: imageUrls and contentBlocks
+  const detailImages: string[] = safeFields(aAny.imageUrls).filter(
+    (v) => typeof v === 'string' && v.trim().length > 0
+  )
+  const contentBlocks: any[] = safeFields(aAny.contentBlocks)
+  // Fallback: if contentBlocks empty, wrap description as a single text block
+  const displayBlocks: any[] = contentBlocks.length > 0
+    ? contentBlocks.filter((b: any) => b && typeof b === 'object')
+    : (activity?.description ? [{ type: 'text', text: activity.description }] : [])
+
   // V2.5.1: toast helper for disabled actions
   const toastFinished = () => Taro.showToast({ title: '活动已结束', icon: 'none' })
   const handleGoQR = () => { if (isFinished) { toastFinished(); return }; goQR() }
@@ -188,14 +199,26 @@ export default function ActivityDetail() {
         </View>
       </View>
 
-      {/* 2. Cover — 3:2 ratio */}
-      <View style={{ margin: '0 32rpx', height: '460rpx', borderRadius: '16rpx', overflow: 'hidden', background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {activity.coverImage ? (
-          <ImgWithFallback src={imgUrl(activity.coverImage)} style={{ width: '100%', height: '100%' }} />
-        ) : (
-          <Text style={{ fontSize: '72rpx', color: 'rgba(24,35,30,0.15)' }}>行者学社</Text>
-        )}
-      </View>
+      {/* 2. Cover / Image Swiper */}
+      {detailImages.length > 0 ? (
+        <View style={{ margin: '0 32rpx', height: '460rpx', borderRadius: '16rpx', overflow: 'hidden' }}>
+          <Swiper indicatorDots indicatorColor="rgba(255,255,255,0.4)" indicatorActiveColor="#FFFFFF" autoplay circular style={{ width: '100%', height: '100%' }}>
+            {detailImages.map((img: string, i: number) => (
+              <SwiperItem key={i}>
+                <ImgWithFallback src={imgUrl(img)} style={{ width: '100%', height: '100%' }} />
+              </SwiperItem>
+            ))}
+          </Swiper>
+        </View>
+      ) : (
+        <View style={{ margin: '0 32rpx', height: '460rpx', borderRadius: '16rpx', overflow: 'hidden', background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {activity.coverImage ? (
+            <ImgWithFallback src={imgUrl(activity.coverImage)} style={{ width: '100%', height: '100%' }} />
+          ) : (
+            <Text style={{ fontSize: '72rpx', color: 'rgba(24,35,30,0.15)' }}>行者学社</Text>
+          )}
+        </View>
+      )}
 
       {/* 3. Info card */}
       <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)' }}>
@@ -239,13 +262,28 @@ export default function ActivityDetail() {
         </View>
       </View>
 
-      {/* 4. 活动介绍 */}
-      {activity.description ? (
+      {/* 4. 活动介绍 — V2.8-B: contentBlocks or description fallback */}
+      {displayBlocks.length > 0 && (
         <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '30rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)' }}>
           <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '20rpx' }}>活动介绍</Text>
-          <Text style={{ fontSize: '27rpx', color: C.body, lineHeight: '1.65' }}>{activity.description}</Text>
+          {displayBlocks.map((block: any, i: number) => {
+            if (block.type === 'image') {
+              const url = block.url || ''
+              if (!url) return null
+              return (
+                <View key={i} style={{ marginTop: i > 0 ? '16rpx' : 0 }}>
+                  <ImgWithFallback src={imgUrl(url)} mode="widthFix" style={{ width: '100%', borderRadius: '12rpx' }} />
+                </View>
+              )
+            }
+            return (
+              <Text key={i} style={{ fontSize: '27rpx', color: C.body, lineHeight: '1.65', display: 'block', marginTop: i > 0 ? '16rpx' : 0 }}>
+                {block.text || ''}
+              </Text>
+            )
+          })}
         </View>
-      ) : null}
+      )}
 
       {/* V2.5C: Group QR for paid users — only button, opens popup */}
       {isPaid && hasGroupQr && (
@@ -385,6 +423,11 @@ export default function ActivityDetail() {
         {isFinished && userStatus === 'PAID' && (
           <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: '30rpx', color: C.disabledText, fontWeight: '600' }}>活动已结束 · 签到码已失效</Text>
+          </View>
+        )}
+        {isFinished && userStatus === 'CHECKED_IN' && (
+          <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: '30rpx', color: C.disabledText, fontWeight: '600' }}>活动已结束 · 已签到</Text>
           </View>
         )}
         {!isFinished && (userStatus === 'NOT_REGISTERED' || userStatus === 'REGISTERED') && (

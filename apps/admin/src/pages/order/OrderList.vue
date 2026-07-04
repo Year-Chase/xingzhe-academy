@@ -17,7 +17,7 @@ const fetchList = async () => {
   finally { loading.value = false }
 }
 
-const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
+const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 const onPageChange = (p: { current: number; pageSize: number }) => { page.value = p.current; limit.value = p.pageSize; fetchList() }
 
 const openRefund = (row: OrderItem) => { refundId.value = row.id; refundAmount.value = (row.amount ?? 0) - (row.refundedAmount ?? 0); refundReason.value = ''; refundDialog.value = true }
@@ -49,7 +49,7 @@ const columns = [
   { colKey: 'userNickname', title: '用户昵称', width: 90 },
   { colKey: 'activityId', title: '活动ID', width: 65, cell: (_h: any, { row }: any) => row.activityId ?? '-' },
   { colKey: 'activityTitle', title: '活动名称', width: 130, cell: (_h: any, { row }: any) => row.activityTitle || '-' },
-  { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => `¥${row.amount}` },
+  { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => `¥${(row.amount ?? 0).toFixed(2)}` },
   { colKey: 'refundedAmount', title: '已退', width: 80, cell: (_h: any, { row }: any) => `¥${row.refundedAmount || 0}` },
   { colKey: 'status', title: '状态', width: 110 },
   { colKey: 'payType', title: '类型', width: 60, cell: (_h: any, { row }: any) => ({ FULL: '全款', PREPAY: '预付' } as any)[row.payType] || row.payType },

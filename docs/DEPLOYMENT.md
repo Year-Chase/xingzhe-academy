@@ -221,3 +221,152 @@ V3.0 部署目标：
 - 生产支付方案（V2.9）
 - 证书图片存储方案（V2.8）
 - Admin 权限与安全审计（V2.8+）
+
+11. V2.8A 真实发版方式
+
+关键事实：
+- 服务器不是 Git 仓库
+- 不走 `git pull`
+- 不在服务器执行源码 build
+- 后端采用 Mac 本地 build 后 rsync `backend/dist` 到服务器
+- Admin 采用 Mac 本地 build 后 rsync `apps/admin/dist` 到服务器
+- 小程序通过微信开发者工具上传体验版
+
+12. Mac / 服务器判断
+
+```
+whoami    # Mac: chen  |  服务器: ubuntu
+pwd       # Mac: /Users/chen/...  |  服务器: /home/ubuntu 或 /srv/xingzhe/...
+```
+
+如果当前在服务器里，先执行 `exit` 回到 Mac，再执行 rsync。
+
+13. 运维脚本
+
+| 脚本 | 类型 | 说明 |
+|------|------|------|
+| `scripts/ops/xz-preflight-local.sh` | 只读 | 本地发版前检查（Git 状态、SSH key、PM2 在线等） |
+| `scripts/ops/xz-backup-release.sh` | 写（服务器） | 部署前备份 dist 到 `/data/xingzhe/backups/releases/` |
+| `scripts/ops/xz-verify-online.sh` | 只读 | 线上 Admin 鉴权验证（无 token / fake-token → 401） |
+
+14. 后端发布命令
+
+**本地 build：**
+
+```bash
+cd /Users/chen/projects/xingzhe-v3/backend
+npm run build
+```
+
+**本地确认 dist 包含 Auth Guard：**
+
+```bash
+cd /Users/chen/projects/xingzhe-v3
+grep -RIn "JwtAuthGuard\|UseGuards\|jwt-auth.guard" backend/dist | head -80
+```
+
+**上传 dist：**
+
+```bash
+rsync -avz --delete \
+  -e "ssh -i ~/.ssh/xingzhev3.pem" \
+  /Users/chen/projects/xingzhe-v3/backend/dist/ \
+  ubuntu@82.156.129.114:/srv/xingzhe/backend/dist/
+```
+
+**服务器确认：**
+
+```bash
+ssh -i ~/.ssh/xingzhev3.pem ubuntu@82.156.129.114 '
+set -e
+ls -l /srv/xingzhe/backend/dist/main.js
+grep -RIn "JwtAuthGuard\|UseGuards\|jwt-auth.guard" /srv/xingzhe/backend/dist | head -80
+'
+```
+
+**PM2 重启：**
+
+```bash
+ssh -i ~/.ssh/xingzhev3.pem ubuntu@82.156.129.114 '
+set -e
+cd /srv/xingzhe/backend
+pm2 restart xingzhe-api --update-env
+pm2 status
+'
+```
+
+15. Admin 发布命令
+
+**本地 build：**
+
+```bash
+cd /Users/chen/projects/xingzhe-v3/apps/admin
+npm run build
+```
+
+**上传 Admin 静态资源：**
+
+```bash
+rsync -avz --delete \
+  -e "ssh -i ~/.ssh/xingzhev3.pem" \
+  /Users/chen/projects/xingzhe-v3/apps/admin/dist/ \
+  ubuntu@82.156.129.114:/var/www/xingzhe-admin/
+```
+
+Admin 静态资源上传后通常不需要重启 PM2 或 Nginx。只有 Nginx 配置变更时才需要 `nginx reload`。
+
+16. 线上验证标准
+
+**不要用 `curl -I` 判断 Admin 鉴权。必须用 GET。**
+
+Admin 无 token 验证（预期全部 401）：
+
+```bash
+for path in \
+  "/admin/orders" \
+  "/admin/crm/users" \
+  "/admin/finance/summary" \
+  "/admin/certificate-templates"
+do
+  code="$(curl -sS -o /tmp/xz_check.json -w "%{http_code}" "https://api.tenselog.cn${path}")"
+  echo "${path} no-token -> ${code}"
+done
+rm -f /tmp/xz_check.json
+```
+
+fake-token 验证（预期全部 401）：
+
+```bash
+for path in \
+  "/admin/orders" \
+  "/admin/certificate-templates"
+do
+  code="$(curl -sS -o /tmp/xz_check.json -w "%{http_code}" "https://api.tenselog.cn${path}" \
+    -H "Authorization: Bearer fake-token")"
+  echo "${path} fake-token -> ${code}"
+done
+rm -f /tmp/xz_check.json
+```
+
+或使用统一脚本：
+
+```bash
+bash scripts/ops/xz-verify-online.sh
+```
+
+17. pm2 save 和 tag 时机
+
+- Admin 鉴权验证通过后，执行 `pm2 save`
+- 线上 Admin / 小程序体验版人工验收通过后，才允许打 tag
+- 当前没有 remote，不需要 `git push`
+- 服务器不是 Git 仓库，不需要 `git pull`
+
+18. 典型发版流程
+
+```
+1. bash scripts/ops/xz-preflight-local.sh        ← 本地检查
+2. bash scripts/ops/xz-backup-release.sh         ← 部署前备份
+3. 按第 14-15 节执行 rsync + pm2 restart         ← 手动部署
+4. bash scripts/ops/xz-verify-online.sh           ← 线上鉴权验证
+5. pm2 save && git tag vX.Y.Z-online-test         ← 固化
+```

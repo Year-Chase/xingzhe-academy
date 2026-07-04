@@ -42,7 +42,6 @@ const fetchList = async () => {
       : Array.isArray(raw?.data?.data) ? raw.data.data
       : []
     list.value = rows
-    if (rows.length === 0) console.warn('[certificate-template] empty list response', raw)
   } catch (e: any) {
     console.error('[certificate-template] fetchList failed', e)
     MessagePlugin.error(e?.response?.data?.message || e?.message || '加载失败')

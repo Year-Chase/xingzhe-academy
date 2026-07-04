@@ -97,13 +97,17 @@ export class ActivityService implements OnModuleInit {
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
   }
 
-  async getAll(page: number, limit: number): Promise<{ items: Activity[]; total: number }> {
-    const [items, total] = await this.activityRepo.findAndCount({
-      where: { status: 'PUBLISHED' },
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    })
+  async getAll(page: number, limit: number, opts?: { ongoing?: boolean }): Promise<{ items: Activity[]; total: number }> {
+    const now = new Date()
+    const qb = this.activityRepo.createQueryBuilder('a')
+      .where('a.status = :pub', { pub: 'PUBLISHED' })
+      .orderBy('a.createdAt', 'DESC')
+    // V2.8-A: optional ongoing filter — backend pagination before frontend rendering
+    if (opts?.ongoing) {
+      qb.andWhere('(a.endTime IS NULL OR a.endTime >= :now)', { now: now.toISOString() })
+    }
+    qb.skip((page - 1) * limit).take(limit)
+    const [items, total] = await qb.getManyAndCount()
     return { items, total }
   }
 
@@ -151,6 +155,7 @@ export class ActivityService implements OnModuleInit {
     adcode?: string; lng?: number; lat?: number
     locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
     coordinateType?: string; locationProvider?: string
+    imageUrls?: string; contentBlocks?: string
   }) {
     if (dto.slogan && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
     const st = new Date(dto.startTime), et = new Date(dto.endTime)
@@ -198,6 +203,8 @@ export class ActivityService implements OnModuleInit {
       locationLng: dto.locationLng ?? null,
       coordinateType: dto.coordinateType || 'gcj02',
       locationProvider: dto.locationProvider || 'manual',
+      imageUrls: dto.imageUrls || null,
+      contentBlocks: dto.contentBlocks || null,
       status: 'DRAFT',
     } as any)
     const saved: any = await this.activityRepo.save(a)
@@ -218,6 +225,7 @@ export class ActivityService implements OnModuleInit {
     adcode?: string; lng?: number; lat?: number
     locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
     coordinateType?: string; locationProvider?: string
+    imageUrls?: string; contentBlocks?: string
   }) {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
@@ -261,6 +269,8 @@ export class ActivityService implements OnModuleInit {
     if (dto.groupQrTitle !== undefined) a.groupQrTitle = dto.groupQrTitle
     if (dto.groupQrDescription !== undefined) a.groupQrDescription = dto.groupQrDescription
     if (dto.certificateTemplateId !== undefined) a.certificateTemplateId = dto.certificateTemplateId
+    if (dto.imageUrls !== undefined) a.imageUrls = dto.imageUrls || null
+    if (dto.contentBlocks !== undefined) a.contentBlocks = dto.contentBlocks || null
     if (dto.provinceName !== undefined) { a.provinceName = dto.provinceName; a.province = dto.provinceName }
     if (dto.provinceCode !== undefined) a.provinceCode = dto.provinceCode
     if (dto.cityName !== undefined) { a.cityName = dto.cityName; a.city = dto.cityName }

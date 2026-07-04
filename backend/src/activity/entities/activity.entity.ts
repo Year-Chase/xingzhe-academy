@@ -94,6 +94,14 @@ export class Activity {
   @Column({ type: 'int', nullable: true })
   certificateTemplateId: number | null
 
+  // ── V2.8-B: Activity detail images ──
+  @Column({ type: 'text', nullable: true })
+  imageUrls: string | null  // JSON string array, e.g. '["url1","url2"]'
+
+  // ── V2.8-B: Structured content blocks ──
+  @Column({ type: 'text', nullable: true })
+  contentBlocks: string | null  // JSON array of blocks, e.g. [{"type":"text","text":""},{"type":"image","url":""}]
+
   // ── V2.6D: Structured location ──
   @Column({ type: 'varchar', length: 50, nullable: true })
   provinceName: string

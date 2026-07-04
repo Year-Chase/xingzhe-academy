@@ -1,6 +1,6 @@
 import { View, Text, ScrollView } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
-import Taro from '@tarojs/taro'
+import Taro, { usePullDownRefresh } from '@tarojs/taro'
 import { getUserId } from '../../../utils/user'
 
 import { API_BASE_URL as API } from '../../../config/api'
@@ -53,6 +53,11 @@ export default function ActivityList() {
   }, [items.length === 0 ? 0 : Math.min(items[0]?.id ?? 0, 0), items.length])
 
   useEffect(() => { fetchPage(1, false) }, [])
+
+  usePullDownRefresh(() => {
+    setPage(1)
+    fetchPage(1, false).then(() => Taro.stopPullDownRefresh())
+  })
 
   const loadMore = () => {
     if (loadingMore || items.length >= total) return

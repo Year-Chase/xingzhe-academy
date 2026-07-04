@@ -1,16 +1,17 @@
 import { View, Text, Image } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
 import { ensureUserId } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
 
 interface ActivityCard {
   id: number; title: string; description: string; location: string
-  startTime: string; capacity: number; registeredCount: number
-  coverImage: string
+  startTime: string; endTime: string; capacity: number; registeredCount: number
+  coverImage: string; status: string
 }
 
+const PAGE_SIZE = 10
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
 
 function imgUrl(cover: string | undefined): string {
@@ -25,22 +26,48 @@ function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; sty
   return <Image src={src} mode={mode as any} style={style} onError={() => setFailed(true)} />
 }
 
+function fmtDate(d: string) {
+  if (!d) return ''; const dt = new Date(d)
+  const w = ['日', '一', '二', '三', '四', '五', '六'][dt.getDay()]
+  const h = String(dt.getHours()).padStart(2, '0')
+  const m = String(dt.getMinutes()).padStart(2, '0')
+  return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${h}:${m}`
+}
+
 export default function Index() {
   const [activities, setActivities] = useState<ActivityCard[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
 
-  const fetchActivities = async () => {
-    setLoading(true); setError('')
+  const fetchPage = useCallback(async (p: number, append: boolean) => {
+    if (append) setLoadingMore(true); else setLoading(true)
+    setError('')
     try {
-      const res = await Taro.request({ url: `${API}/activity` })
-      setActivities((res.data as ActivityCard[]) || [])
+      const res = await Taro.request({ url: `${API}/activity/all?page=${p}&limit=${PAGE_SIZE}&ongoing=true` })
+      const data = res.data as any
+      const list: ActivityCard[] = (data.items || [])
+      // Server already filters: only PUBLISHED and endTime >= now (or no endTime)
+      if (append) setActivities((prev) => [...prev, ...list])
+      else setActivities(list)
+      setHasMore(list.length === PAGE_SIZE)
     } catch { setError('加载失败') }
-    finally { setLoading(false) }
-  }
+    finally { setLoadingMore(false); setLoading(false) }
+  }, [])
 
-  useEffect(() => { ensureUserId(false); fetchActivities() }, [])
+  useEffect(() => { ensureUserId(false); fetchPage(1, false) }, [])
 
+  // Pull-down refresh
+  usePullDownRefresh(() => {
+    setPage(1)
+    setHasMore(true)
+    ensureUserId(false)
+    fetchPage(1, false).then(() => Taro.stopPullDownRefresh())
+  })
+
+  // onShow: update registeredCount for dirty activities
   useDidShow(() => {
     ensureUserId(false)
     const dirtyId = Taro.getStorageSync('dirtyActivityId')
@@ -56,12 +83,11 @@ export default function Index() {
       .catch(() => {})
   })
 
-  const fmtDate = (d: string) => {
-    if (!d) return ''; const dt = new Date(d)
-    const w = ['日', '一', '二', '三', '四', '五', '六'][dt.getDay()]
-    const h = String(dt.getHours()).padStart(2, '0')
-    const m = String(dt.getMinutes()).padStart(2, '0')
-    return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${h}:${m}`
+  const loadMore = () => {
+    if (loadingMore || !hasMore) return
+    const next = page + 1
+    setPage(next)
+    fetchPage(next, true)
   }
 
   const goDetail = (id: number) => { Taro.navigateTo({ url: `/pages/activity/detail/index?id=${id}` }) }
@@ -131,7 +157,7 @@ export default function Index() {
                     <Text style={{ fontSize: '23rpx', color: '#8A9288', lineHeight: '1.4', marginTop: '4rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.location}</Text>
                   ) : null}
                 </View>
-                {a.capacity > 0 && ((a.registeredCount ?? 0) / a.capacity) >= 0.6 ? (
+                {a.capacity > 0 ? (
                 <Text style={{ fontSize: '24rpx', fontWeight: '500', color: '#18231E', flexShrink: 0, marginLeft: '16rpx' }}>
                   已报名 {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity}</Text>
                 </Text>) : null}
@@ -140,6 +166,9 @@ export default function Index() {
           </View>
         )
       })}
+
+      {loadingMore && <View style={{ padding: '40rpx', textAlign: 'center' }}><Text style={{ color: '#8A9288', fontSize: '26rpx' }}>加载更多...</Text></View>}
+      {!hasMore && activities.length > 0 && <View style={{ padding: '40rpx', textAlign: 'center' }}><Text style={{ color: '#A6AAA2', fontSize: '24rpx' }}>— 已展示全部活动 —</Text></View>}
 
       <View style={{ height: '56rpx' }} />
     </View>

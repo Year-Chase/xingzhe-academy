@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { API_BASE_URL } from '@/config/api'
 import axios from 'axios'
 
@@ -9,6 +10,14 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
+
+onMounted(() => {
+  const msg = sessionStorage.getItem('admin_login_message')
+  if (msg) {
+    sessionStorage.removeItem('admin_login_message')
+    MessagePlugin.warning(msg)
+  }
+})
 
 async function handleLogin() {
   if (!username.value || !password.value) {
