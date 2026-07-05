@@ -28,16 +28,12 @@ export function openActivityLocation(activity: any): boolean {
     name: locName,
     address: locAddr,
     scale: 16,
-    success: () => {
-      console.log('[location] openLocation success', { latitude: lat, longitude: lng, name: locName, address: locAddr })
-    },
+    success: () => {},
     fail: (error) => {
       console.error('[location] openLocation fail', { latitude: lat, longitude: lng, name: locName, address: locAddr, error })
       Taro.showToast({ title: '导航打开失败，请稍后重试', icon: 'none' })
     },
-    complete: (res) => {
-      console.log('[location] openLocation complete', res)
-    },
+    complete: () => {},
   })
   return true
 }

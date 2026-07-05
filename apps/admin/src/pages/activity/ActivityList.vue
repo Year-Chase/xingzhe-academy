@@ -29,6 +29,36 @@ function arrLabelCompat(arr: any[] | null | undefined): string {
   return '已配置'
 }
 
+// V2.8-C: Must match Admin CRM UserDetail.vue TYPE_OPTIONS
+const TYPE_OPTIONS = ['普通用户', '会员', '终身会员', '志愿者', '工作人员']
+
+function defaultPricingRule() {
+  return TYPE_OPTIONS.map(t => ({ userType: t, label: t, fullAmount: 0, prepayAmount: 0, postpayAmount: 0, enabled: true }))
+}
+
+function initPricingRules(row?: any): any[] {
+  // If activity has valid pricingRules, use them
+  const existing = safeArray(row?.pricingRules || null) as any[]
+  if (existing.length > 0) return existing
+  // Legacy fallback: construct from old fields
+  const price = row?.price ?? 0
+  const memberPrice = row?.memberPrice ?? 0
+  const lifetimeMemberPrice = row?.lifetimeMemberPrice ?? 0
+  const prepayAmount = row?.prepayAmount ?? 0
+  const remainingAmount = row?.remainingAmount ?? 0
+  return TYPE_OPTIONS.map(t => {
+    let full = price
+    if (t === '会员') full = memberPrice > 0 ? memberPrice : price
+    else if (t === '终身会员') full = lifetimeMemberPrice > 0 ? lifetimeMemberPrice : (memberPrice > 0 ? memberPrice : price)
+    else if (t === '志愿者' || t === '工作人员') full = 0
+    // PREPAY: only 普通用户 gets legacy prepay/postpay; others get computed values
+    let pp = 0, ppost = 0
+    if (t === '普通用户') { pp = prepayAmount; ppost = remainingAmount }
+    else if (prepayAmount > 0) { pp = prepayAmount; ppost = Math.max(full - prepayAmount, 0) }
+    return { userType: t, label: t, fullAmount: full, prepayAmount: pp, postpayAmount: ppost, enabled: full > 0 || pp > 0 }
+  })
+}
+
 const FIELD_LABELS: Record<string, string> = {
   realName: '真实姓名', phone: '手机号', idCardNo: '身份证号',
   departureCity: '出发城市', transportPreference: '交通工具偏好', roomPreference: '房间偏好',
@@ -60,6 +90,7 @@ interface FormData {
   locationName: string; locationAddress: string; locationLat: number | null; locationLng: number | null
   coordinateType: string; locationProvider: string
   imageUrls: string[]; contentBlocks: { type: string; text?: string; url?: string }[]
+  pricingRules: any[]; postpayDate: string
 }
 
 // ── state ──
@@ -71,7 +102,7 @@ const detailVisible = ref(false); const detailItem = ref<ActivityItem | null>(nu
 const regInfoList = ref<any[]>([]); const regInfoLoading = ref(false)
 const formDrawer = ref(false); const formMode = ref<'create' | 'edit'>('create'); const formId = ref(0)
 const formLoading = ref(false); const formError = ref('')
-const uploadLoading = ref(false); const coverPreview = ref(''); const qrPreview = ref('')
+const uploadLoading = ref(false); const blockUploadingIdx = ref(-1); const coverPreview = ref(''); const qrPreview = ref('')
 const origStart = ref(''); const origEnd = ref(''); const origRegStart = ref(''); const origRegEnd = ref('')
 const form = reactive<FormData>({
   title: '', slogan: '', province: '', description: '', location: '', city: '',
@@ -86,12 +117,20 @@ const form = reactive<FormData>({
   locationName: '', locationAddress: '', locationLat: null, locationLng: null,
   coordinateType: 'gcj02', locationProvider: 'manual',
   imageUrls: [] as string[], contentBlocks: [] as { type: string; text?: string; url?: string }[],
+  pricingRules: defaultPricingRule(), postpayDate: '',
 })
 // ── V2.5B: Memory drawer ──
 const memoryDrawer = ref(false); const memoryId = ref(0); const memoryTitle = ref('')
 const memoryImages = ref<any[]>([]); const memoryText = ref(''); const memoryUploadLoading = ref(false)
 const memoryLoading = ref(false); const memoryError = ref('')
 const certTemplates = ref<any[]>([]); const certTemplatesLoading = ref(false)
+// V2.8-D: Postpay management
+const postpayDrawer = ref(false); const postpayActivityId = ref(0); const postpayActivityTitle = ref('')
+const postpaySummary = ref<any>(null); const postpayOrders = ref<any[]>([])
+const postpayLoading = ref(false); const postpaySummaryLoading = ref(false)
+const postpayStatusFilter = ref('UNPAID'); const postpayKeyword = ref('')
+const postpayActionLoading = ref(0); const postpayWaiveOrderId = ref(0); const postpayWaiveReason = ref('')
+const postpayWaiveVisible = ref(false)
 
 const statusOptions = [
   { label: '全部', value: '' }, { label: '未发布', value: 'DRAFT' },
@@ -131,15 +170,44 @@ const openDetail = async (row: ActivityItem) => {
   finally { regInfoLoading.value = false }
 }
 
-// ── upload (reused for both cover and memory) ──
+// ── upload (reused for cover, imageUrls, memory, contentBlocks) ──
 const doUpload = async (file: File): Promise<string | null> => {
-  try { const fd = new FormData(); fd.append('file', file); const res = await fetch(`${API_BASE_URL}/admin/activity/upload-cover`, { method: 'POST', body: fd }); const data = await res.json(); return data.url }
+  try {
+    const fd = new FormData(); fd.append('file', file)
+    const token = localStorage.getItem('admin_token')
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${API_BASE_URL}/admin/activity/upload-cover`, { method: 'POST', headers, body: fd })
+    if (res.status === 401) { MessagePlugin.error('上传失败：登录已过期，请重新登录'); return null }
+    const data = await res.json()
+    if (!data || !data.url) { MessagePlugin.error('上传失败：未获取到图片地址'); return null }
+    return data.url
+  }
   catch { MessagePlugin.error('上传失败'); return null }
 }
 const handleUpload = async (e: Event) => {
   const file = (e.target as HTMLInputElement)?.files?.[0]; if (!file) return
-  uploadLoading.value = true; const url = await doUpload(file); if (url) { form.coverImage = url; coverPreview.value = url; MessagePlugin.success('上传成功') }
-  uploadLoading.value = false
+  uploadLoading.value = true; const url = await doUpload(file); if (url) { form.coverImage = url; coverPreview.value = url; if (form.imageUrls.length === 0) form.imageUrls.push(url); MessagePlugin.success('上传成功') }
+  uploadLoading.value = false; (e.target as HTMLInputElement).value = ''
+}
+// V2.8-C: unified image upload for multi-image area
+const handleImageUrlUpload = async (e: Event) => {
+  const file = (e.target as HTMLInputElement)?.files?.[0]; if (!file) { (e.target as HTMLInputElement).value = ''; return }
+  uploadLoading.value = true; const url = await doUpload(file)
+  if (url) { form.imageUrls.push(url); if (form.imageUrls.length === 1) { form.coverImage = url; coverPreview.value = url } MessagePlugin.success('上传成功') } else { MessagePlugin.error('上传失败') }
+  uploadLoading.value = false; (e.target as HTMLInputElement).value = ''
+}
+const removeImageUrl = (idx: number) => {
+  form.imageUrls.splice(idx, 1)
+  if (idx === 0 && form.imageUrls.length > 0) { form.coverImage = form.imageUrls[0]; coverPreview.value = form.imageUrls[0] }
+  else if (form.imageUrls.length === 0) { form.coverImage = ''; coverPreview.value = '' }
+}
+// V2.8-C: contentBlocks image upload
+const handleBlockImageUpload = async (e: Event, idx: number, block: any) => {
+  const file = (e.target as HTMLInputElement)?.files?.[0]; if (!file) { (e.target as HTMLInputElement).value = ''; return }
+  blockUploadingIdx.value = idx; const url = await doUpload(file)
+  if (url) { block.url = url; MessagePlugin.success('上传成功') } else { MessagePlugin.error('上传失败') }
+  blockUploadingIdx.value = -1; (e.target as HTMLInputElement).value = ''
 }
 const handleMemoryUpload = async (e: Event) => {
   const file = (e.target as HTMLInputElement)?.files?.[0]; if (!file) return
@@ -160,33 +228,40 @@ const resetForm = () => {
   form.adcode = ''; form.lng = null; form.lat = null
   form.locationName = ''; form.locationAddress = ''; form.locationLat = null; form.locationLng = null
   form.coordinateType = 'gcj02'; form.locationProvider = 'manual'
-  form.imageUrls = []; form.contentBlocks = []
+  form.imageUrls = []; form.contentBlocks = []; form.pricingRules = defaultPricingRule(); form.postpayDate = ''
   coverPreview.value = ''; qrPreview.value = ''; formError.value = ''
 }
 const openCreate = () => { resetForm(); formMode.value = 'create'; formId.value = 0; formDrawer.value = true }
-const openEdit = (row: ActivityItem) => {
+const openEdit = async (row: ActivityItem) => {
+  // V2.8-C Fix-4: fetch full detail to ensure imageUrls/contentBlocks/pricingRules
+  let detail = row as any
+  try {
+    const full = await get<any>('/admin/activity/' + row.id)
+    if (full && typeof full === 'object') detail = full
+  } catch (_e) { /* fallback to list row */ }
   formMode.value = 'edit'; formId.value = row.id
-  form.title = row.title; form.slogan = row.slogan || ''; form.province = row.province || ''; form.description = row.description || ''; form.location = row.location || ''
-  form.city = row.city || ''; form.capacity = row.capacity
-  form.price = row.price ?? 0; form.memberPrice = row.memberPrice ?? 0; form.lifetimeMemberPrice = row.lifetimeMemberPrice ?? 0
-  form.paymentMode = row.paymentMode || 'FULL'
-  form.prepayAmount = row.prepayAmount ?? 0; form.remainingAmount = row.remainingAmount ?? 0
-  form.remainingPayDate = toLocalDate(row.remainingPayDate || '') || ''
-  form.requiredUserInfoFields = safeArray(row.requiredUserInfoFields || null)
-  form.groupQrType = row.groupQrType || 'NONE'
-  form.groupQrImageUrl = row.groupQrImageUrl || ''
-  form.groupQrTitle = row.groupQrTitle || '加入活动群'
-  form.groupQrDescription = row.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'
-  form.certificateTemplateId = (row as any).certificateTemplateId ?? null
-  form.imageUrls = safeArray((row as any).imageUrls || null) as string[]
+  form.title = detail.title; form.slogan = detail.slogan || ''; form.province = detail.province || ''; form.description = detail.description || ''; form.location = detail.location || ''
+  form.city = detail.city || ''; form.capacity = detail.capacity
+  form.price = detail.price ?? 0; form.memberPrice = detail.memberPrice ?? 0; form.lifetimeMemberPrice = detail.lifetimeMemberPrice ?? 0
+  form.paymentMode = detail.paymentMode || 'FULL'
+  form.prepayAmount = detail.prepayAmount ?? 0; form.remainingAmount = detail.remainingAmount ?? 0
+  form.remainingPayDate = toLocalDate(detail.remainingPayDate || '') || ''
+  form.requiredUserInfoFields = safeArray(detail.requiredUserInfoFields || null)
+  form.groupQrType = detail.groupQrType || 'NONE'
+  form.groupQrImageUrl = detail.groupQrImageUrl || ''
+  form.groupQrTitle = detail.groupQrTitle || '加入活动群'
+  form.groupQrDescription = detail.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'
+  form.certificateTemplateId = (detail as any).certificateTemplateId ?? null
+  form.imageUrls = safeArray((detail as any).imageUrls || null) as string[]
   form.contentBlocks = (() => {
-    const blocks = safeArray((row as any).contentBlocks || null) as any[]
+    const blocks = safeArray((detail as any).contentBlocks || null) as any[]
     if (blocks.length > 0) return blocks
-    // Fallback: old activity with description but no contentBlocks
-    if (row.description) return [{ type: 'text', text: row.description }]
+    if (detail.description) return [{ type: 'text', text: detail.description }]
     return []
   })()
-  form.locationName = (row as any).locationName || ''
+  form.pricingRules = initPricingRules(detail)
+  form.postpayDate = (detail as any).postpayDate || ''
+  form.locationName = (detail as any).locationName || ''
   form.locationAddress = (row as any).locationAddress || ''
   form.locationLat = (row as any).locationLat ?? null
   form.locationLng = (row as any).locationLng ?? null
@@ -205,7 +280,11 @@ const submitForm = async () => {
   if (!form.province?.trim() || !form.city?.trim()) { formError.value = '请填写活动省份和城市'; return }
   if (new Date(form.endTime) <= new Date(form.startTime)) { formError.value = '活动结束时间必须晚于活动开始时间'; return }
   if (new Date(form.registrationEndTime) <= new Date(form.registrationStartTime)) { formError.value = '报名结束时间必须晚于报名开始时间'; return }
-  if (form.paymentMode === 'PREPAY' && (form.prepayAmount == null || form.prepayAmount === undefined || form.remainingAmount == null || form.remainingAmount === undefined)) { formError.value = '预付+后付模式下，预付金额和后付金额为必填项'; return }
+  if (form.paymentMode === 'PREPAY') {
+    const normalRule = form.pricingRules.find((r: any) => r.userType === '普通用户')
+    if (!normalRule || Number(normalRule.prepayAmount || 0) <= 0) { formError.value = '普通用户预付金额必须大于 0'; return }
+    if (!form.postpayDate) { formError.value = '请填写后付款日期'; return }
+  }
   if (!form.locationName?.trim()) { formError.value = '请填写活动地点名称'; return }
   // LOCATION-GUARD-003: validate raw coordinate values first, reject 0,0
   const rawLng = String(form.locationLng ?? '').trim()
@@ -215,19 +294,27 @@ const submitForm = async () => {
   const lat = Number(rawLat)
   if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90 || (lng === 0 && lat === 0)) { formError.value = '请填写活动地点经纬度'; return }
   formLoading.value = true; formError.value = ''
+  // V2.8-C Fix-5: Explicitly sync coverImage from imageUrls before submit
+  if (form.imageUrls.length > 0 && (!form.coverImage || form.coverImage !== form.imageUrls[0])) {
+    form.coverImage = form.imageUrls[0]
+  }
   const normalizedLocationName = String(form.locationName || '').trim()
   const normalizedLocationAddress = normalizedLocationName
   const syncLocation = normalizedLocationName
   const syncProvince = String(form.province || '').trim()
   const syncCity = String(form.city || '').trim()
+  // V2.8-C: Sync old price fields from pricing matrix for backward compat
+  const normalRule = form.pricingRules.find((r: any) => r.userType === '普通用户') || {}
+  const memberRule = form.pricingRules.find((r: any) => r.userType === '会员') || {}
+  const lifetimeRule = form.pricingRules.find((r: any) => r.userType === '终身会员') || {}
   const body: any = {
     title: form.title, slogan: form.slogan || undefined, province: syncProvince || undefined,
     description: form.description, location: syncLocation, city: syncCity || undefined,
     capacity: Number(form.capacity), coverImage: form.coverImage || undefined,
-    price: form.price, memberPrice: form.memberPrice, lifetimeMemberPrice: form.lifetimeMemberPrice,
+    price: Number(normalRule.fullAmount || 0), memberPrice: Number(memberRule.fullAmount || 0), lifetimeMemberPrice: Number(lifetimeRule.fullAmount || 0),
     paymentMode: form.paymentMode,
-    prepayAmount: form.prepayAmount, remainingAmount: form.remainingAmount,
-    remainingPayDate: form.remainingPayDate || undefined,
+    prepayAmount: Number(normalRule.prepayAmount || 0), remainingAmount: Number(normalRule.postpayAmount || 0),
+    remainingPayDate: form.postpayDate || form.remainingPayDate || undefined,
     requiredUserInfoFields: form.requiredUserInfoFields,
     groupQrType: form.groupQrType || 'NONE',
     groupQrImageUrl: form.groupQrImageUrl,
@@ -239,6 +326,8 @@ const submitForm = async () => {
     adcode: '', lng: null, lat: null,
     imageUrls: JSON.stringify(form.imageUrls || []),
     contentBlocks: JSON.stringify(form.contentBlocks || []),
+    pricingRules: JSON.stringify(form.pricingRules || []),
+    postpayDate: form.postpayDate || undefined,
     locationName: normalizedLocationName, locationAddress: normalizedLocationAddress,
     locationLat: lat, locationLng: lng,
     coordinateType: form.coordinateType || 'gcj02', locationProvider: form.locationProvider || 'manual',
@@ -314,7 +403,53 @@ const fetchCertTemplates = async () => {
   finally { certTemplatesLoading.value = false }
 }
 
-onMounted(() => { fetchList(); fetchCertTemplates() })
+
+  // V2.8-D: Postpay management functions
+  const openPostpayMgmt = async (row: ActivityItem) => {
+    postpayActivityId.value = row.id; postpayActivityTitle.value = row.title
+    postpayStatusFilter.value = 'UNPAID'; postpayKeyword.value = ''; postpayDrawer.value = true
+    await Promise.all([fetchPostpaySummary(), fetchPostpayOrders()])
+  }
+  const fetchPostpaySummary = async () => {
+    postpaySummaryLoading.value = true
+    try { postpaySummary.value = await get('/admin/activities/' + postpayActivityId.value + '/postpay-summary') }
+    catch { postpaySummary.value = null }
+    finally { postpaySummaryLoading.value = false }
+  }
+  const fetchPostpayOrders = async () => {
+    postpayLoading.value = true
+    try {
+      const res = await get<any>('/admin/activities/' + postpayActivityId.value + '/postpay-orders', {
+        status: postpayStatusFilter.value || undefined,
+        keyword: postpayKeyword.value || undefined,
+      })
+      postpayOrders.value = res.items || []
+    } catch { postpayOrders.value = [] }
+    finally { postpayLoading.value = false }
+  }
+  const postpayMarkPaid = async (orderId: number) => {
+    const dlg = DialogPlugin.confirm({ header: '确认已后付', body: '确认将该订单标记为后付款已完成？此操作不可撤销。', onConfirm: async () => { dlg.hide(); postpayActionLoading.value = orderId; try { await post('/admin/orders/' + orderId + '/mark-postpay-paid'); MessagePlugin.success('已标记后付款完成'); fetchPostpaySummary(); fetchPostpayOrders() } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') } finally { postpayActionLoading.value = 0 } } })
+  }
+  const postpayOpenWaive = (orderId: number) => { postpayWaiveOrderId.value = orderId; postpayWaiveReason.value = ''; postpayWaiveVisible.value = true }
+  const postpayConfirmWaive = async () => {
+    if (!postpayWaiveReason.value.trim()) { MessagePlugin.warning('请填写免除原因'); return }
+    postpayActionLoading.value = postpayWaiveOrderId.value
+    try {
+      await post('/admin/orders/' + postpayWaiveOrderId.value + '/waive-postpay', { reason: postpayWaiveReason.value })
+      MessagePlugin.success('后付款已免除'); postpayWaiveVisible.value = false; fetchPostpaySummary(); fetchPostpayOrders()
+    } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') }
+    finally { postpayActionLoading.value = 0 }
+  }
+  const postpaySendReminder = async (orderId: number) => {
+    const dlg = DialogPlugin.confirm({ header: '发送提醒', body: '确认向该用户发送后付款提醒？', onConfirm: async () => { dlg.hide(); postpayActionLoading.value = orderId; try { const res = await post('/admin/orders/' + orderId + '/postpay-reminder'); MessagePlugin.success('提醒已记录 · 第' + ((res as any)?.postpayReminderCount || '') + '次'); fetchPostpaySummary(); fetchPostpayOrders() } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') } finally { postpayActionLoading.value = 0 } } })
+  }
+  const postpayBatchRemind = async () => {
+    const unpaid = postpayOrders.value.filter((o: any) => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE')
+    if (unpaid.length === 0) { MessagePlugin.warning('没有待后付的用户'); return }
+    const dlg = DialogPlugin.confirm({ header: '批量发送提醒', body: '将向 ' + unpaid.length + ' 位待后付用户发送后付款提醒。', onConfirm: async () => { dlg.hide(); postpayActionLoading.value = -1; try { const res = await post('/admin/activities/' + postpayActivityId.value + '/postpay-reminders'); MessagePlugin.success('已向 ' + ((res as any)?.sentCount || 0) + ' 位用户发送提醒'); fetchPostpaySummary(); fetchPostpayOrders() } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') } finally { postpayActionLoading.value = 0 } } })
+  }
+
+  onMounted(() => { fetchList(); fetchCertTemplates() })
 </script>
 
 <template>
@@ -337,6 +472,7 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
             <t-button theme="default" variant="text" size="small" @click="openDetail(row)">详情</t-button>
             <t-button theme="default" variant="text" size="small" @click="openEdit(row)">编辑</t-button>
             <t-button theme="default" variant="text" size="small" @click="openMemory(row)">上传</t-button>
+            <t-button v-if="(row.paymentMode || 'FULL') === 'PREPAY'" theme="default" variant="text" size="small" style="color: #8A6D3B;" @click="openPostpayMgmt(row)">后付款管理</t-button>
             <t-button v-if="row.status === 'DRAFT'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">发布</t-button>
             <t-button v-if="row.status === 'PUBLISHED'" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="doClose(row)">下架</t-button>
             <t-button v-if="row.status === 'CLOSED'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">重新发布</t-button>
@@ -357,7 +493,30 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
         <div><label style="color: #8A9288;">活动时间</label><div style="color: #333A34; margin-top: 4px;">{{ fmtDateFull(detailItem.startTime) }} ~ {{ fmtDateFull(detailItem.endTime) }}</div></div>
         <div><label style="color: #8A9288;">报名时间</label><div style="color: #333A34; margin-top: 4px;">{{ fmtDateFull(detailItem.registrationStartTime) }} ~ {{ fmtDateFull(detailItem.registrationEndTime) }}</div></div>
         <div><label style="color: #8A9288;">人数</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.registeredCount }}/{{ detailItem.capacity }} 人</div></div>
-        <div><label style="color: #8A9288;">价格</label><div style="color: #333A34; margin-top: 4px;">普通 {{ yuan(detailItem.price ?? 0) }} · 会员 {{ yuan(detailItem.memberPrice ?? 0) }} · 终身 {{ yuan(detailItem.lifetimeMemberPrice ?? 0) }}</div></div>
+        <div><label style="color: #8A9288;">活动图片</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
+            <template v-if="(safeArray((detailItem as any).imageUrls || null) as string[]).length > 0">
+              <img v-for="(img, idx) in (safeArray((detailItem as any).imageUrls || null) as string[])" :key="idx"
+                :src="assetUrl(img)" style="width:60px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #EDE9DF;" />
+            </template>
+            <template v-else-if="detailItem.coverImage">
+              <img :src="assetUrl(detailItem.coverImage)" style="width:60px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #EDE9DF;" />
+            </template>
+            <span v-else style="color: #8A9288; font-size: 12px;">-</span>
+          </div>
+        </div>
+        <div><label style="color: #8A9288;">价格</label>
+          <div v-if="(safeArray((detailItem as any).pricingRules || null) as any[]).length > 0" style="margin-top: 4px;">
+            <div v-for="(rule, idx) in (safeArray((detailItem as any).pricingRules || null) as any[])" :key="idx"
+              style="display: flex; gap: 12px; font-size: 12px; color: #333A34; padding: 2px 0;">
+              <span style="width: 60px;">{{ rule.label }}</span>
+              <span v-if="(detailItem.paymentMode || 'FULL') === 'FULL'">全款 {{ yuan(rule.fullAmount || 0) }}</span>
+              <span v-else>预付 {{ yuan(rule.prepayAmount || 0) }} + 后付 {{ yuan(rule.postpayAmount || 0) }} = {{ yuan((rule.prepayAmount||0)+(rule.postpayAmount||0)) }}</span>
+              <span>{{ rule.enabled === false ? '❌' : '✅' }}</span>
+            </div>
+          </div>
+          <div v-else style="color: #333A34; margin-top: 4px;">普通 {{ yuan(detailItem.price ?? 0) }} · 会员 {{ yuan(detailItem.memberPrice ?? 0) }} · 终身 {{ yuan(detailItem.lifetimeMemberPrice ?? 0) }} <span style="font-size: 11px; color: #8A9288;">(旧价格)</span></div>
+        </div>
         <div><label style="color: #8A9288;">支付模式</label><div style="color: #333A34; margin-top: 4px;">{{ pmLabel(detailItem.paymentMode || 'FULL') }}<template v-if="detailItem.paymentMode === 'PREPAY'">（预付 {{ yuan(detailItem.prepayAmount ?? 0) }} / 后付 {{ yuan(detailItem.remainingAmount ?? 0) }} {{ detailItem.remainingPayDate ? '· '+detailItem.remainingPayDate : '' }}）</template></div></div>
         <div><label style="color: #8A9288;">报名信息收集</label><div style="color: #333A34; margin-top: 4px;"><template v-if="safeArray(detailItem.requiredUserInfoFields || null).length"><span v-for="(f, i) in safeArray(detailItem.requiredUserInfoFields || null)" :key="f"><span v-if="i > 0">, </span>{{ FIELD_LABELS[f] || f }}</span></template><span v-else style="color: #8A9288;">未配置</span></div></div>
         <div><label style="color: #8A9288;">活动群</label><div style="color: #333A34; margin-top: 4px;"><template v-if="detailItem.groupQrType && detailItem.groupQrType !== 'NONE'"><div>{{ detailItem.groupQrType }}</div><div v-if="detailItem.groupQrTitle" style="margin-top: 2px;">标题: {{ detailItem.groupQrTitle }}</div><div v-if="detailItem.groupQrDescription" style="font-size: 12px; color: #7A8178;">{{ detailItem.groupQrDescription }}</div><img v-if="detailItem.groupQrImageUrl" :src="detailItem.groupQrImageUrl" style="max-width: 160px; max-height: 160px; border-radius: 8px; margin-top: 4px; border: 1px solid #EDE9DF;" /></template><span v-else style="color: #8A9288;">未配置</span></div></div>
@@ -388,19 +547,16 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
         <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">经度 longitude *</label><t-input v-model="form.locationLng" placeholder="106.58" type="text" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">纬度 latitude *</label><t-input v-model="form.locationLat" placeholder="29.56" type="text" /></div></div>
         <span style="font-size: 11px; color: #8A9288; display: block; margin-top: 4px;">高德/腾讯坐标通常为：经度,纬度。例如高德返回 106.58,29.56 时：经度 longitude 填 106.58，纬度 latitude 填 29.56。请勿填写反。不使用百度地图坐标，会产生偏移。</span>
         <div><label style="color: #8A9288; font-size: 13px;">活动描述</label><t-textarea v-model="form.description" placeholder="活动详细描述" :autosize="{ minRows: 2, maxRows: 4 }" /></div>
-        <div><label style="color: #8A9288; font-size: 13px;">封面图</label>
-          <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;"><input type="file" accept="image/jpeg,image/png,image/webp" @change="handleUpload" style="font-size: 13px;" /></div>
-          <div v-if="coverPreview" style="margin-top: 8px;"><img :src="assetUrl(coverPreview)" style="max-width: 200px; max-height: 120px; border-radius: 8px; border: 1px solid #EDE9DF;" /></div>
-        </div>
-        <!-- V2.8-B: Multi-image upload for detail page swiper -->
-        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">详情轮播图</div>
-        <div style="font-size: 12px; color: #7A8178;">用于小程序活动详情顶部轮播，最多 6 张。上传后点击图片可删除。</div>
+        <!-- V2.8-C: Unified activity images (first one = coverImage) -->
+        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动图片</div>
+        <div style="font-size: 12px; color: #7A8178;">第一张将作为列表封面。最多 6 张。点击图片可删除。</div>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
-          <div v-for="(img, idx) in form.imageUrls" :key="idx" style="position: relative; width: 80px; height: 60px; border-radius: 6px; overflow: hidden; border: 1px solid #EDE9DF; cursor: pointer;" :title="'点击删除: ' + img">
-            <img :src="assetUrl(img)" style="width:100%;height:100%;object-fit:cover;" @click="form.imageUrls.splice(idx, 1)" />
+          <div v-for="(img, idx) in form.imageUrls" :key="idx" style="position: relative; width: 100px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid #EDE9DF; cursor: pointer;" @click="removeImageUrl(idx)">
+            <img :src="assetUrl(img)" style="width:100%;height:100%;object-fit:cover;" />
+            <span v-if="idx === 0" style="position:absolute;top:2px;left:2px;background:#2E7D5A;color:#fff;font-size:10px;padding:1px 6px;border-radius:3px;">封面</span>
           </div>
-          <div v-if="form.imageUrls.length < 6" style="width: 80px; height: 60px; border-radius: 6px; border: 1px dashed #C8CDC7; display: flex; align-items: center; justify-content: center; background: #F7F6F2;">
-            <label style="font-size: 11px; color: #8A9288; cursor: pointer; text-align: center;">+ 上传<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="(e) => { const f = (e.target as HTMLInputElement)?.files?.[0]; if (!f) return; uploadLoading = true; doUpload(f).then(url => { if (url) form.imageUrls.push(url) }); uploadLoading = false }" /></label>
+          <div v-if="form.imageUrls.length < 6" style="width: 100px; height: 72px; border-radius: 6px; border: 1px dashed #C8CDC7; display: flex; align-items: center; justify-content: center; background: #F7F6F2;">
+            <label style="font-size: 11px; color: #8A9288; cursor: pointer; text-align: center; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">+ 上传<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="handleImageUrlUpload" /></label>
           </div>
         </div>
         <!-- V2.8-B: contentBlocks editor -->
@@ -412,7 +568,7 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
           <template v-else>
             <t-input v-model="block.url" :placeholder="'图片URL' + (block.url ? '' : ' — 点击右侧上传')" style="flex: 1;" size="small" />
             <label style="font-size: 12px; color: #2E7D5A; cursor: pointer; padding: 6px 8px; white-space: nowrap;">
-              上传<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="(e) => { const f = (e.target as HTMLInputElement)?.files?.[0]; if (!f) return; doUpload(f).then(url => { if (url) block.url = url }) }" />
+              {{ blockUploadingIdx === idx ? '上传中...' : '上传' }}<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="(e) => handleBlockImageUpload(e, idx, block)" />
             </label>
           </template>
           <t-button theme="default" variant="text" size="small" style="color: #B35B4B; flex-shrink: 0;" @click="form.contentBlocks.splice(idx, 1)">×</t-button>
@@ -426,9 +582,26 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
         <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">报名开始时间 *</label><t-input v-model="form.registrationStartTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">报名结束时间 *</label><t-input v-model="form.registrationEndTime" type="datetime-local" /></div></div>
         <div><label style="color: #8A9288; font-size: 13px;">人数上限 *</label><t-input-number v-model="form.capacity" :min="1" style="width: 100%;" /></div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">价格与支付</div>
-        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">普通价格 ¥</label><t-input-number v-model="form.price" :min="0" style="width: 100%;" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">会员价格 ¥</label><t-input-number v-model="form.memberPrice" :min="0" style="width: 100%;" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">终身会员 ¥</label><t-input-number v-model="form.lifetimeMemberPrice" :min="0" style="width: 100%;" /></div></div>
         <div><label style="color: #8A9288; font-size: 13px;">支付模式</label><t-select v-model="form.paymentMode" :options="[{ label: '全款', value: 'FULL' }, { label: '预付+后付', value: 'PREPAY' }]" style="width: 100%;" /></div>
-        <template v-if="form.paymentMode === 'PREPAY'"><div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">预付金额 ¥ *</label><t-input-number v-model="form.prepayAmount" :min="0" style="width: 100%;" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">后付金额 ¥ *</label><t-input-number v-model="form.remainingAmount" :min="0" style="width: 100%;" /></div></div><div><label style="color: #8A9288; font-size: 13px;">后付日期</label><t-input v-model="form.remainingPayDate" type="date" /></div></template>
+        <template v-if="form.paymentMode === 'PREPAY'"><div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">后付款日期 *</label><t-input v-model="form.postpayDate" type="date" placeholder="如 2026-07-31" /></div></div></template>
+        <!-- V2.8-C: Pricing matrix per user type -->
+        <div style="font-size: 13px; font-weight: 600; color: #3F6B4F; margin-top: 12px; border-bottom: 1px solid #EDE9DF; padding-bottom: 4px;">价格矩阵（{{ form.paymentMode === 'PREPAY' ? '预付 + 后付' : '全款' }}）</div>
+        <div v-if="form.paymentMode === 'FULL'" style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">
+          <div v-for="(rule, idx) in form.pricingRules" :key="idx" style="display: flex; gap: 8px; align-items: center;">
+            <span style="width: 70px; font-size: 13px; color: #18231E; flex-shrink: 0;">{{ rule.label }}</span>
+            <t-input-number v-model="rule.fullAmount" :min="0" size="small" style="width: 120px;" placeholder="全款金额" />
+            <t-checkbox v-model="rule.enabled" style="margin-left: 4px;">启用</t-checkbox>
+          </div>
+        </div>
+        <div v-else style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+          <div v-for="(rule, idx) in form.pricingRules" :key="idx" style="display: flex; gap: 6px; align-items: center;">
+            <span style="width: 70px; font-size: 13px; color: #18231E; flex-shrink: 0;">{{ rule.label }}</span>
+            <t-input-number v-model="rule.prepayAmount" :min="0" size="small" style="width: 100px;" placeholder="预付" />
+            <t-input-number v-model="rule.postpayAmount" :min="0" size="small" style="width: 100px;" placeholder="后付" />
+            <span style="font-size: 12px; color: #8A9288; width: 70px; text-align: right; flex-shrink: 0;">合计 ¥{{ (Number(rule.prepayAmount || 0) + Number(rule.postpayAmount || 0)).toFixed(2) }}</span>
+            <t-checkbox v-model="rule.enabled" style="margin-left: 4px;">启用</t-checkbox>
+          </div>
+        </div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">报名信息收集</div>
         <div style="font-size: 12px; color: #7A8178;">该配置用于活动报名时补充必要组织信息。不勾选时，报名流程不增加信息收集步骤。</div>
         <t-checkbox-group v-model="form.requiredUserInfoFields" :options="regFieldOptions" />
@@ -470,4 +643,84 @@ onMounted(() => { fetchList(); fetchCertTemplates() })
       </div>
     </t-drawer>
   </div>
+
+    <!-- V2.8-D: Postpay management drawer -->
+    <t-drawer v-model:visible="postpayDrawer" :header="'后付款管理 — ' + postpayActivityTitle" size="800px" :footer="false">
+      <div v-if="postpaySummary" style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #F7F6F2; border-radius: 10px; border: 1px solid #EDE9DF; text-align: center;">
+          <div style="font-size: 12px; color: #8A9288;">应后付人数</div>
+          <div style="font-size: 22px; font-weight: 700; color: #18231E;">{{ postpaySummary.totalCount }}</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #EEF5EF; border-radius: 10px; border: 1px solid rgba(46,125,90,0.12); text-align: center;">
+          <div style="font-size: 12px; color: #8A9288;">已后付</div>
+          <div style="font-size: 22px; font-weight: 700; color: #2E7D5A;">{{ postpaySummary.paidCount }}</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #FFF9E5; border-radius: 10px; border: 1px solid rgba(138,109,59,0.12); text-align: center;">
+          <div style="font-size: 12px; color: #8A9288;">待后付</div>
+          <div style="font-size: 22px; font-weight: 700; color: #8A6D3B;">{{ postpaySummary.unpaidCount + postpaySummary.overdueCount }}</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #F7F6F2; border-radius: 10px; border: 1px solid #EDE9DF; text-align: center;">
+          <div style="font-size: 12px; color: #8A9288;">待收金额</div>
+          <div style="font-size: 20px; font-weight: 700; color: #8A6D3B;">¥{{ (postpaySummary.unpaidPostpayAmount || 0).toFixed(2) }}</div>
+        </div>
+        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #F7F6F2; border-radius: 10px; border: 1px solid #EDE9DF; text-align: center;">
+          <div style="font-size: 12px; color: #8A9288;">已收金额</div>
+          <div style="font-size: 20px; font-weight: 700; color: #2E7D5A;">¥{{ (postpaySummary.paidPostpayAmount || 0).toFixed(2) }}</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
+        <t-select v-model="postpayStatusFilter" :options="[{ label: '待后付', value: 'UNPAID' }, { label: '已后付', value: 'PAID' }, { label: '已逾期', value: 'OVERDUE' }, { label: '已免除', value: 'WAIVED' }, { label: '全部', value: 'ALL' }]" style="width: 120px;" @change="fetchPostpayOrders" />
+        <t-input v-model="postpayKeyword" placeholder="搜索昵称/手机号" clearable @enter="fetchPostpayOrders" style="width: 200px;" />
+        <t-button @click="fetchPostpayOrders" size="small" style="background: #2E7D5A; border-color: #2E7D5A; color: #fff;">搜索</t-button>
+        <t-button @click="postpayBatchRemind" size="small" variant="outline" style="margin-left: auto; color: #8A6D3B; border-color: #8A6D3B;">提醒待后付用户</t-button>
+      </div>
+      <div v-if="postpayLoading" style="text-align: center; padding: 32px 0; color: #8A9288;">加载中...</div>
+      <div v-else-if="postpayOrders.length === 0" style="text-align: center; padding: 48px 0; color: #8A9288;">暂无匹配的后付款记录</div>
+      <table v-else style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead><tr style="background: #F7F6F2; border-bottom: 2px solid #EDE9DF;">
+          <th style="padding: 10px 8px; text-align: left; color: #8A9288; font-weight: 500;">用户</th>
+          <th style="padding: 10px 8px; text-align: left; color: #8A9288; font-weight: 500;">手机号</th>
+          <th style="padding: 10px 8px; text-align: left; color: #8A9288; font-weight: 500;">身份</th>
+          <th style="padding: 10px 8px; text-align: right; color: #8A9288; font-weight: 500;">预付款</th>
+          <th style="padding: 10px 8px; text-align: right; color: #8A9288; font-weight: 500;">后付款</th>
+          <th style="padding: 10px 8px; text-align: center; color: #8A9288; font-weight: 500;">状态</th>
+          <th style="padding: 10px 8px; text-align: center; color: #8A9288; font-weight: 500;">提醒</th>
+          <th style="padding: 10px 8px; text-align: center; color: #8A9288; font-weight: 500;">操作</th>
+        </tr></thead>
+        <tbody>
+          <tr v-for="o in postpayOrders" :key="o.id" style="border-bottom: 1px solid #EDE9DF;">
+            <td style="padding: 10px 8px; color: #18231E;">{{ o.nickname }}</td>
+            <td style="padding: 10px 8px; color: #3E463F;">{{ o.phoneMasked || '-' }}</td>
+            <td style="padding: 10px 8px; color: #3E463F;">{{ o.userType }}</td>
+            <td style="padding: 10px 8px; text-align: right; color: #3E463F;">{{ yuan(o.prepayAmount) }}</td>
+            <td style="padding: 10px 8px; text-align: right; font-weight: 600;" :style="{ color: o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE' ? '#8A6D3B' : '#3E463F' }">{{ yuan(o.postpayAmount) }}</td>
+            <td style="padding: 10px 8px; text-align: center;">
+              <span v-if="o.postpayStatus === 'PAID'" style="color: #2E7D5A; font-size: 12px;">✓ 已后付</span>
+              <span v-else-if="o.postpayStatus === 'UNPAID'" style="color: #8A6D3B; font-size: 12px;">待后付</span>
+              <span v-else-if="o.postpayStatus === 'OVERDUE'" style="color: #B35B4B; font-size: 12px;">已逾期</span>
+              <span v-else-if="o.postpayStatus === 'WAIVED'" style="color: #8A9288; font-size: 12px;">已免除</span>
+              <span v-else style="color: #8A9288;">{{ o.postpayStatus }}</span>
+            </td>
+            <td style="padding: 10px 8px; text-align: center; font-size: 12px; color: #8A9288;">
+              {{ o.postpayReminderCount > 0 ? o.postpayReminderCount + '次' : '-' }}
+              <div v-if="o.lastPostpayReminderAt" style="font-size: 10px;">{{ o.lastPostpayReminderAt ? new Date(o.lastPostpayReminderAt).toLocaleDateString('zh-CN') : '' }}</div>
+            </td>
+            <td style="padding: 10px 8px; text-align: center;">
+              <t-space size="small">
+                <t-button v-if="o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="postpayMarkPaid(o.id)" :loading="postpayActionLoading === o.id">标记已付</t-button>
+                <t-button v-if="o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE'" theme="default" variant="text" size="small" style="color: #8A6D3B;" @click="postpaySendReminder(o.id)" :loading="postpayActionLoading === o.id">提醒</t-button>
+                <t-button v-if="o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE'" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="postpayOpenWaive(o.id)">免除</t-button>
+              </t-space>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </t-drawer>
+
+    <!-- V2.8-D: Waive postpay confirm dialog -->
+    <t-dialog v-model:visible="postpayWaiveVisible" header="免除后付款" :on-confirm="postpayConfirmWaive" :confirm-btn="{ content: '确认免除', loading: postpayActionLoading === postpayWaiveOrderId }">
+      <div style="padding: 8px 0;">
+        <t-textarea v-model="postpayWaiveReason" placeholder="请填写免除原因（必填）" :autosize="{ minRows: 2, maxRows: 4 }" />
+      </div>
+    </t-dialog>
 </template>

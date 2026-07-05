@@ -63,10 +63,12 @@ export class ActivityController {
         status: a.status,
         registeredCount: await this.flow.getRegisteredCount(a.id),
         coverImage: a.coverImage || '',
+        imageUrls: a.imageUrls || null,
         effectivePrice: a.price ?? 0,
         effectivePriceLabel: '普通价',
-      })), 
-    ) 
+        postpayDate: a.postpayDate || null,
+      })),
+    )
     return { items: enriched, total, page: p, limit: l } 
   } 
   
@@ -112,6 +114,9 @@ export class ActivityController {
       // V2.8-B: activity content enhancement
       imageUrls: a.imageUrls || null,
       contentBlocks: a.contentBlocks || null,
+      // V2.8-C: pricingRules — parse to friendly array (same as Admin toAdminItem)
+      pricingRules: (() => { try { const v = JSON.parse(a.pricingRules || 'null'); return Array.isArray(v) ? v : null } catch { return null } })(),
+      postpayDate: a.postpayDate || null,
       locationName: a.locationName || '',
       locationAddress: a.locationAddress || '',
       locationLat: a.locationLat ?? null,
@@ -154,11 +159,37 @@ export class ActivityController {
           return this.flow.enrollPay(userId, id, body?.registrationInfo || undefined)
         } 
         
-        @Get('activity/:id/participants') 
-        async getParticipants( 
-          @Param('id', ParseIntPipe) id: number, 
-          @Query('userId') userId: string, 
-        ) { 
-          return this.flow.getParticipants(id, userId || '1') 
-        } 
+        @Get('activity/:id/participants')
+        async getParticipants(
+          @Param('id', ParseIntPipe) id: number,
+          @Query('userId') userId: string,
+        ) {
+          return this.flow.getParticipants(id, userId || '1')
+        }
+
+        // ── V2.8-D: Postpay endpoints ──
+
+        @Get('activity/:id/order-status')
+        async getOrderStatus(
+          @Param('id', ParseIntPipe) id: number,
+          @Query('userId') userId: string,
+        ) {
+          if (!userId) return null
+          return this.flow.getOrderByActivityAndUser(id, userId)
+        }
+
+        @Get('orders/my-postpay')
+        async getMyPostpayOrders(@Query('userId') userId: string) {
+          if (!userId) return []
+          return this.flow.getUserPostpayOrders(userId)
+        }
+
+        @Post('orders/:orderId/postpay/mock-pay')
+        async mockPostpay(
+          @Param('orderId', ParseIntPipe) orderId: number,
+          @Query('userId') userId: string,
+        ) {
+          if (!userId) return { error: 'userId is required' }
+          return this.flow.mockCompletePostpay(orderId, userId)
+        }
       }

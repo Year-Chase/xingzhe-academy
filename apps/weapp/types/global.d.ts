@@ -16,3 +16,5 @@ declare namespace NodeJS {
     TARO_ENV: 'weapp' | 'h5' | 'rn' | 'swan' | 'alipay' | 'tt' | 'qq' | 'jd'
   }
 }
+
+declare const __API_BASE_URL__: string | undefined

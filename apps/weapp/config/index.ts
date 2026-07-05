@@ -15,7 +15,9 @@ export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
     plugins: [
       '@tarojs/plugin-platform-weapp'
     ],
-    defineConstants: {},
+    defineConstants: {
+      __API_BASE_URL__: JSON.stringify(mode === 'development' ? 'http://127.0.0.1:3000' : 'https://api.tenselog.cn'),
+    },
     copy: {
       patterns: [],
       options: {}

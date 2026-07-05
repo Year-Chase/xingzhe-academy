@@ -46,4 +46,48 @@ export class AdminOrderController {
     if (!body.amount || body.amount <= 0) throw new BadRequestException('amount must be > 0')
     return this.flow.refund(id, body.amount, body.reason || '')
   }
+
+  // ── V2.8-D: Postpay management endpoints ──
+
+  @Get('activities/:activityId/postpay-summary')
+  async getPostpaySummary(@Param('activityId', ParseIntPipe) activityId: number) {
+    return this.flow.getPostpaySummary(activityId)
+  }
+
+  @Get('activities/:activityId/postpay-orders')
+  async getPostpayOrders(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Query('status') status: string,
+    @Query('keyword') keyword: string,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+  ) {
+    return this.flow.getPostpayOrders(activityId, {
+      status: status || undefined,
+      keyword: keyword || undefined,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 50,
+    })
+  }
+
+  @Post('orders/:id/mark-postpay-paid')
+  async markPostpayPaid(@Param('id', ParseIntPipe) id: number) {
+    return this.flow.adminMarkPostpayPaid(id)
+  }
+
+  @Post('orders/:id/waive-postpay')
+  async waivePostpay(@Param('id', ParseIntPipe) id: number, @Body() body: { reason: string }) {
+    if (!body.reason) throw new BadRequestException('免除原因不能为空')
+    return this.flow.adminWaivePostpay(id, body.reason)
+  }
+
+  @Post('orders/:id/postpay-reminder')
+  async sendPostpayReminder(@Param('id', ParseIntPipe) id: number) {
+    return this.flow.adminSendPostpayReminder(id)
+  }
+
+  @Post('activities/:activityId/postpay-reminders')
+  async batchSendPostpayReminders(@Param('activityId', ParseIntPipe) activityId: number) {
+    return this.flow.adminBatchSendPostpayReminders(activityId)
+  }
 }

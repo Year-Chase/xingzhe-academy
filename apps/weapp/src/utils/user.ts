@@ -53,8 +53,6 @@ export async function loginWithPhone(input: {
   encryptedData?: string
   iv?: string
 }): Promise<{ userId: string; token: string; profile: any } | null> {
-  console.log('[xingzhe-login] start')
-
   if (!input.phoneCode && !input.encryptedData) {
     console.warn('[xingzhe-login] no phone authorization data')
     return null
@@ -93,7 +91,6 @@ export async function loginWithPhone(input: {
       if (data.token) Taro.setStorageSync('xingzhe_auth_token', data.token)
       const profile = data?.user || data
       Taro.setStorageSync('xingzhe_user_profile', profile)
-      console.log('[xingzhe-login] success', userId)
       return { userId, token: data.token, profile }
     }
 

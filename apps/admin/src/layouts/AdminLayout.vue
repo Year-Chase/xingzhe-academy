@@ -40,6 +40,7 @@ function isActive(path: string) {
         :value="route.path"
         :collapsed="collapsed"
         style="background: transparent; border: none; margin-top: 8px;"
+        @change="(path: string) => router.push(path)"
       >
         <t-menu-item
           v-for="item in menuItems"

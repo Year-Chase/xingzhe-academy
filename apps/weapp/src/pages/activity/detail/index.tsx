@@ -5,6 +5,7 @@ import { getUserId, isLoggedIn } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
+import { getActivityPrice } from '../../../utils/priceEngine'
 
 function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; style: React.CSSProperties; mode?: string }) {
   const [failed, setFailed] = useState(false)
@@ -33,7 +34,9 @@ interface ActivityData {
   groupQrType?: string; groupQrImageUrl?: string; groupQrTitle?: string; groupQrDescription?: string
   registrationStartTime?: string; registrationEndTime?: string
   memoryImages?: any; memoryText?: string
-  imageUrls?: any; contentBlocks?: any
+  imageUrls?: any; contentBlocks?: any; pricingRules?: any
+  price?: number; memberPrice?: number; lifetimeMemberPrice?: number
+  paymentMode?: string; prepayAmount?: number; remainingAmount?: number
   createdAt: string
 }
 
@@ -62,6 +65,7 @@ export default function ActivityDetail() {
   const [id, setId] = useState(0)
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [userStatus, setUserStatus] = useState<RegStatus>('NOT_REGISTERED')
+  const [userType, setUserType] = useState<string>('普通用户')
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [error, setError] = useState('')
@@ -71,6 +75,9 @@ export default function ActivityDetail() {
   // V2.5C: group QR display
   const [showGroupQr, setShowGroupQr] = useState(false)
   const [groupQrFailed, setGroupQrFailed] = useState(false)
+  // V2.8-D: Postpay order info
+  const [orderInfo, setOrderInfo] = useState<any>(null)
+  const [postpayActing, setPostpayActing] = useState(false)
 
   useEffect(() => { const p = router.params as any; if (p.id) setId(Number(p.id)) }, [router.params])
   useEffect(() => { if (id === 0) return; load(id) }, [id])
@@ -84,14 +91,18 @@ export default function ActivityDetail() {
     setLoading(true); setError('')
     try {
       const uid = getUserId()
-      const [d, s, p] = await Promise.all([
+      const [d, s, p, profileRes, orderRes] = await Promise.all([
         Taro.request({ url: `${API}/activity/${activityId}` }),
         Taro.request({ url: `${API}/activity/${activityId}/status?userId=${uid}` }),
         Taro.request({ url: `${API}/activity/${activityId}/participants?userId=${uid}` }).catch(() => ({ data: [] })),
+        Taro.request({ url: `${API}/users/${uid}/profile` }).catch(() => ({ data: {} })),
+        Taro.request({ url: `${API}/activity/${activityId}/order-status?userId=${uid}` }).catch(() => ({ data: null })),
       ])
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
       setParticipants((p.data as Participant[]) || [])
+      setUserType((profileRes.data as any)?.identityType || '普通用户')
+      setOrderInfo((orderRes.data as any) || null)
     } catch (e) { console.error('[activity-detail] load', e); setError('加载失败，请下拉重试') }
     finally { setLoading(false) }
   }, [])
@@ -139,6 +150,27 @@ export default function ActivityDetail() {
   }
 
   const cancelPay = () => { setShowPayConfirm(false) }
+
+  // V2.8-D: Mock complete postpay
+  const handlePostpay = async () => {
+    if (!orderInfo?.id || postpayActing) return
+    setPostpayActing(true)
+    try {
+      const uid = getUserId()
+      const res = await Taro.request({
+        method: 'POST',
+        url: `${API}/orders/${orderInfo.id}/postpay/mock-pay?userId=${uid}`,
+      })
+      if ((res.data as any)?.postpayStatus === 'PAID') {
+        Taro.showToast({ title: '后付款已完成', icon: 'success' })
+        await load(id)
+      } else if ((res.data as any)?.error) {
+        Taro.showToast({ title: (res.data as any).error, icon: 'none' })
+      }
+    } catch (e) { Taro.showToast({ title: '操作失败', icon: 'none' }) }
+    finally { setPostpayActing(false) }
+  }
+
   const goQR = () => {
     Taro.navigateTo({ url: `/pages/activity/qr/index?activityId=${id}&title=${encodeURIComponent(activity?.title || '')}` })
   }
@@ -169,14 +201,24 @@ export default function ActivityDetail() {
   const isPaid = userStatus === 'PAID' || userStatus === 'CHECKED_IN'
 
   // V2.8-B: imageUrls and contentBlocks
-  const detailImages: string[] = safeFields(aAny.imageUrls).filter(
-    (v) => typeof v === 'string' && v.trim().length > 0
-  )
+  const detailImages: string[] = (() => {
+    const urls = safeFields(aAny.imageUrls).filter((v) => typeof v === 'string' && v.trim().length > 0)
+    if (urls.length > 0) return urls
+    // Fallback: use coverImage as single image
+    if (activity?.coverImage) return [activity.coverImage]
+    return []
+  })()
   const contentBlocks: any[] = safeFields(aAny.contentBlocks)
   // Fallback: if contentBlocks empty, wrap description as a single text block
   const displayBlocks: any[] = contentBlocks.length > 0
     ? contentBlocks.filter((b: any) => b && typeof b === 'object')
     : (activity?.description ? [{ type: 'text', text: activity.description }] : [])
+
+  // ── V2.8-C: Unified pricing via priceEngine ──
+  const priceVM = getActivityPrice({ activity, identityType: userType })
+  const payMode = priceVM.payMode
+  const isPrepay = payMode === 'PREPAY'
+  const isLoggedInNow = isLoggedIn()
 
   // V2.5.1: toast helper for disabled actions
   const toastFinished = () => Taro.showToast({ title: '活动已结束', icon: 'none' })
@@ -250,17 +292,89 @@ export default function ActivityDetail() {
             }
           </Text>
         </View>
-        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>价格</Text>
-          <Text style={{ fontSize: '26rpx', color: C.body }}>
-            {activity.effectivePrice > 0 ? (
-              <Text>{activity.effectivePriceLabel || '普通价'} <Text style={{ fontWeight: '700', color: C.dark }}>¥{activity.effectivePrice}</Text></Text>
+        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+          <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral, paddingTop: '2rpx' }}>价格</Text>
+          <View style={{ flex: 1 }}>
+            {!isLoggedInNow ? (
+              <Text style={{ fontSize: '26rpx', color: C.secondary }}>请登录后查看价格</Text>
+            ) : !priceVM.priceReady ? (
+              <Text style={{ fontSize: '26rpx', color: C.secondary }}>价格待确认</Text>
+            ) : isPrepay ? (
+              <View>
+                {/* PREPAY: total with optional strikethrough */}
+                <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'baseline', gap: '8rpx' }}>
+                  {priceVM.detailHasStrikethrough ? (
+                    <>
+                      <Text style={{ fontSize: '22rpx', color: C.secondary, textDecoration: 'line-through' }}>{priceVM.detailStrikethroughPrice}</Text>
+                      {priceVM.showIdentityLabel ? (
+                        <Text style={{ fontSize: '20rpx', color: '#4A7C5D', background: '#EEF5EF', borderRadius: '6rpx', padding: '2rpx 10rpx' }}>{priceVM.identityLabel}</Text>
+                      ) : null}
+                      <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
+                  )}
+                </View>
+                {/* PREPAY sub-lines */}
+                {priceVM.detailSubLines.map((line, i) => (
+                  <Text key={i} style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>{line}</Text>
+                ))}
+                {/* Postpay date */}
+                {priceVM.detailPostpayDateText ? (
+                  <Text style={{ display: 'block', fontSize: '22rpx', color: C.secondary, marginTop: '4rpx' }}>{priceVM.detailPostpayDateText}</Text>
+                ) : null}
+              </View>
             ) : (
-              <Text style={{ color: '#2E7D5A', fontWeight: '600' }}>免费</Text>
+              <View>
+                {/* FULL: price with optional strikethrough */}
+                <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'baseline', gap: '8rpx' }}>
+                  {priceVM.detailHasStrikethrough ? (
+                    <>
+                      <Text style={{ fontSize: '22rpx', color: C.secondary, textDecoration: 'line-through' }}>{priceVM.detailStrikethroughPrice}</Text>
+                      {priceVM.showIdentityLabel ? (
+                        <Text style={{ fontSize: '20rpx', color: '#4A7C5D', background: '#EEF5EF', borderRadius: '6rpx', padding: '2rpx 10rpx' }}>{priceVM.identityLabel}</Text>
+                      ) : null}
+                      <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
+                  )}
+                </View>
+              </View>
             )}
-          </Text>
+          </View>
         </View>
+
       </View>
+
+      {/* V2.8-D: Postpay module — shown for registered PREPAY users */}
+      {orderInfo && orderInfo.payType === 'PREPAY' && isLoggedInNow && (
+        <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)' }}>
+          <Text style={{ fontSize: '28rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '12rpx' }}>
+            {orderInfo.postpayStatus === 'PAID' ? '后付款已完成' : orderInfo.postpayStatus === 'WAIVED' ? '后付款已免除' : '后付款'}
+          </Text>
+          {orderInfo.postpayStatus === 'UNPAID' || orderInfo.postpayStatus === 'OVERDUE' ? (
+            <View>
+              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block' }}>你已完成预付款：¥{orderInfo.orderPrepayAmount || 0}</Text>
+              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', marginTop: '4rpx' }}>待完成后付款：¥{orderInfo.orderPostpayAmount || 0}</Text>
+              {orderInfo.postpayDate ? (
+                <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginTop: '4rpx' }}>后付款日期：{orderInfo.postpayDate}</Text>
+              ) : null}
+              <View onClick={handlePostpay} style={{ marginTop: '16rpx', width: '100%', height: '72rpx', borderRadius: '999rpx', background: postpayActing ? '#E9EAE5' : C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: '28rpx', fontWeight: '600', color: postpayActing ? '#8A9288' : '#FFFFFF' }}>{postpayActing ? '处理中...' : '完成后付款'}</Text>
+              </View>
+            </View>
+          ) : orderInfo.postpayStatus === 'PAID' ? (
+            <View>
+              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block' }}>预付款：¥{orderInfo.orderPrepayAmount || 0}</Text>
+              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', marginTop: '4rpx' }}>后付款：¥{orderInfo.orderPostpayAmount || 0}</Text>
+              <Text style={{ fontSize: '22rpx', color: '#2E7D5A', display: 'block', marginTop: '4rpx' }}>✓ 费用已完成</Text>
+            </View>
+          ) : orderInfo.postpayStatus === 'WAIVED' ? (
+            <Text style={{ fontSize: '24rpx', color: C.secondary, display: 'block' }}>该活动的后付款已被免除。</Text>
+          ) : null}
+        </View>
+      )}
 
       {/* 4. 活动介绍 — V2.8-B: contentBlocks or description fallback */}
       {displayBlocks.length > 0 && (
@@ -392,7 +506,8 @@ export default function ActivityDetail() {
             )}
             {modalUser.motto ? (
               <View style={{ background: '#FBFAF6', border: '1rpx solid #EDE9DF', borderRadius: '18rpx', padding: '24rpx', marginTop: '28rpx' }}>
-                <Text style={{ fontSize: '26rpx', color: C.body, lineHeight: '1.6' }}>"{modalUser.motto}"</Text>
+                <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginBottom: '4rpx' }}>简介</Text>
+                <Text style={{ fontSize: '26rpx', color: C.body, lineHeight: '1.6' }}>「{modalUser.motto}」</Text>
               </View>
             ) : null}
           </View>
@@ -403,11 +518,15 @@ export default function ActivityDetail() {
       {showPayConfirm && (
         <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={cancelPay}>
           <View style={{ width: '560rpx', background: C.white, borderRadius: '24rpx', padding: '40rpx 36rpx 32rpx', boxShadow: '0 16rpx 48rpx rgba(0,0,0,0.16)' }} onClick={(e) => e.stopPropagation()}>
-            <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block' }}>确认报名并支付？</Text>
+            <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block' }}>{priceVM.paymentDialogTitle}</Text>
             <Text style={{ fontSize: '26rpx', color: C.neutral, textAlign: 'center', display: 'block', marginTop: '12rpx' }}>{activity?.title || ''}</Text>
+            <Text style={{ fontSize: '28rpx', fontWeight: '600', color: C.dark, textAlign: 'center', display: 'block', marginTop: '16rpx' }}>{priceVM.paymentDialogMainText}</Text>
+            {priceVM.paymentDialogSubText ? (
+              <Text style={{ fontSize: '22rpx', color: C.secondary, textAlign: 'center', display: 'block', marginTop: '8rpx' }}>{priceVM.paymentDialogSubText}</Text>
+            ) : null}
             <View style={{ display: 'flex', flexDirection: 'row', gap: '20rpx', marginTop: '36rpx' }}>
               <Button onClick={cancelPay} style={{ flex: 1, height: '88rpx', borderRadius: '999rpx', background: C.white, border: '1rpx solid #EDE9DF', color: C.neutral, fontSize: '30rpx', lineHeight: '88rpx', textAlign: 'center' }}>取消</Button>
-              <Button onClick={confirmPay} disabled={acting} style={{ flex: 2, height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', fontWeight: '600', lineHeight: '88rpx', border: 'none', textAlign: 'center' }}>{acting ? '...' : '确认支付'}</Button>
+              <Button onClick={confirmPay} disabled={acting} style={{ flex: 2, height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', fontWeight: '600', lineHeight: '88rpx', border: 'none', textAlign: 'center' }}>{acting ? '...' : priceVM.paymentButtonText}</Button>
             </View>
           </View>
         </View>

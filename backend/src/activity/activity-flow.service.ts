@@ -201,13 +201,29 @@ export class ActivityFlowService {
     else { reg.status = 'PAID' }
     const saved = await this.regRepo.save(reg)
 
-    // Create or update order — amount from activity.price, status → PAID
+    // ── V2.8-C: Compute price based on user identityType and activity pricingRules ──
     const orderExists = await this.orderRepo.findOne({ where: { registrationId: saved.id } })
-    const price = activity.price ?? 0
+    const user = await this.userRepo.findOne({ where: { id: userId as any } })
+    const userType = user?.identityType || '普通用户'
+    const { amount, snapshot } = this.resolvePrice(activity, userType)
+
+    const orderData: any = {
+      amount, status: 'PAID' as const, paidAt: new Date(),
+      payType: (activity.paymentMode as any) || 'FULL',
+      userTypeAtOrder: userType,
+      priceSource: snapshot.priceSource,
+      fullAmount: snapshot.fullAmount,
+      orderPrepayAmount: snapshot.orderPrepayAmount,
+      orderPostpayAmount: snapshot.orderPostpayAmount,
+      pricingSnapshot: snapshot.pricingSnapshot,
+      // V2.8-D: Initialize postpay status
+      postpayStatus: (activity.paymentMode === 'PREPAY' && snapshot.orderPostpayAmount > 0) ? 'UNPAID' : 'NONE',
+    }
+
     if (!orderExists) {
-      await this.orderRepo.save(this.orderRepo.create({ userId, activityId, registrationId: saved.id, amount: price, status: 'PAID', paidAt: new Date(), payType: (activity.paymentMode as any) || 'FULL' }))
+      await this.orderRepo.save(this.orderRepo.create({ userId, activityId, registrationId: saved.id, ...orderData }))
     } else {
-      await this.orderRepo.update({ registrationId: saved.id }, { amount: price, status: 'PAID', paidAt: new Date() })
+      await this.orderRepo.update({ registrationId: saved.id }, orderData)
     }
 
     let qr = await this.qrRepo.findOne({ where: { registrationId: saved.id, status: 'ACTIVE' as any } })
@@ -246,7 +262,73 @@ export class ActivityFlowService {
       }
     }
 
-    return { status: 'PAID', id: saved.id, code: qr.code, orderId: orderExists?.id || null, amount: price }
+    return { status: 'PAID', id: saved.id, code: qr.code, orderId: orderExists?.id || null, amount }
+  }
+
+  // ──── V2.8-C: Resolve price from pricingRules or legacy fields ────
+  private resolvePrice(activity: Activity, userType: string): { amount: number; snapshot: {
+    priceSource: string; fullAmount: number; orderPrepayAmount: number; orderPostpayAmount: number; pricingSnapshot: string | null
+  } } {
+    const USER_TYPES = ['普通用户', '会员', '终身会员', '志愿者', '工作人员']
+    const payMode = activity.paymentMode || 'FULL'
+
+    // Try pricingRules
+    let rules: any[] = []
+    try { const v = JSON.parse(activity.pricingRules || 'null'); rules = Array.isArray(v) ? v : [] } catch {}
+    const normalRule = rules.find((r: any) => r.userType === '普通用户' && r.enabled !== false)
+
+    if (rules.length > 0) {
+      let matched = rules.find((r: any) => r.userType === userType && r.enabled !== false)
+      if (!matched) matched = normalRule
+      if (!matched) matched = { fullAmount: 0, prepayAmount: 0, postpayAmount: 0 }
+
+      const fullAmount = Number(matched.fullAmount || 0)
+      const prepayAmount = Number(matched.prepayAmount || 0)
+      const postpayAmount = Number(matched.postpayAmount || 0)
+      const amount = payMode === 'PREPAY' ? prepayAmount : fullAmount
+      const snapshotObj = { ...matched, postpayDateAtOrder: activity.postpayDate || null }
+
+      return {
+        amount,
+        snapshot: {
+          priceSource: 'pricingRules',
+          fullAmount,
+          orderPrepayAmount: prepayAmount,
+          orderPostpayAmount: postpayAmount,
+          pricingSnapshot: JSON.stringify(snapshotObj),
+        },
+      }
+    }
+
+    // Legacy fallback
+    const price = activity.price ?? 0
+    const memberPrice = activity.memberPrice ?? 0
+    const lifetimeMemberPrice = activity.lifetimeMemberPrice ?? 0
+    const prepayAmount = activity.prepayAmount ?? 0
+    const remainingAmount = activity.remainingAmount ?? 0
+
+    let fullAmount = price
+    if (userType === '会员' && memberPrice > 0) fullAmount = memberPrice
+    else if (userType === '终身会员') {
+      if (lifetimeMemberPrice > 0) fullAmount = lifetimeMemberPrice
+      else if (memberPrice > 0) fullAmount = memberPrice
+    }
+    // 志愿者 / 工作人员 / 普通用户 / 未设置 → price
+
+    const legacyPrepay = prepayAmount
+    const legacyPostpay = Math.max(0, fullAmount - legacyPrepay)
+    const amount = payMode === 'PREPAY' ? legacyPrepay : fullAmount
+
+    return {
+      amount,
+      snapshot: {
+        priceSource: 'legacy',
+        fullAmount,
+        orderPrepayAmount: legacyPrepay,
+        orderPostpayAmount: legacyPostpay,
+        pricingSnapshot: JSON.stringify({ userType, fullAmount, prepayAmount: legacyPrepay, postpayAmount: legacyPostpay, postpayDateAtOrder: activity.postpayDate || null }),
+      },
+    }
   }
 
   // ──── getRegisteredCount — from Registration (single source of truth) ────
@@ -270,7 +352,7 @@ export class ActivityFlowService {
         name: u?.nickname || '行者',
         gender: u?.gender || '未知',
         commonActivityCount: 0,
-        motto: '把身体从屏幕里带出来。',
+        motto: u?.intro || '',
         status: r.status,
       }
     })
@@ -393,6 +475,249 @@ export class ActivityFlowService {
     if (inv.status !== 'REQUESTED') throw new BadRequestException('Invoice already issued or canceled')
     inv.status = 'ISSUED'; inv.issuedAt = new Date()
     return this.invoiceRepo.save(inv)
+  }
+
+  // ── V2.8-D: Postpay management ──
+
+  async getPostpaySummary(activityId: number) {
+    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
+    if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
+    const orders = await this.orderRepo.find({ where: { activityId, status: 'PAID', payType: 'PREPAY' } })
+    const totalCount = orders.length
+    const paidCount = orders.filter(o => o.postpayStatus === 'PAID').length
+    const unpaidCount = orders.filter(o => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'NONE').length
+    const overdueCount = orders.filter(o => o.postpayStatus === 'OVERDUE').length
+    const waivedCount = orders.filter(o => o.postpayStatus === 'WAIVED').length
+    const totalPostpayAmount = orders.reduce((s, o) => s + Number(o.orderPostpayAmount || 0), 0)
+    const paidPostpayAmount = orders.filter(o => o.postpayStatus === 'PAID').reduce((s, o) => s + Number(o.orderPostpayAmount || 0), 0)
+    const unpaidPostpayAmount = orders.filter(o => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'NONE').reduce((s, o) => s + Number(o.orderPostpayAmount || 0), 0)
+    return {
+      activityId, title: activity.title,
+      postpayDate: activity.postpayDate || null,
+      totalCount, paidCount, unpaidCount, overdueCount, waivedCount,
+      totalPostpayAmount, paidPostpayAmount, unpaidPostpayAmount,
+    }
+  }
+
+  async getPostpayOrders(activityId: number, filters?: { status?: string; keyword?: string; page?: number; limit?: number }) {
+    const p = Math.max(1, filters?.page || 1)
+    const l = Math.min(100, Math.max(1, filters?.limit || 50))
+    const qb = this.orderRepo.createQueryBuilder('o')
+      .where('o.activityId = :aid', { aid: activityId })
+      .andWhere('o.payType = :pt', { pt: 'PREPAY' })
+      .andWhere('o.status = :st', { st: 'PAID' })
+      .orderBy('o.createdAt', 'ASC')
+
+    if (filters?.status && filters.status !== 'ALL') {
+      qb.andWhere('o.postpayStatus = :ps', { ps: filters.status })
+    }
+
+    qb.skip((p - 1) * l).take(l)
+    const [items, total] = await qb.getManyAndCount()
+
+    // Enrich with user info
+    const userIds = [...new Set(items.map(o => o.userId).filter(Boolean))] as string[]
+    const users = userIds.length > 0 ? await this.userRepo.find({ where: userIds.map(id => ({ id } as any)) }) : []
+    const userMap = new Map<string, User>()
+    for (const u of users) { userMap.set(u.id, u) }
+
+    // Also get registration info for phone numbers
+    const regIds = items.map(o => o.registrationId)
+    const regInfos = regIds.length > 0 ? await this.regInfoRepo.find({ where: { registrationId: In(regIds) } }) : []
+    const regInfoMap = new Map<number, any>()
+    for (const ri of regInfos) { regInfoMap.set(ri.registrationId, ri) }
+
+    // Keyword filter post-query (for nickname/phone matching)
+    let enriched = items.map(o => {
+      const u = userMap.get(o.userId || '')
+      const ri = regInfoMap.get(o.registrationId)
+      return {
+        id: o.id, registrationId: o.registrationId, userId: o.userId,
+        nickname: u?.nickname || '行者',
+        phone: ri?.phone || u?.phone || null,
+        phoneMasked: ri?.phone ? ri.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : (u?.phone ? u.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : null),
+        userType: o.userTypeAtOrder || '普通用户',
+        prepayAmount: o.orderPrepayAmount,
+        postpayAmount: o.orderPostpayAmount,
+        postpayStatus: o.postpayStatus,
+        postpayPaidAt: o.postpayPaidAt,
+        postpayReminderCount: o.postpayReminderCount,
+        lastPostpayReminderAt: o.lastPostpayReminderAt,
+        postpayWaivedAt: o.postpayWaivedAt,
+        postpayWaiveReason: o.postpayWaiveReason,
+        activityId: o.activityId,
+      }
+    })
+
+    if (filters?.keyword) {
+      const kw = filters.keyword.toLowerCase()
+      enriched = enriched.filter(e =>
+        (e.nickname && e.nickname.toLowerCase().includes(kw)) ||
+        (e.phone && e.phone.includes(kw))
+      )
+    }
+
+    return { items: enriched, total: enriched.length, page: p, limit: l }
+  }
+
+  async mockCompletePostpay(orderId: number, userId: string) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } })
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+    if (order.userId !== userId) throw new BadRequestException('Order does not belong to this user')
+    if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
+    if (order.postpayStatus === 'PAID') throw new BadRequestException('后付款已完成')
+    if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除')
+
+    order.postpayStatus = 'PAID'
+    order.postpayPaidAt = new Date()
+    await this.orderRepo.save(order)
+
+    return {
+      id: order.id,
+      postpayStatus: order.postpayStatus,
+      postpayPaidAt: order.postpayPaidAt,
+      orderPostpayAmount: order.orderPostpayAmount,
+    }
+  }
+
+  async getOrderForUser(orderId: number, userId: string) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId, userId } })
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+    return {
+      id: order.id, registrationId: order.registrationId, activityId: order.activityId,
+      amount: order.amount, status: order.status, payType: order.payType,
+      orderPrepayAmount: order.orderPrepayAmount, orderPostpayAmount: order.orderPostpayAmount,
+      postpayStatus: order.postpayStatus,
+      postpayPaidAt: order.postpayPaidAt,
+      postpayReminderCount: order.postpayReminderCount,
+      lastPostpayReminderAt: order.lastPostpayReminderAt,
+    }
+  }
+
+  async getOrderByActivityAndUser(activityId: number, userId: string) {
+    const order = await this.orderRepo.findOne({ where: { activityId, userId, status: 'PAID' } })
+    if (!order) return null
+    return {
+      id: order.id, registrationId: order.registrationId, activityId: order.activityId,
+      amount: order.amount, status: order.status, payType: order.payType,
+      payMode: order.payType,
+      prepayStatus: 'PAID' as const,
+      postpayStatus: order.postpayStatus,
+      orderPrepayAmount: order.orderPrepayAmount,
+      orderPostpayAmount: order.orderPostpayAmount,
+      postpayPaidAt: order.postpayPaidAt,
+      postpayReminderCount: order.postpayReminderCount,
+      lastPostpayReminderAt: order.lastPostpayReminderAt,
+      postpayDate: (await this.activityRepo.findOne({ where: { id: activityId } }))?.postpayDate || null,
+    }
+  }
+
+  async getUserPostpayOrders(userId: string) {
+    const orders = await this.orderRepo.find({
+      where: { userId, status: 'PAID', payType: 'PREPAY' },
+      order: { createdAt: 'DESC' },
+    })
+    const enriched = await Promise.all(orders.map(async (o) => {
+      const activity = o.activityId ? await this.activityRepo.findOne({ where: { id: o.activityId } }) : null
+      return {
+        activityId: o.activityId,
+        title: activity?.title || '',
+        location: activity?.location || '',
+        startTime: activity?.startTime || null,
+        endTime: activity?.endTime || null,
+        coverImage: activity?.coverImage || '',
+        province: activity?.province || '',
+        city: activity?.city || '',
+        orderId: o.id,
+        paymentMode: o.payType,
+        prepayStatus: 'PAID',
+        postpayStatus: o.postpayStatus,
+        orderPrepayAmount: o.orderPrepayAmount,
+        orderPostpayAmount: o.orderPostpayAmount,
+        postpayDate: activity?.postpayDate || null,
+        postpayPaidAt: o.postpayPaidAt,
+      }
+    }))
+    return enriched
+  }
+
+  // ──── Admin: postpay operations ────
+
+  async adminMarkPostpayPaid(orderId: number) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } })
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+    if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
+    if (order.postpayStatus === 'PAID') throw new BadRequestException('后付款已完成')
+    if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除，如需标记已付请先撤销免除')
+
+    order.postpayStatus = 'PAID'
+    order.postpayPaidAt = new Date()
+    await this.orderRepo.save(order)
+    return { id: order.id, postpayStatus: order.postpayStatus, postpayPaidAt: order.postpayPaidAt }
+  }
+
+  async adminWaivePostpay(orderId: number, reason: string) {
+    if (!reason || !reason.trim()) throw new BadRequestException('免除原因不能为空')
+    const order = await this.orderRepo.findOne({ where: { id: orderId } })
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+    if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
+    if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除')
+    if (order.postpayStatus === 'PAID') throw new BadRequestException('后付款已完成，无法免除')
+
+    order.postpayStatus = 'WAIVED'
+    order.postpayWaivedAt = new Date()
+    order.postpayWaiveReason = reason.trim()
+    await this.orderRepo.save(order)
+    return { id: order.id, postpayStatus: order.postpayStatus, postpayWaivedAt: order.postpayWaivedAt, postpayWaiveReason: order.postpayWaiveReason }
+  }
+
+  async adminSendPostpayReminder(orderId: number, activityId?: number) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } })
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+    if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
+    if (order.postpayStatus !== 'UNPAID' && order.postpayStatus !== 'OVERDUE')
+      throw new BadRequestException(`后付款状态为 ${order.postpayStatus}，无法发送提醒`)
+
+    const activity = activityId ? await this.activityRepo.findOne({ where: { id: activityId } }) : (order.activityId ? await this.activityRepo.findOne({ where: { id: order.activityId } }) : null)
+    const user = order.userId ? await this.userRepo.findOne({ where: { id: order.userId as any } }) : null
+
+    order.postpayReminderCount = (order.postpayReminderCount || 0) + 1
+    order.lastPostpayReminderAt = new Date()
+    await this.orderRepo.save(order)
+
+    const reminderText = `你报名的「${activity?.title || ''}」还有一笔后付款待完成。\n\n后付款金额：¥${order.orderPostpayAmount || 0}\n后付款日期：${activity?.postpayDate || '待确认'}\n\n你可以在「我的活动」中完成后付款。`
+
+    return {
+      id: order.id,
+      postpayReminderCount: order.postpayReminderCount,
+      lastPostpayReminderAt: order.lastPostpayReminderAt,
+      reminderText,
+      userNickname: user?.nickname || '',
+    }
+  }
+
+  async adminBatchSendPostpayReminders(activityId: number) {
+    const orders = await this.orderRepo.find({
+      where: { activityId, status: 'PAID', payType: 'PREPAY' },
+    })
+    const targets = orders.filter(o => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE')
+
+    let sent = 0
+    for (const order of targets) {
+      order.postpayReminderCount = (order.postpayReminderCount || 0) + 1
+      order.lastPostpayReminderAt = new Date()
+      await this.orderRepo.save(order)
+      sent++
+    }
+
+    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
+    return {
+      activityId,
+      activityTitle: activity?.title || '',
+      targetCount: targets.length,
+      sentCount: sent,
+      postpayDate: activity?.postpayDate || null,
+    }
   }
 
   // ──── private ────

@@ -28,8 +28,16 @@ export default function ActivityList() {
     try {
       const res = await Taro.request({ url: `${API}/activity/all?page=${p}&limit=50` })
       const data = res.data as any
-      const list: ActivityItem[] = data.items || []
-      setTotal(data.total || 0)
+      // Compatible with: plain array, { items }, { data: { items } }
+      let list: ActivityItem[] = []
+      if (Array.isArray(data)) {
+        list = data
+      } else if (data && Array.isArray(data.items)) {
+        list = data.items
+      } else if (data && data.data && Array.isArray(data.data.items)) {
+        list = data.data.items
+      }
+      setTotal(typeof data.total === 'number' ? data.total : (data.data?.total ?? list.length))
       if (append) setItems((prev) => [...prev, ...list])
       else setItems(list)
     } catch (e) { console.error('[activity-list]', e); setError('加载失败') }
@@ -86,6 +94,13 @@ export default function ActivityList() {
 
   if (loading) return <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: '#F7F6F2' }}><Text style={{ color: '#8A9288', fontSize: '28rpx' }}>加载中...</Text></View>
   if (error) return <View style={{ padding: '160rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: '#F7F6F2' }}><Text style={{ display: 'block', fontSize: '32rpx', color: '#333A34', marginBottom: '20rpx' }}>{error}</Text></View>
+  if (!loading && !error && items.length === 0) return (
+    <View style={{ padding: '200rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: '#F7F6F2' }}>
+      <Text style={{ fontSize: '60rpx', display: 'block', marginBottom: '16rpx' }}>🏃</Text>
+      <Text style={{ fontSize: '30rpx', color: '#666666', display: 'block' }}>暂无活动</Text>
+      <Text style={{ fontSize: '26rpx', color: '#8A9288', display: 'block', marginTop: '8rpx' }}>新活动即将上线，敬请期待</Text>
+    </View>
+  )
 
   return (
     <ScrollView scrollY style={{ height: '100vh', background: '#F7F6F2' }} onScrollToLower={loadMore}>
@@ -128,10 +143,6 @@ export default function ActivityList() {
                 {a.location ? (
                   <Text style={{ fontSize: '23rpx', color: ended ? '#A6AAA2' : '#666666', lineHeight: '1.4', marginTop: '6rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {a.location}</Text>
                 ) : null}
-                {a.capacity > 0 && ((a.registeredCount ?? 0) / a.capacity) >= 0.6 ? (
-                <Text style={{ fontSize: '24rpx', fontWeight: '500', color: ended ? '#A6AAA2' : '#18231E', marginTop: 'auto', alignSelf: 'flex-end' }}>
-                  已报名 {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity}</Text>
-                </Text>) : null}
               </View>
             </View>
           )

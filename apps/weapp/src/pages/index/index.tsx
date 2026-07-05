@@ -8,7 +8,7 @@ import { API_BASE_URL as API } from '../../config/api'
 interface ActivityCard {
   id: number; title: string; description: string; location: string
   startTime: string; endTime: string; capacity: number; registeredCount: number
-  coverImage: string; status: string
+  coverImage: string; imageUrls?: any; status: string; price?: number
 }
 
 const PAGE_SIZE = 10
@@ -46,14 +46,29 @@ export default function Index() {
     if (append) setLoadingMore(true); else setLoading(true)
     setError('')
     try {
-      const res = await Taro.request({ url: `${API}/activity/all?page=${p}&limit=${PAGE_SIZE}&ongoing=true` })
+      const res = await Taro.request({ url: `${API}/activity/all?page=${p}&limit=${PAGE_SIZE}&ongoing=true`, timeout: 15000 })
       const data = res.data as any
-      const list: ActivityCard[] = (data.items || [])
-      // Server already filters: only PUBLISHED and endTime >= now (or no endTime)
+      // Compatible with: plain array, { items }, { data: { items } }
+      let list: ActivityCard[] = []
+      if (Array.isArray(data)) {
+        list = data
+      } else if (data && Array.isArray(data.items)) {
+        list = data.items
+      } else if (data && data.data && Array.isArray(data.data.items)) {
+        list = data.data.items
+      }
       if (append) setActivities((prev) => [...prev, ...list])
       else setActivities(list)
       setHasMore(list.length === PAGE_SIZE)
-    } catch { setError('加载失败') }
+    } catch (e: any) {
+      const msg = e?.errMsg || e?.message || ''
+      const isLocal = API.indexOf('127.0.0.1') !== -1 || API.indexOf('localhost') !== -1
+      if (isLocal) {
+        setError('无法连接本地后端。\n请确认：① 后端已启动在 127.0.0.1:3000\n② 微信开发者工具已勾选"不校验合法域名"')
+      } else {
+        setError('加载失败')
+      }
+    }
     finally { setLoadingMore(false); setLoading(false) }
   }, [])
 
@@ -115,8 +130,8 @@ export default function Index() {
 
       {loading && (<View style={{ padding: '100rpx 32rpx', textAlign: 'center' }}><Text style={{ color: '#8A9288', fontSize: '28rpx' }}>加载中...</Text></View>)}
       {error && !loading && (
-        <View style={{ margin: '0 32rpx', padding: '40rpx', background: '#FFFFFF', borderRadius: '24rpx', border: '1rpx solid #EDE9DF', textAlign: 'center' }}>
-          <Text style={{ fontSize: '28rpx', color: '#B35B4B', display: 'block', marginBottom: '12rpx' }}>{error}</Text>
+        <View style={{ margin: '0 32rpx', padding: '32rpx', background: '#FFFFFF', borderRadius: '24rpx', border: '1rpx solid #EDE9DF', textAlign: 'center' }}>
+          <Text style={{ fontSize: '26rpx', color: '#B35B4B', display: 'block', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}>{error}</Text>
         </View>
       )}
       {!loading && !error && activities.length === 0 && (
@@ -128,7 +143,11 @@ export default function Index() {
       )}
 
       {activities.map((a) => {
-        const cover = imgUrl(a.coverImage)
+        const firstImage = (() => {
+          try { const urls = JSON.parse((a as any).imageUrls || 'null'); if (Array.isArray(urls) && urls.length > 0) return urls[0] } catch {}
+          return null
+        })()
+        const cover = imgUrl(firstImage || a.coverImage)
         return (
           <View key={a.id} onClick={() => goDetail(a.id)}
             style={{ margin: '0 32rpx 24rpx', background: '#FFFFFF', borderRadius: '24rpx', overflow: 'hidden', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)' }}
@@ -157,10 +176,6 @@ export default function Index() {
                     <Text style={{ fontSize: '23rpx', color: '#8A9288', lineHeight: '1.4', marginTop: '4rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.location}</Text>
                   ) : null}
                 </View>
-                {a.capacity > 0 ? (
-                <Text style={{ fontSize: '24rpx', fontWeight: '500', color: '#18231E', flexShrink: 0, marginLeft: '16rpx' }}>
-                  已报名 {a.registeredCount ?? 0}<Text style={{ color: '#8A9288', fontWeight: '400' }}> / {a.capacity}</Text>
-                </Text>) : null}
               </View>
             </View>
           </View>

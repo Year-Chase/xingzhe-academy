@@ -102,6 +102,14 @@ export class Activity {
   @Column({ type: 'text', nullable: true })
   contentBlocks: string | null  // JSON array of blocks, e.g. [{"type":"text","text":""},{"type":"image","url":""}]
 
+  // ── V2.8-C: Pricing rules ──
+  @Column({ type: 'text', nullable: true })
+  pricingRules: string | null  // JSON array of pricing rules per user type
+
+  // ── V2.8-C: Post-pay date (PREPAY mode only) ──
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  postpayDate: string | null
+
   // ── V2.6D: Structured location ──
   @Column({ type: 'varchar', length: 50, nullable: true })
   provinceName: string

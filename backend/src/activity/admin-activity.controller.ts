@@ -75,6 +75,8 @@ export class AdminActivityController {
       certificateTemplateId: a.certificateTemplateId || null,
       imageUrls: safeParseJsonArray(a.imageUrls),
       contentBlocks: safeParseJsonArray(a.contentBlocks),
+      pricingRules: safeParseJsonArray(a.pricingRules),
+      postpayDate: a.postpayDate || null,
       provinceName: a.provinceName || '',
       provinceCode: a.provinceCode || '',
       cityName: a.cityName || '',

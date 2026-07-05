@@ -155,7 +155,8 @@ export class ActivityService implements OnModuleInit {
     adcode?: string; lng?: number; lat?: number
     locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
     coordinateType?: string; locationProvider?: string
-    imageUrls?: string; contentBlocks?: string
+    imageUrls?: string; contentBlocks?: string; pricingRules?: string
+    postpayDate?: string
   }) {
     if (dto.slogan && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
     const st = new Date(dto.startTime), et = new Date(dto.endTime)
@@ -203,8 +204,10 @@ export class ActivityService implements OnModuleInit {
       locationLng: dto.locationLng ?? null,
       coordinateType: dto.coordinateType || 'gcj02',
       locationProvider: dto.locationProvider || 'manual',
-      imageUrls: dto.imageUrls || null,
-      contentBlocks: dto.contentBlocks || null,
+      imageUrls: dto.imageUrls ?? null,
+      contentBlocks: dto.contentBlocks ?? null,
+      pricingRules: dto.pricingRules ?? null,
+      postpayDate: dto.postpayDate ?? null,
       status: 'DRAFT',
     } as any)
     const saved: any = await this.activityRepo.save(a)
@@ -225,7 +228,8 @@ export class ActivityService implements OnModuleInit {
     adcode?: string; lng?: number; lat?: number
     locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
     coordinateType?: string; locationProvider?: string
-    imageUrls?: string; contentBlocks?: string
+    imageUrls?: string; contentBlocks?: string; pricingRules?: string
+    postpayDate?: string
   }) {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
@@ -269,8 +273,10 @@ export class ActivityService implements OnModuleInit {
     if (dto.groupQrTitle !== undefined) a.groupQrTitle = dto.groupQrTitle
     if (dto.groupQrDescription !== undefined) a.groupQrDescription = dto.groupQrDescription
     if (dto.certificateTemplateId !== undefined) a.certificateTemplateId = dto.certificateTemplateId
-    if (dto.imageUrls !== undefined) a.imageUrls = dto.imageUrls || null
-    if (dto.contentBlocks !== undefined) a.contentBlocks = dto.contentBlocks || null
+    if (dto.imageUrls !== undefined) a.imageUrls = dto.imageUrls ?? null
+    if (dto.contentBlocks !== undefined) a.contentBlocks = dto.contentBlocks ?? null
+    if (dto.pricingRules !== undefined) a.pricingRules = dto.pricingRules ?? null
+    if (dto.postpayDate !== undefined) a.postpayDate = dto.postpayDate ?? null
     if (dto.provinceName !== undefined) { a.provinceName = dto.provinceName; a.province = dto.provinceName }
     if (dto.provinceCode !== undefined) a.provinceCode = dto.provinceCode
     if (dto.cityName !== undefined) { a.cityName = dto.cityName; a.city = dto.cityName }

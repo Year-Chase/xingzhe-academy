@@ -42,6 +42,44 @@ export class ActivityOrder {
   @Column({ type: 'datetime', nullable: true })
   refundedAt: Date
 
+  // ── V2.8-C: Pricing snapshot at order time ──
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  userTypeAtOrder: string | null
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  priceSource: string | null  // "pricingRules" or "legacy"
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  fullAmount: number | null  // total price for this user type
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  orderPrepayAmount: number | null  // prepay portion for PREPAY mode
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  orderPostpayAmount: number | null  // postpay portion for PREPAY mode
+
+  @Column({ type: 'text', nullable: true })
+  pricingSnapshot: string | null  // JSON of matched pricing rule
+
+  // ── V2.8-D: Postpay management ──
+  @Column({ type: 'varchar', length: 30, default: 'NONE' })
+  postpayStatus: string  // 'NONE' | 'UNPAID' | 'PAID' | 'OVERDUE' | 'WAIVED'
+
+  @Column({ type: 'datetime', nullable: true })
+  postpayPaidAt: Date | null
+
+  @Column({ type: 'int', default: 0 })
+  postpayReminderCount: number
+
+  @Column({ type: 'datetime', nullable: true })
+  lastPostpayReminderAt: Date | null
+
+  @Column({ type: 'datetime', nullable: true })
+  postpayWaivedAt: Date | null
+
+  @Column({ type: 'text', nullable: true })
+  postpayWaiveReason: string | null
+
   @OneToOne(() => ActivityRegistration, (reg) => reg.order)
   @JoinColumn({ name: 'registrationId' })
   registration: ActivityRegistration

@@ -32,6 +32,9 @@ export class User {
   @Column({ type: 'varchar', length: 50, nullable: true })
   identityType: string | null
 
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  intro: string | null
+
   @Column({ type: 'boolean', default: false })
   isMember: boolean
 

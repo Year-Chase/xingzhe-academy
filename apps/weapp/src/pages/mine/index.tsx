@@ -1,6 +1,6 @@
 import { View, Text, Image, Input, Picker } from '@tarojs/components'
 import { useState, useEffect } from 'react'
-import Taro, { usePullDownRefresh } from '@tarojs/taro'
+import Taro, { usePullDownRefresh, useDidShow } from '@tarojs/taro'
 import { getUserId, isLoggedIn, logoutUser } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
@@ -22,6 +22,7 @@ interface UserProfile {
   id: string; nickname: string | null; avatarUrl: string | null
   gender: string | null; phone: string | null
   birthYearMonth: string | null; identityType: string | null
+  intro: string | null
 }
 
 function computeAge(birthYM: string | null): number | null {
@@ -48,6 +49,7 @@ export default function MinePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const [pendingPostpayCount, setPendingPostpayCount] = useState(0)
   const [editing, setEditing] = useState(false)
   const [editNickname, setEditNickname] = useState('')
   const [editPhone, setEditPhone] = useState('')
@@ -55,6 +57,7 @@ export default function MinePage() {
   const [editYear, setEditYear] = useState('')
   const [editMonth, setEditMonth] = useState('')
   const [editGender, setEditGender] = useState(0)
+  const [editIntro, setEditIntro] = useState('')
   const [saving, setSaving] = useState(false)
 
   // ── Load profile ──
@@ -63,14 +66,20 @@ export default function MinePage() {
     const uid = getUserId()
     setLoading(true); setError('')
     try {
-      const res = await Taro.request({ url: `${API}/users/${uid}/profile` })
-      setProfile(res.data as UserProfile)
+      const [profileRes, postpayRes] = await Promise.all([
+        Taro.request({ url: `${API}/users/${uid}/profile` }),
+        Taro.request({ url: `${API}/orders/my-postpay?userId=${uid}` }).catch(() => ({ data: [] })),
+      ])
+      setProfile(profileRes.data as UserProfile)
+      const orders = (postpayRes.data || []) as any[]
+      setPendingPostpayCount(orders.filter((o: any) => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE').length)
     } catch (e) { console.error('[mine]', e); setError('加载失败') }
     finally { setLoading(false) }
   }
 
   useEffect(() => { loadProfile() }, [])
   usePullDownRefresh(() => { loadProfile().then(() => Taro.stopPullDownRefresh()) })
+  useDidShow(() => { loadProfile() })
 
   // ── Enter edit mode ──
   const startEdit = () => {
@@ -79,6 +88,7 @@ export default function MinePage() {
     setEditPhone(profile.phone || '')
     setEditAvatar(profile.avatarUrl || '')
     setEditGender(GENDER_OPTIONS.indexOf(profile.gender || 'unknown'))
+    setEditIntro(profile.intro || '')
     const bm = profile.birthYearMonth
     if (bm && /^\d{4}-\d{2}$/.test(bm)) { const [y, m] = bm.split('-'); setEditYear(y); setEditMonth(m) }
     else { setEditYear(''); setEditMonth('') }
@@ -107,6 +117,7 @@ export default function MinePage() {
       const bym = editYear && editMonth ? `${editYear}-${editMonth}` : null
       if (bym !== (profile?.birthYearMonth || null)) body.birthYearMonth = bym
       if (editAvatar !== (profile?.avatarUrl || '')) body.avatarUrl = editAvatar || null
+      if (editIntro !== (profile?.intro || '')) body.intro = editIntro || null
 
       await Taro.request({ method: 'PATCH', url: `${API}/users/${uid}/profile`, data: body })
       Taro.showToast({ title: '保存成功', icon: 'success' })
@@ -121,8 +132,6 @@ export default function MinePage() {
       Taro.showToast({ title: e?.errMsg || '保存失败', icon: 'none' })
     } finally { setSaving(false) }
   }
-
-  const age = computeAge(profile?.birthYearMonth || null)
 
   // ── Loading ──
   if (loading) {
@@ -185,6 +194,12 @@ export default function MinePage() {
             <Input value={editNickname} onInput={e => setEditNickname(e.detail.value)} placeholder='输入昵称' maxlength={50} style={inputStyle} />
           </View>
 
+          {/* Intro */}
+          <View style={{ ...row, alignItems: 'flex-start' }}>
+            <Text style={{ ...label, paddingTop: '4rpx' }}>简介</Text>
+            <Input value={editIntro} onInput={e => setEditIntro(e.detail.value)} placeholder='介绍一下你自己，让同行者更好地认识你' maxlength={150} style={{ ...inputStyle, minHeight: '60rpx' }} />
+          </View>
+
           {/* Gender */}
           <View style={row}>
             <Text style={label}>性别</Text>
@@ -193,26 +208,23 @@ export default function MinePage() {
             </Picker>
           </View>
 
+          {/* Birth Year+Month — merged */}
+          <View style={row}>
+            <Text style={label}>出生年月</Text>
+            <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx' }}>
+              <Picker mode='selector' range={YEARS} value={yi} onChange={e => setEditYear(YEARS[Number(e.detail.value)])}>
+                <Text style={{ fontSize: '26rpx', color: editYear ? C.dark : C.secondary }}>{editYear || '年份'} ▾</Text>
+              </Picker>
+              <Picker mode='selector' range={MONTHS} value={mi} onChange={e => setEditMonth(MONTHS[Number(e.detail.value)])}>
+                <Text style={{ fontSize: '26rpx', color: editMonth ? C.dark : C.secondary }}>{editMonth ? `${editMonth}月` : '月份'} ▾</Text>
+              </Picker>
+            </View>
+          </View>
+
           {/* Phone */}
           <View style={row}>
             <Text style={label}>手机号</Text>
             <Input value={editPhone} onInput={e => setEditPhone(e.detail.value)} placeholder='输入手机号' maxlength={20} style={inputStyle} />
-          </View>
-
-          {/* Birth Year */}
-          <View style={row}>
-            <Text style={label}>出生年份</Text>
-            <Picker mode='selector' range={YEARS} value={yi} onChange={e => setEditYear(YEARS[Number(e.detail.value)])}>
-              <Text style={{ fontSize: '28rpx', color: editYear ? C.dark : C.secondary }}>{editYear || '选择年份'} ▾</Text>
-            </Picker>
-          </View>
-
-          {/* Birth Month */}
-          <View style={row}>
-            <Text style={label}>出生月份</Text>
-            <Picker mode='selector' range={MONTHS} value={mi} onChange={e => setEditMonth(MONTHS[Number(e.detail.value)])}>
-              <Text style={{ fontSize: '28rpx', color: editMonth ? C.dark : C.secondary }}>{editMonth ? `${editMonth}月` : '选择月份'} ▾</Text>
-            </Picker>
           </View>
 
           {/* Save button */}
@@ -245,10 +257,10 @@ export default function MinePage() {
       {/* Profile info card */}
       <View style={{ margin: '0 32rpx', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: `1rpx solid ${C.border}` }}>
         <Row label='昵称' value={profile.nickname} />
+        <Row label='简介' value={profile.intro} />
         <Row label='性别' value={LABEL_GENDER[profile.gender || 'unknown']} />
-        <Row label='手机号' value={profile.phone} />
         <Row label='出生年月' value={profile.birthYearMonth} />
-        <Row label='年龄' value={age !== null ? String(age) : null} />
+        <Row label='手机号' value={profile.phone} />
         <Row label='类型' value={profile.identityType} last />
       </View>
 
@@ -256,7 +268,14 @@ export default function MinePage() {
       <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', border: `1rpx solid ${C.border}`, overflow: 'hidden' }}>
         {/* 我的报名 */}
         <View onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
-          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的报名</Text>
+          <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx' }}>
+            <Text style={{ fontSize: '28rpx', color: C.dark }}>我的报名</Text>
+            {pendingPostpayCount > 0 && (
+              <View style={{ minWidth: '32rpx', height: '32rpx', borderRadius: '50%', background: '#8A6D3B', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 6rpx' }}>
+                <Text style={{ fontSize: '20rpx', color: '#FFFFFF', fontWeight: '600' }}>{pendingPostpayCount}</Text>
+              </View>
+            )}
+          </View>
           <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
         </View>
         {/* 我的证书 — navigate to cert list page */}

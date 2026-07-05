@@ -94,6 +94,7 @@ export class UsersService {
         nickname: nickname || null,
         avatarUrl: avatarUrl || null,
         gender: gender || null,
+        identityType: '普通用户',
         registeredAt: now,
         lastLoginAt: now,
         status: 'ACTIVE',
@@ -123,7 +124,8 @@ export class UsersService {
         phone: user.phone,
         phoneMasked: user.phone ? user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : null,
         birthYearMonth: user.birthYearMonth,
-        identityType: user.identityType,
+        identityType: user.identityType || '普通用户',
+        intro: user.intro || '',
         isMember: user.isMember,
         isLifetimeMember: user.isLifetimeMember,
         registeredAt: user.registeredAt,
@@ -146,7 +148,8 @@ export class UsersService {
       phone: user.phone,
       birthday: user.birthday,
       birthYearMonth: user.birthYearMonth,
-      identityType: user.identityType,
+      identityType: user.identityType || '普通用户',
+      intro: user.intro || '',
       isMember: user.isMember,
       isLifetimeMember: user.isLifetimeMember,
       registeredAt: user.registeredAt,
@@ -164,7 +167,7 @@ export class UsersService {
       ? Math.max(1, Math.floor((now - new Date(user.registeredAt).getTime()) / 86400000))
       : 1
 
-    const regs = await this.regRepo.find({ where: { userId } })
+    const regs = await this.regRepo.find({ where: { userId }, order: { createdAt: 'DESC' as any } })
     const activityIds = [...new Set(regs.map(r => r.activityId))]
     const activities = activityIds.length > 0
       ? await this.activityRepo.find({ where: { id: In(activityIds) } })
@@ -283,7 +286,7 @@ export class UsersService {
   }
 
   // ──── Update profile ────
-  async updateProfile(id: string, body: { nickname?: string; avatarUrl?: string; gender?: string; phone?: string; birthday?: string; birthYearMonth?: string; identityType?: string }) {
+  async updateProfile(id: string, body: { nickname?: string; avatarUrl?: string; gender?: string; phone?: string; birthday?: string; birthYearMonth?: string; identityType?: string; intro?: string }) {
     const user = await this.userRepo.findOne({ where: { id } })
     if (!user) throw new NotFoundException(`User ${id} not found`)
 
@@ -293,7 +296,7 @@ export class UsersService {
       }
     }
 
-    const allowedFields = ['nickname', 'avatarUrl', 'gender', 'phone', 'birthday', 'birthYearMonth', 'identityType']
+    const allowedFields = ['nickname', 'avatarUrl', 'gender', 'phone', 'birthday', 'birthYearMonth', 'identityType', 'intro']
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         (user as any)[field] = body[field]
