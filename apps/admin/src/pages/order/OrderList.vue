@@ -4,7 +4,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useRouter } from 'vue-router'
 import { get, post } from '@/api/client'
 
-interface OrderItem { id: number; registrationId: number; userId: string; userNickname: string; activityId: number; activityTitle: string; amount: number; refundedAmount: number; status: string; payType: string; createdAt: string; paidAt: string; refundedAt: string }
+interface OrderItem { id: number; registrationId: number; userId: string; userNickname: string; activityId: number; activityTitle: string; amount: number; refundedAmount: number; status: string; payType: string; postpayStatus?: string; orderPrepayAmount?: number; orderPostpayAmount?: number; createdAt: string; paidAt: string; refundedAt: string }
 interface PageData { items: OrderItem[]; total: number; page: number; limit: number }
 
 const list = ref<OrderItem[]>([]); const total = ref(0); const page = ref(1); const limit = ref(20); const loading = ref(false)
@@ -12,15 +12,28 @@ const refundDialog = ref(false); const refundId = ref(0); const refundAmount = r
 
 const fetchList = async () => {
   loading.value = true
-  try { const data = await get<PageData>('/admin/orders', { page: page.value, limit: limit.value }); list.value = data.items; total.value = data.total }
+  try {
+    const data = await get<PageData>('/admin/orders', { page: page.value, limit: limit.value })
+    list.value = (data.items || []).map(normalizeOrder)
+    total.value = data.total || 0
+  }
   catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '加载失败') }
   finally { loading.value = false }
 }
 
 const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
+const money = (n: number | string | null | undefined) => `¥${Number(n || 0).toFixed(2)}`
 const onPageChange = (p: { current: number; pageSize: number }) => { page.value = p.current; limit.value = p.pageSize; fetchList() }
 
-const openRefund = (row: OrderItem) => { refundId.value = row.id; refundAmount.value = (row.amount ?? 0) - (row.refundedAmount ?? 0); refundReason.value = ''; refundDialog.value = true }
+const normalizeOrder = (row: any): OrderItem => ({
+  ...row,
+  amount: Number(row.amount || 0),
+  refundedAmount: Number(row.refundedAmount || 0),
+  orderPrepayAmount: Number(row.orderPrepayAmount || 0),
+  orderPostpayAmount: Number(row.orderPostpayAmount || 0),
+})
+
+const openRefund = (row: OrderItem) => { refundId.value = row.id; refundAmount.value = Number(row.amount || 0) - Number(row.refundedAmount || 0); refundReason.value = ''; refundDialog.value = true }
 const doRefund = async () => {
   refundLoading.value = true
   try { await post('/admin/orders/' + refundId.value + '/refund', { amount: refundAmount.value, reason: refundReason.value }); MessagePlugin.success('退款成功'); refundDialog.value = false; fetchList() }
@@ -49,8 +62,8 @@ const columns = [
   { colKey: 'userNickname', title: '用户昵称', width: 90 },
   { colKey: 'activityId', title: '活动ID', width: 65, cell: (_h: any, { row }: any) => row.activityId ?? '-' },
   { colKey: 'activityTitle', title: '活动名称', width: 130, cell: (_h: any, { row }: any) => row.activityTitle || '-' },
-  { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => `¥${(row.amount ?? 0).toFixed(2)}` },
-  { colKey: 'refundedAmount', title: '已退', width: 80, cell: (_h: any, { row }: any) => `¥${row.refundedAmount || 0}` },
+  { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => money(row.amount) },
+  { colKey: 'refundedAmount', title: '已退', width: 80, cell: (_h: any, { row }: any) => money(row.refundedAmount) },
   { colKey: 'status', title: '状态', width: 110 },
   { colKey: 'payType', title: '类型', width: 60, cell: (_h: any, { row }: any) => ({ FULL: '全款', PREPAY: '预付' } as any)[row.payType] || row.payType },
   { colKey: 'createdAt', title: '创建时间', width: 130, cell: (_h: any, { row }: any) => fmt(row.createdAt) },
