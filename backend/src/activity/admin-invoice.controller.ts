@@ -31,6 +31,11 @@ export class AdminInvoiceController {
     return this.flow.requestInvoice(body.orderId, body.title, body.taxNo)
   }
 
+  @Get(':id')
+  async getDetail(@Param('id', ParseIntPipe) id: number) {
+    return this.flow.getInvoiceDetail(id)
+  }
+
   @Patch(':id/issue')
   async issue(@Param('id', ParseIntPipe) id: number) {
     return this.flow.issueInvoice(id)

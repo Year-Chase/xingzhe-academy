@@ -1,7 +1,7 @@
-import { View, Text, Image, Input, Picker } from '@tarojs/components'
+import { View, Text, Image, Input, Picker, Button } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { usePullDownRefresh, useDidShow } from '@tarojs/taro'
-import { getUserId, isLoggedIn, logoutUser } from '../../utils/user'
+import { getUserId, isLoggedIn, logoutUser, updateUserProfile, uploadUserAvatar } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
 
@@ -21,28 +21,34 @@ const C = {
 interface UserProfile {
   id: string; nickname: string | null; avatarUrl: string | null
   gender: string | null; phone: string | null
-  birthYearMonth: string | null; identityType: string | null
+  birthday: string | null; birthYearMonth: string | null; identityType: string | null
   intro: string | null
 }
 
-function computeAge(birthYM: string | null): number | null {
-  if (!birthYM) return null
-  const m = birthYM.match(/^(\d{4})-(\d{2})$/)
-  if (!m) return null
-  const by = Number(m[1]); const bm = Number(m[2])
-  const now = new Date()
-  let age = now.getFullYear() - by
-  if (now.getMonth() + 1 < bm) age -= 1
-  return Math.max(0, age)
+function formatBirthDate(profile: UserProfile | null): string {
+  if (!profile) return ''
+  if (profile.birthday && /^\d{4}-\d{2}-\d{2}$/.test(profile.birthday)) {
+    const [y, m, d] = profile.birthday.split('-')
+    return `${y}年${m}月${d}日`
+  }
+  if (profile.birthYearMonth && /^\d{4}-\d{2}$/.test(profile.birthYearMonth)) {
+    const [y, m] = profile.birthYearMonth.split('-')
+    return `${y}年${m}月未补全`
+  }
+  return ''
+}
+
+function imgUrl(path: string | null | undefined): string {
+  if (!path) return ''
+  if (/^https?:\/\//.test(path) || path.startsWith('wxfile://') || path.startsWith('http://tmp') || path.startsWith('file://')) return path
+  return API + (path.startsWith('/') ? '' : '/') + path
 }
 
 const GENDER_OPTIONS = ['unknown', '男', '女']
 const LABEL_GENDER: Record<string, string> = { unknown: '未设置', '男': '男', '女': '女' }
 const GENDER_LIST = ['未设置', '男', '女']
 
-const currentYear = new Date().getFullYear()
-const YEARS = Array.from({ length: currentYear - 1930 + 1 }, (_, i) => String(currentYear - i))
-const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'))
+const today = new Date().toISOString().slice(0, 10)
 
 export default function MinePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -54,8 +60,8 @@ export default function MinePage() {
   const [editNickname, setEditNickname] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [editAvatar, setEditAvatar] = useState('')
-  const [editYear, setEditYear] = useState('')
-  const [editMonth, setEditMonth] = useState('')
+  const [editAvatarTemp, setEditAvatarTemp] = useState('')
+  const [editBirthday, setEditBirthday] = useState('')
   const [editGender, setEditGender] = useState(0)
   const [editIntro, setEditIntro] = useState('')
   const [saving, setSaving] = useState(false)
@@ -87,21 +93,21 @@ export default function MinePage() {
     setEditNickname(profile.nickname || '')
     setEditPhone(profile.phone || '')
     setEditAvatar(profile.avatarUrl || '')
+    setEditAvatarTemp('')
     setEditGender(GENDER_OPTIONS.indexOf(profile.gender || 'unknown'))
     setEditIntro(profile.intro || '')
-    const bm = profile.birthYearMonth
-    if (bm && /^\d{4}-\d{2}$/.test(bm)) { const [y, m] = bm.split('-'); setEditYear(y); setEditMonth(m) }
-    else { setEditYear(''); setEditMonth('') }
+    setEditBirthday(profile.birthday && /^\d{4}-\d{2}-\d{2}$/.test(profile.birthday) ? profile.birthday : '')
     setEditing(true)
   }
 
   const cancelEdit = () => setEditing(false)
 
-  const pickAvatar = () => {
-    Taro.chooseImage({
-      count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'],
-      success: (res) => { if (res.tempFilePaths?.length) setEditAvatar(res.tempFilePaths[0]) },
-    })
+  const handleChooseAvatar = (e: any) => {
+    const avatarUrl = e?.detail?.avatarUrl
+    if (avatarUrl) {
+      setEditAvatar(avatarUrl)
+      setEditAvatarTemp(avatarUrl)
+    }
   }
 
   // ── Save profile ──
@@ -114,12 +120,17 @@ export default function MinePage() {
       if (editNickname !== (profile?.nickname || '')) body.nickname = editNickname || null
       if (editPhone !== (profile?.phone || '')) body.phone = editPhone || null
       if (GENDER_OPTIONS[editGender] !== (profile?.gender || 'unknown')) body.gender = GENDER_OPTIONS[editGender]
-      const bym = editYear && editMonth ? `${editYear}-${editMonth}` : null
-      if (bym !== (profile?.birthYearMonth || null)) body.birthYearMonth = bym
-      if (editAvatar !== (profile?.avatarUrl || '')) body.avatarUrl = editAvatar || null
+      const birthday = editBirthday || null
+      if (birthday !== (profile?.birthday || null)) {
+        body.birthday = birthday
+        body.birthYearMonth = birthday ? birthday.slice(0, 7) : null
+      }
+      if (editAvatar !== (profile?.avatarUrl || '')) {
+        body.avatarUrl = editAvatarTemp ? await uploadUserAvatar(editAvatarTemp) : (editAvatar || null)
+      }
       if (editIntro !== (profile?.intro || '')) body.intro = editIntro || null
 
-      await Taro.request({ method: 'PATCH', url: `${API}/users/${uid}/profile`, data: body })
+      await updateUserProfile(body)
       Taro.showToast({ title: '保存成功', icon: 'success' })
       setEditing(false)
       // Re-fetch
@@ -129,7 +140,7 @@ export default function MinePage() {
       Taro.setStorageSync('xingzhe_user_profile', p)
     } catch (e: any) {
       console.error('[mine]', e)
-      Taro.showToast({ title: e?.errMsg || '保存失败', icon: 'none' })
+      Taro.showToast({ title: e?.message || e?.errMsg || '保存失败', icon: 'none' })
     } finally { setSaving(false) }
   }
 
@@ -162,9 +173,6 @@ export default function MinePage() {
 
   // ── EDIT MODE ──
   if (editing) {
-    const yi = editYear ? YEARS.indexOf(editYear) : 0
-    const mi = editMonth ? MONTHS.indexOf(editMonth) : 0
-
     return (
       <View style={{ minHeight: '100vh', background: C.bg, paddingBottom: '60rpx' }}>
         {/* Top bar: back button left, title center */}
@@ -180,11 +188,11 @@ export default function MinePage() {
           {/* Avatar */}
           <View style={row}>
             <Text style={label}>头像</Text>
-            <View onClick={pickAvatar} style={{ display: 'flex', alignItems: 'center', gap: '16rpx' }}>
+            <View style={{ display: 'flex', alignItems: 'center', gap: '16rpx' }}>
               <View style={avatarBox}>
-                {editAvatar ? <Image src={editAvatar} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
+                {editAvatar ? <Image src={imgUrl(editAvatar)} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
               </View>
-              <Text style={{ fontSize: '24rpx', color: C.neutral }}>点击更换</Text>
+              <Button openType='chooseAvatar' onChooseAvatar={handleChooseAvatar} style={avatarButton}>选择微信头像</Button>
             </View>
           </View>
 
@@ -208,17 +216,12 @@ export default function MinePage() {
             </Picker>
           </View>
 
-          {/* Birth Year+Month — merged */}
+          {/* Birth date — one line */}
           <View style={row}>
-            <Text style={label}>出生年月</Text>
-            <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx' }}>
-              <Picker mode='selector' range={YEARS} value={yi} onChange={e => setEditYear(YEARS[Number(e.detail.value)])}>
-                <Text style={{ fontSize: '26rpx', color: editYear ? C.dark : C.secondary }}>{editYear || '年份'} ▾</Text>
-              </Picker>
-              <Picker mode='selector' range={MONTHS} value={mi} onChange={e => setEditMonth(MONTHS[Number(e.detail.value)])}>
-                <Text style={{ fontSize: '26rpx', color: editMonth ? C.dark : C.secondary }}>{editMonth ? `${editMonth}月` : '月份'} ▾</Text>
-              </Picker>
-            </View>
+            <Text style={label}>出生日期</Text>
+            <Picker mode='date' value={editBirthday || '1990-01-01'} start='1930-01-01' end={today} onChange={e => setEditBirthday(String(e.detail.value))}>
+              <Text style={{ fontSize: '28rpx', color: editBirthday ? C.dark : C.secondary }}>{editBirthday ? formatBirthDate({ ...(profile as UserProfile), birthday: editBirthday }) : '请选择'} ▾</Text>
+            </Picker>
           </View>
 
           {/* Phone */}
@@ -243,8 +246,8 @@ export default function MinePage() {
     <View style={{ minHeight: '100vh', background: C.bg, paddingBottom: '80rpx' }}>
       {/* Avatar + name + edit button */}
       <View style={{ padding: '40rpx 32rpx 24rpx', display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-        <View style={avatarBox}>
-          {profile.avatarUrl ? <Image src={profile.avatarUrl} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
+      <View style={avatarBox}>
+          {profile.avatarUrl ? <Image src={imgUrl(profile.avatarUrl)} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
         </View>
         <View style={{ flex: 1, marginLeft: '24rpx' }}>
           <Text style={{ fontSize: '36rpx', fontWeight: '700', color: C.dark }}>{profile.nickname || '行者'}</Text>
@@ -259,7 +262,7 @@ export default function MinePage() {
         <Row label='昵称' value={profile.nickname} />
         <Row label='简介' value={profile.intro} />
         <Row label='性别' value={LABEL_GENDER[profile.gender || 'unknown']} />
-        <Row label='出生年月' value={profile.birthYearMonth} />
+        <Row label='出生日期' value={formatBirthDate(profile)} />
         <Row label='手机号' value={profile.phone} />
         <Row label='类型' value={profile.identityType} last />
       </View>
@@ -286,6 +289,10 @@ export default function MinePage() {
         {/* 我的订单 — not yet available */}
         <View onClick={() => Taro.showToast({ title: '当前暂无订单', icon: 'none' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
           <Text style={{ fontSize: '28rpx', color: C.dark }}>我的订单</Text>
+          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+        </View>
+        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/invoices/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
+          <Text style={{ fontSize: '28rpx', color: C.dark }}>发票管理</Text>
           <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
         </View>
 {/* 我的邀请 — temporarily hidden (V2.7.1) */}
@@ -337,6 +344,18 @@ const row: React.CSSProperties = { display: 'flex', flexDirection: 'row', alignI
 const label: React.CSSProperties = { fontSize: '28rpx', color: C.neutral, flexShrink: 0 }
 
 const inputStyle: React.CSSProperties = { flex: 1, fontSize: '28rpx', color: C.dark, textAlign: 'right' }
+
+const avatarButton: React.CSSProperties = {
+  margin: 0,
+  padding: '0 20rpx',
+  height: '56rpx',
+  lineHeight: '56rpx',
+  borderRadius: '999rpx',
+  border: `1rpx solid ${C.border}`,
+  background: C.white,
+  color: C.green,
+  fontSize: '24rpx',
+}
 
 const saveBtn = (loading: boolean): React.CSSProperties => ({
   width: '100%', height: '88rpx', borderRadius: '999rpx',

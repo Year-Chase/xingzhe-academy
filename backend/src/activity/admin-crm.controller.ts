@@ -14,14 +14,15 @@ import { User } from '../users/entities/user.entity'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 // ── Helpers ──
-function computeAge(birthYM: string | null): number | null {
-  if (!birthYM) return null
-  const m = birthYM.match(/^(\d{4})-(\d{2})$/)
+function computeAge(birthday: string | null, birthYM: string | null): number | null {
+  const raw = birthday || birthYM
+  if (!raw) return null
+  const m = raw.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/)
   if (!m) return null
-  const by = Number(m[1]), bm = Number(m[2])
+  const by = Number(m[1]), bm = Number(m[2]), bd = Number(m[3] || '1')
   const now = new Date()
   let age = now.getFullYear() - by
-  if (now.getMonth() + 1 < bm) age -= 1
+  if (now.getMonth() + 1 < bm || (now.getMonth() + 1 === bm && now.getDate() < bd)) age -= 1
   return Math.max(0, age)
 }
 
@@ -35,7 +36,9 @@ function mergeUserFields(u: User | null, p: UserProfile | null, userId: string) 
     avatarUrl: u?.avatarUrl || null,
     gender: u?.gender || null,
     phone: u?.phone || null,
+    birthday: u?.birthday || null,
     birthYearMonth,
+    intro: u?.intro || null,
     identityType: u?.identityType || null,
     isMember: u?.isMember ?? false,
     isLifetimeMember: u?.isLifetimeMember ?? false,
@@ -214,7 +217,7 @@ export class AdminCrmController {
       const inviteRegisterCount = await this.inviteRepo.count({ where: { inviterUserId: uid } })
       const inviteActivityCount = await this.activityInviteRepo.count({ where: { inviterUserId: uid } })
 
-      const age = computeAge(merged.birthYearMonth)
+      const age = computeAge(merged.birthday, merged.birthYearMonth)
 
       items.push({
         userId: uid,
@@ -222,7 +225,9 @@ export class AdminCrmController {
         avatarUrl: merged.avatarUrl,
         gender: merged.gender,
         phone: merged.phone,
+        birthday: merged.birthday,
         birthYearMonth: merged.birthYearMonth,
+        intro: merged.intro,
         age,
         identityType: merged.identityType || '未设置',
         isMember: merged.isMember,
@@ -251,7 +256,7 @@ export class AdminCrmController {
     const u = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null)
     const p = await this.profileRepo.findOne({ where: { userId } })
     const merged = mergeUserFields(u, p, userId)
-    const age = computeAge(merged.birthYearMonth)
+    const age = computeAge(merged.birthday, merged.birthYearMonth)
 
     // Stats
     const regCount = await this.regRepo.count({ where: { userId } })
@@ -289,7 +294,9 @@ export class AdminCrmController {
       avatarUrl: merged.avatarUrl,
       gender: merged.gender || 'unknown',
       phone: merged.phone,
+      birthday: merged.birthday,
       birthYearMonth: merged.birthYearMonth,
+      intro: merged.intro,
       age,
       identityType: merged.identityType || '未设置',
       isMember: merged.isMember,

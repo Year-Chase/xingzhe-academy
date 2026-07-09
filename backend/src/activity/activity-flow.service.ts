@@ -455,7 +455,7 @@ export class ActivityFlowService {
       throw new BadRequestException('Only paid/refunded orders can request invoice')
     const invAmount = (order.amount ?? 0) - (order.refundedAmount ?? 0)
     if (invAmount <= 0) throw new BadRequestException('No invoice-able amount remaining')
-    const inv = this.invoiceRepo.create({ orderId, userId: order.userId, activityId: order.activityId, title, taxNo: taxNo || null, amount: invAmount, status: 'REQUESTED' })
+    const inv = this.invoiceRepo.create({ orderId, userId: order.userId, activityId: order.activityId, title, taxNo: taxNo || null, invoiceType: taxNo ? 'COMPANY' : 'PERSONAL', amount: invAmount, status: 'REQUESTED' })
     return this.invoiceRepo.save(inv)
   }
 
@@ -466,7 +466,51 @@ export class ActivityFlowService {
     if (filters?.userId) qb.andWhere('i.userId = :uid', { uid: filters.userId })
     qb.skip((page - 1) * limit).take(limit)
     const [items, total] = await qb.getManyAndCount()
-    return { items, total }
+    const userIds = [...new Set(items.map(i => i.userId).filter(Boolean))] as string[]
+    const activityIds = [...new Set(items.map(i => i.activityId).filter((id): id is number => id != null))]
+    const users = userIds.length > 0 ? await this.userRepo.find({ where: userIds.map(id => ({ id } as any)) }) : []
+    const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: activityIds.map(id => ({ id } as any)) }) : []
+    const userMap = new Map(users.map(u => [u.id, u]))
+    const activityMap = new Map(activities.map(a => [a.id, a]))
+    return {
+      items: items.map(i => {
+        const user = i.userId ? userMap.get(i.userId) : null
+        const activity = i.activityId != null ? activityMap.get(i.activityId) : null
+        return {
+          ...i,
+          amount: Number(i.amount || 0),
+          invoiceType: i.invoiceType || (i.taxNo ? 'COMPANY' : 'PERSONAL'),
+          invoiceTitle: i.title,
+          taxNumber: i.taxNo || '',
+          userNickname: user?.nickname || '',
+          userPhone: user?.phone || '',
+          activityTitle: activity?.title || '',
+        }
+      }),
+      total,
+    }
+  }
+
+  async getInvoiceDetail(id: number) {
+    const inv = await this.invoiceRepo.findOne({ where: { id } })
+    if (!inv) throw new NotFoundException(`Invoice ${id} not found`)
+    const [user, activity, order] = await Promise.all([
+      inv.userId ? this.userRepo.findOne({ where: { id: inv.userId } }) : Promise.resolve(null),
+      inv.activityId != null ? this.activityRepo.findOne({ where: { id: inv.activityId } }) : Promise.resolve(null),
+      this.orderRepo.findOne({ where: { id: inv.orderId } }),
+    ])
+    return {
+      ...inv,
+      amount: Number(inv.amount || 0),
+      invoiceType: inv.invoiceType || (inv.taxNo ? 'COMPANY' : 'PERSONAL'),
+      invoiceTitle: inv.title,
+      taxNumber: inv.taxNo || '',
+      userNickname: user?.nickname || '',
+      userPhone: user?.phone || '',
+      activityTitle: activity?.title || '',
+      orderStatus: order?.status || null,
+      payType: order?.payType || null,
+    }
   }
 
   async issueInvoice(id: number) {

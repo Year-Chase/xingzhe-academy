@@ -8,7 +8,7 @@ import { assetUrl } from '@/config/api'
 interface UserItem {
   userId: string; nickname: string | null; avatarUrl: string | null
   gender: string | null; phone: string | null
-  birthYearMonth: string | null; age: number | null; identityType: string
+  birthday: string | null; birthYearMonth: string | null; age: number | null; identityType: string
   registrationCount: number; orderCount: number; checkedInCount: number
   paidAmount: number; refundedAmount: number; netAmount: number
   tags: { id: number; tag: string }[]
@@ -53,7 +53,7 @@ const fmtDate = (s: string | null) => {
   if (isNaN(d.getTime())) return '-'
   return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
-const fmtYm = (s: string | null) => s || '-'
+const fmtBirth = (birthday: string | null, birthYearMonth: string | null) => birthday || (birthYearMonth ? birthYearMonth + ' 未补全' : '-')
 const yuan = (n: number) => '¥' + (n || 0).toFixed(2)
 const genderLabel = (g: string | null) => ({ unknown: '未设置', '男': '男', '女': '女' } as any)[g || 'unknown'] || '-'
 
@@ -77,7 +77,7 @@ const columns = [
   { colKey: 'nickname', title: '昵称', width: 90, cell: (_h: any, { row }: any) => row.nickname || '-' },
   { colKey: 'gender', title: '性别', width: 60, cell: (_h: any, { row }: any) => genderLabel(row.gender) },
   { colKey: 'phone', title: '手机号', width: 110, cell: (_h: any, { row }: any) => row.phone || '-' },
-  { colKey: 'birthYearMonth', title: '出生年月', width: 90, cell: (_h: any, { row }: any) => fmtYm(row.birthYearMonth) },
+  { colKey: 'birthday', title: '出生日期', width: 110, cell: (_h: any, { row }: any) => fmtBirth(row.birthday, row.birthYearMonth) },
   { colKey: 'age', title: '年龄', width: 50, cell: (_h: any, { row }: any) => row.age !== null && row.age !== undefined ? row.age : '-' },
   { colKey: 'identityType', title: '类型', width: 70, cell: (_h: any, { row }: any) => row.identityType || '未设置' },
   { colKey: 'registeredAt', title: '注册时间', width: 130, cell: (_h: any, { row }: any) => fmtDate(row.registeredAt) },
@@ -126,7 +126,7 @@ onMounted(fetchList)
       <t-table :data="list" :columns="columns" row-key="userId" hover stripe size="small" :loading="loading"
         :pagination="{ current: page, pageSize: limit, total, showJumper: true }" @page-change="onPageChange">
         <template #avatarUrl="{ row }">
-          <img v-if="row.avatarUrl" :src="assetUrl(row.avatarUrl)" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" />
+          <img v-if="row.avatarUrl" :src="assetUrl(row.avatarUrl)" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" @error="row.avatarUrl = ''" />
           <div v-else style="width:32px;height:32px;border-radius:50%;background:#EEF5EF;display:flex;align-items:center;justify-content:center;font-size:13px;color:#7A8178;">-</div>
         </template>
         <template #actions="{ row }">

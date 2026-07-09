@@ -102,6 +102,49 @@ export async function loginWithPhone(input: {
   }
 }
 
+export function userAuthHeader(): Record<string, string> {
+  const userId = getStoredUserId()
+  const token = getStoredToken()
+  return {
+    'X-User-Id': userId,
+    Authorization: token ? `Bearer ${token}` : '',
+  }
+}
+
+export async function updateUserProfile(body: Record<string, any>) {
+  const uid = getStoredUserId()
+  if (!uid) throw new Error('请先完成登录')
+  const res = await Taro.request({
+    method: 'PATCH',
+    url: `${API}/users/${uid}/profile`,
+    data: body,
+    header: { 'content-type': 'application/json', ...userAuthHeader() },
+  })
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw new Error((res.data as any)?.message || '保存失败')
+  }
+  const profile = res.data as any
+  Taro.setStorageSync('xingzhe_user_profile', profile)
+  return profile
+}
+
+export async function uploadUserAvatar(filePath: string): Promise<string> {
+  const uid = getStoredUserId()
+  if (!uid) throw new Error('请先完成登录')
+  const res = await Taro.uploadFile({
+    url: `${API}/users/${uid}/avatar`,
+    filePath,
+    name: 'file',
+    header: userAuthHeader(),
+  })
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw new Error('头像上传失败')
+  }
+  const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+  if (!data?.url) throw new Error('头像上传失败')
+  return data.url
+}
+
 // ── Legacy aliases for backward compatibility ──
 export function getUserId(): string { return getStoredUserId() }
 export async function doLogin(_showToast = false): Promise<string> {

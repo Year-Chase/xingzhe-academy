@@ -6,7 +6,11 @@ import { User } from './entities/user.entity'
 import { Activity } from '../activity/entities/activity.entity'
 import { ActivityRegistration } from '../activity/entities/activity-registration.entity'
 import { ActivityRegistrationInfo } from '../activity/entities/activity-registration-info.entity'
+import { ActivityOrder } from '../activity/entities/activity-order.entity'
+import { ActivityInvoice } from '../activity/entities/activity-invoice.entity'
 import { CertificateTemplate } from '../certificate/entities/certificate-template.entity'
+import { UserInvoiceProfile, UserInvoiceType } from './entities/user-invoice-profile.entity'
+import { ContentSecurityService } from '../common/content-security.service'
 
 const MOCK_CODE_MAP: Record<string, string> = {
   'mock-code': 'mock_openid_default',
@@ -29,8 +33,15 @@ export class UsersService {
     private readonly regRepo: Repository<ActivityRegistration>,
     @InjectRepository(ActivityRegistrationInfo)
     private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
+    @InjectRepository(ActivityOrder)
+    private readonly orderRepo: Repository<ActivityOrder>,
+    @InjectRepository(ActivityInvoice)
+    private readonly invoiceRepo: Repository<ActivityInvoice>,
+    @InjectRepository(UserInvoiceProfile)
+    private readonly invoiceProfileRepo: Repository<UserInvoiceProfile>,
     @InjectRepository(CertificateTemplate)
     private readonly certTemplateRepo: Repository<CertificateTemplate>,
+    private readonly contentSecurity: ContentSecurityService,
   ) {}
 
   // ──── Openid resolution ────
@@ -123,6 +134,7 @@ export class UsersService {
         gender: user.gender,
         phone: user.phone,
         phoneMasked: user.phone ? user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : null,
+        birthday: user.birthday,
         birthYearMonth: user.birthYearMonth,
         identityType: user.identityType || '普通用户',
         intro: user.intro || '',
@@ -290,10 +302,26 @@ export class UsersService {
     const user = await this.userRepo.findOne({ where: { id } })
     if (!user) throw new NotFoundException(`User ${id} not found`)
 
+    if (body.birthday !== undefined) {
+      if (body.birthday !== null && body.birthday !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(body.birthday)) {
+        throw new BadRequestException('birthday must be YYYY-MM-DD format')
+      }
+    }
+
     if (body.birthYearMonth !== undefined) {
       if (body.birthYearMonth !== null && body.birthYearMonth !== '' && !/^\d{4}-\d{2}$/.test(body.birthYearMonth)) {
         throw new BadRequestException('birthYearMonth must be YYYY-MM format')
       }
+    }
+
+    if (body.intro !== undefined && (body.intro || '').trim()) {
+      const result = await this.contentSecurity.checkTextSafety({ openid: user.openid, scene: 'profile', content: body.intro || '' })
+      if (!result.pass) throw new BadRequestException('签名介绍包含不适合展示的内容，请修改后再保存')
+    }
+
+    if (body.nickname !== undefined && (body.nickname || '').trim()) {
+      const result = await this.contentSecurity.checkTextSafety({ openid: user.openid, scene: 'profile', content: body.nickname || '' })
+      if (!result.pass) throw new BadRequestException('昵称包含不适合展示的内容，请修改后再保存')
     }
 
     const allowedFields = ['nickname', 'avatarUrl', 'gender', 'phone', 'birthday', 'birthYearMonth', 'identityType', 'intro']
@@ -305,5 +333,164 @@ export class UsersService {
 
     await this.userRepo.save(user)
     return this.getProfile(id)
+  }
+
+  async getInvoiceProfile(userId: string) {
+    await this.ensureUser(userId)
+    const profile = await this.invoiceProfileRepo.findOne({ where: { userId } })
+    return profile || null
+  }
+
+  async saveInvoiceProfile(userId: string, body: {
+    invoiceType?: UserInvoiceType
+    invoiceTitle?: string
+    taxNumber?: string
+    companyAddress?: string
+    companyPhone?: string
+    bankName?: string
+    bankAccount?: string
+    email?: string
+    remark?: string
+  }) {
+    await this.ensureUser(userId)
+    const invoiceType = body.invoiceType === 'COMPANY' ? 'COMPANY' : 'PERSONAL'
+    const invoiceTitle = (body.invoiceTitle || '').trim()
+    const taxNumber = (body.taxNumber || '').trim()
+
+    if (!invoiceTitle) throw new BadRequestException('请填写发票抬头')
+    if (invoiceType === 'COMPANY' && !taxNumber) throw new BadRequestException('企业发票请填写税号')
+
+    let profile = await this.invoiceProfileRepo.findOne({ where: { userId } })
+    if (!profile) {
+      profile = this.invoiceProfileRepo.create({ userId, invoiceType, invoiceTitle })
+    }
+
+    profile.invoiceType = invoiceType
+    profile.invoiceTitle = invoiceTitle
+    profile.taxNumber = taxNumber || null
+    profile.companyAddress = this.cleanText(body.companyAddress)
+    profile.companyPhone = this.cleanText(body.companyPhone)
+    profile.bankName = this.cleanText(body.bankName)
+    profile.bankAccount = this.cleanText(body.bankAccount)
+    profile.email = this.cleanText(body.email)
+    profile.remark = this.cleanText(body.remark)
+
+    return this.invoiceProfileRepo.save(profile)
+  }
+
+  async getInvoiceOrders(userId: string) {
+    await this.ensureUser(userId)
+    const orders = await this.orderRepo.find({
+      where: { userId, status: In(['PAID', 'PARTIAL_REFUND', 'REFUNDED']) },
+      order: { createdAt: 'DESC' },
+    })
+    const activityIds = [...new Set(orders.map(o => o.activityId).filter((id): id is number => id != null))]
+    const orderIds = orders.map(o => o.id)
+    const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: activityIds.map(id => ({ id } as any)) }) : []
+    const invoices = orderIds.length > 0 ? await this.invoiceRepo.find({ where: { orderId: In(orderIds) } }) : []
+    const activityMap = new Map(activities.map(a => [a.id, a]))
+    const invoiceMap = new Map(invoices.map(i => [i.orderId, i]))
+
+    return orders
+      .filter(o => Number(o.amount || 0) - Number(o.refundedAmount || 0) > 0)
+      .map(o => {
+        const invoice = invoiceMap.get(o.id)
+        const hasPendingPostpay = o.payType === 'PREPAY' && Number(o.orderPostpayAmount || 0) > 0 && o.postpayStatus !== 'PAID' && o.postpayStatus !== 'WAIVED'
+        const amount = Number(o.amount || 0) - Number(o.refundedAmount || 0)
+        return {
+          orderId: o.id,
+          activityId: o.activityId,
+          activityTitle: o.activityId != null ? activityMap.get(o.activityId)?.title || '' : '',
+          amount,
+          status: o.status,
+          payType: o.payType,
+          postpayStatus: o.postpayStatus,
+          createdAt: o.createdAt,
+          existingInvoiceId: invoice?.id || null,
+          existingInvoiceStatus: invoice?.status || null,
+          canApply: !invoice && !hasPendingPostpay,
+          reason: invoice ? '该订单已提交过开票申请' : hasPendingPostpay ? '后付款完成后可申请开票' : '',
+        }
+      })
+  }
+
+  async getInvoiceRequests(userId: string) {
+    await this.ensureUser(userId)
+    const invoices = await this.invoiceRepo.find({ where: { userId }, order: { createdAt: 'DESC' } })
+    const orderIds = [...new Set(invoices.map(i => i.orderId))]
+    const activityIds = [...new Set(invoices.map(i => i.activityId).filter((id): id is number => id != null))]
+    const orders = orderIds.length > 0 ? await this.orderRepo.find({ where: orderIds.map(id => ({ id } as any)) }) : []
+    const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: activityIds.map(id => ({ id } as any)) }) : []
+    const orderMap = new Map(orders.map(o => [o.id, o]))
+    const activityMap = new Map(activities.map(a => [a.id, a]))
+
+    return invoices.map(i => ({
+      id: i.id,
+      orderId: i.orderId,
+      activityId: i.activityId,
+      activityTitle: i.activityId != null ? activityMap.get(i.activityId)?.title || '' : '',
+      amount: Number(i.amount || 0),
+      invoiceType: i.invoiceType || (i.taxNo ? 'COMPANY' : 'PERSONAL'),
+      invoiceTitle: i.title,
+      taxNumber: i.taxNo || '',
+      status: i.status,
+      createdAt: i.createdAt,
+      issuedAt: i.issuedAt,
+      orderStatus: orderMap.get(i.orderId)?.status || null,
+    }))
+  }
+
+  async createInvoiceRequest(userId: string, orderId: number) {
+    await this.ensureUser(userId)
+    const profile = await this.invoiceProfileRepo.findOne({ where: { userId } })
+    if (!profile) throw new BadRequestException('请先完善默认开票信息')
+    if (profile.invoiceType === 'COMPANY' && !profile.taxNumber) throw new BadRequestException('企业发票请填写税号')
+
+    const order = await this.orderRepo.findOne({ where: { id: orderId } })
+    if (!order || order.userId !== userId) throw new NotFoundException(`Order ${orderId} not found`)
+    if (!['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(order.status)) {
+      throw new BadRequestException('该订单暂不可申请开票')
+    }
+
+    const existing = await this.invoiceRepo.findOne({ where: { orderId } })
+    if (existing) throw new BadRequestException('该订单已提交过开票申请')
+
+    if (order.payType === 'PREPAY' && Number(order.orderPostpayAmount || 0) > 0 && order.postpayStatus !== 'PAID' && order.postpayStatus !== 'WAIVED') {
+      throw new BadRequestException('后付款完成后可申请开票')
+    }
+
+    const amount = Number(order.amount || 0) - Number(order.refundedAmount || 0)
+    if (amount <= 0) throw new BadRequestException('该订单暂无可开票金额')
+
+    const invoice = this.invoiceRepo.create({
+      orderId,
+      userId,
+      activityId: order.activityId,
+      title: profile.invoiceTitle,
+      taxNo: profile.taxNumber || null,
+      invoiceType: profile.invoiceType,
+      companyAddress: profile.companyAddress,
+      companyPhone: profile.companyPhone,
+      bankName: profile.bankName,
+      bankAccount: profile.bankAccount,
+      email: profile.email,
+      remark: profile.remark,
+      amount,
+      status: 'REQUESTED',
+    })
+
+    return this.invoiceRepo.save(invoice)
+  }
+
+  private async ensureUser(userId: string) {
+    if (!userId) throw new BadRequestException('userId is required')
+    const user = await this.userRepo.findOne({ where: { id: userId } })
+    if (!user) throw new NotFoundException(`User ${userId} not found`)
+    return user
+  }
+
+  private cleanText(value?: string | null): string | null {
+    const v = (value || '').trim()
+    return v || null
   }
 }

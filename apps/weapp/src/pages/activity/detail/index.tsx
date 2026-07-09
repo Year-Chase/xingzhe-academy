@@ -13,6 +13,20 @@ function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; sty
   return <Image src={src} mode={mode as any} style={style} onError={() => setFailed(true)} />
 }
 
+function AvatarCircle({ src, size, fontSize = '28rpx' }: { src?: string; size: string; fontSize?: string }) {
+  const [failed, setFailed] = useState(false)
+  const resolved = src ? imgUrl(src) : ''
+  return (
+    <View style={{ width: size, height: size, borderRadius: '50%', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {resolved && !failed ? (
+        <Image src={resolved} mode='aspectFill' style={{ width: size, height: size }} onError={() => setFailed(true)} />
+      ) : (
+        <Text style={{ fontSize, color: C.secondary }}>头像</Text>
+      )}
+    </View>
+  )
+}
+
 function imgUrl(cover: string | undefined): string {
   if (!cover) return ''
   if (cover.startsWith('http')) return cover
@@ -460,13 +474,7 @@ export default function ActivityDetail() {
                   const self = isSelf(p)
                   return (
                     <View key={i} onClick={() => setModalUser(p)} style={{ width: '96rpx', display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                      <View style={{ width: '72rpx', height: '72rpx', borderRadius: '50%', background: self ? '#D9EADD' : C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                        {p.avatarUrl ? (
-                          <Image src={imgUrl(p.avatarUrl)} mode="aspectFill" style={{ width: '72rpx', height: '72rpx' }} />
-                        ) : (
-                          <Text style={{ fontSize: '32rpx' }}>👤</Text>
-                        )}
-                      </View>
+                      <AvatarCircle src={p.avatarUrl} size='72rpx' fontSize='22rpx' />
                       <Text style={{ fontSize: '22rpx', color: C.body, marginTop: '10rpx', maxWidth: '88rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
                         {p.nickname}{self ? '（我）' : ''}
                       </Text>
@@ -489,13 +497,7 @@ export default function ActivityDetail() {
               </View>
             </View>
             <View style={{ display: 'flex', justifyContent: 'center', marginTop: '12rpx' }}>
-              <View style={{ width: '128rpx', height: '128rpx', borderRadius: '50%', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                {modalUser.avatarUrl ? (
-                  <Image src={imgUrl(modalUser.avatarUrl)} mode="aspectFill" style={{ width: '128rpx', height: '128rpx' }} />
-                ) : (
-                  <Text style={{ fontSize: '56rpx' }}>👤</Text>
-                )}
-              </View>
+              <AvatarCircle src={modalUser.avatarUrl} size='128rpx' fontSize='28rpx' />
             </View>
             <Text style={{ fontSize: '34rpx', fontWeight: '700', color: C.dark, textAlign: 'center', marginTop: '24rpx' }}>
               {modalUser.nickname || '行者'}{isSelf(modalUser) ? '（我）' : ''}

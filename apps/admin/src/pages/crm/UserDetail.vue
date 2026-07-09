@@ -12,7 +12,7 @@ const userId = route.params.userId as string
 interface DetailData {
   userId: string; nickname: string | null; avatarUrl: string | null
   gender: string; phone: string | null
-  birthYearMonth: string | null; age: number | null; identityType: string
+  birthday: string | null; birthYearMonth: string | null; intro: string | null; age: number | null; identityType: string
   isMember: boolean; isLifetimeMember: boolean
   registeredAt: string | null; lastLoginAt: string | null
   summary: { registrationCount: number; orderCount: number; checkedInCount: number; paidAmount: number; refundedAmount: number; netAmount: number; inviteRegisterCount: number; inviteActivityCount: number }
@@ -106,6 +106,7 @@ const orderStatusLabel = (s: string) => ({ PENDING: '交易处理中', PAID: '�
 const refundStatusLabel = (s: string) => ({ SUCCESS: '成功', FAILED: '失败' } as any)[s] || s
 const invoiceStatusLabel = (s: string) => ({ REQUESTED: '已申请', ISSUED: '已开具', CANCELED: '已取消' } as any)[s] || s
 const genderLabel = (g: string) => ({ unknown: '未设置', '男': '男', '女': '女' } as any)[g] || g
+const birthLabel = (birthday: string | null, birthYearMonth: string | null) => birthday || (birthYearMonth ? birthYearMonth + ' 未补全' : '-')
 const statusColor = (s: string) => ({ PAID: '#2E7D5A', CHECKED_IN: '#2E7D5A', REFUNDED: '#8A9288', PARTIAL_REFUND: '#C98255', PENDING: '#8A9288', FAILED: '#B35B4B', REGISTERED: '#8A9288', EXPIRED: '#8A9288' } as any)[s] || '#666'
 
 const regColumns = [
@@ -165,7 +166,7 @@ onMounted(fetchDetail)
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="display: flex; align-items: flex-start; gap: 16px;">
             <div style="width: 64px; height: 64px; border-radius: 50%; background: #EEF5EF; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
-              <img v-if="data.avatarUrl" :src="assetUrl(data.avatarUrl)" style="width:100%;height:100%;object-fit:cover;" />
+              <img v-if="data.avatarUrl" :src="assetUrl(data.avatarUrl)" style="width:100%;height:100%;object-fit:cover;" @error="data.avatarUrl = ''" />
               <span v-else style="font-size: 24px; color: #A6AAA2;">-</span>
             </div>
             <div>
@@ -174,8 +175,9 @@ onMounted(fetchDetail)
                 <span>用户ID:</span><span>{{ data.userId }} <t-button theme="default" variant="text" size="small" @click="copyUserId" style="font-size:12px;color:#2E7D5A;padding:0 4px;min-width:auto;">复制</t-button></span>
                 <span>性别:</span><span>{{ genderLabel(data.gender) }}</span>
                 <span>手机号:</span><span>{{ data.phone || '-' }}</span>
-                <span>出生年月:</span><span>{{ data.birthYearMonth || '-' }}</span>
+                <span>出生日期:</span><span>{{ birthLabel(data.birthday, data.birthYearMonth) }}</span>
                 <span>年龄:</span><span>{{ data.age !== null ? data.age : '-' }}</span>
+                <span>简介:</span><span>{{ data.intro || '-' }}</span>
                 <span>类型:</span>
                 <span>
                   <template v-if="editingType">
