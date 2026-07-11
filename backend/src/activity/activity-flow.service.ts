@@ -32,6 +32,51 @@ export class ActivityFlowService {
     private readonly userRepo: Repository<User>,
   ) {}
 
+  private money(value: unknown): number {
+    const n = Number(value ?? 0)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  private paidAmount(order: ActivityOrder): number {
+    if (order.payType === 'PREPAY') {
+      const prepay = this.money(order.orderPrepayAmount ?? order.amount)
+      const postpay = order.postpayStatus === 'PAID' ? this.money(order.orderPostpayAmount) : 0
+      return prepay + postpay
+    }
+    return this.money(order.amount)
+  }
+
+  private orderStatus(order: ActivityOrder, refundedAmount = this.money(order.refundedAmount)): ActivityOrder['status'] {
+    const paidAmount = this.paidAmount(order)
+    if (paidAmount > 0 && refundedAmount >= paidAmount) return 'REFUNDED'
+    if (refundedAmount > 0) return 'PARTIAL_REFUND'
+    return order.status
+  }
+
+  private refundableAmount(order: ActivityOrder, refundedAmount = this.money(order.refundedAmount)): number {
+    return Math.max(0, this.paidAmount(order) - refundedAmount)
+  }
+
+  private async successfulRefundTotal(orderId: number): Promise<number> {
+    const refunds = await this.refundRepo.find({ where: { orderId, status: 'SUCCESS' } })
+    return refunds.reduce((sum, refund) => sum + this.money(refund.amount), 0)
+  }
+
+  private async syncPendingInvoicesAfterRefund(order: ActivityOrder, refundedAmount: number) {
+    const remaining = this.refundableAmount(order, refundedAmount)
+    const invoices = await this.invoiceRepo.find({ where: { orderId: order.id } })
+    const pendingInvoices = invoices.filter((invoice) => invoice.status === 'REQUESTED')
+    for (const invoice of pendingInvoices) {
+      if (remaining <= 0) {
+        invoice.amount = 0
+        invoice.status = 'REFUNDED'
+      } else {
+        invoice.amount = remaining
+      }
+    }
+    if (pendingInvoices.length > 0) await this.invoiceRepo.save(pendingInvoices)
+  }
+
   // ──── register ────
   async register(userId: string, activityId: number) {
     await this.ensureActivity(activityId)
@@ -359,38 +404,96 @@ export class ActivityFlowService {
   }
 
   // ──── Admin: getOrders ────
-  async getOrders(page: number, limit: number, filters?: { activityId?: number; userId?: string; status?: string; startDate?: string; endDate?: string }) {
-    const qb = this.orderRepo.createQueryBuilder('o').orderBy('o.createdAt', 'DESC')
+  async getOrders(page: number, limit: number, filters?: {
+    activityId?: number
+    userId?: string
+    keyword?: string
+    activityTitle?: string
+    status?: string
+    startDate?: string
+    endDate?: string
+    paymentMode?: string
+    postpayStatus?: string
+  }) {
+    const qb = this.orderRepo.createQueryBuilder('o').orderBy('o.createdAt', 'DESC').addOrderBy('o.id', 'DESC')
     if (filters?.activityId) qb.andWhere('o.activityId = :aid', { aid: filters.activityId })
     if (filters?.userId) qb.andWhere('o.userId = :uid', { uid: filters.userId })
-    // Default: exclude PENDING unless explicitly requested
-    if (filters?.status) { qb.andWhere('o.status = :st', { st: filters.status }) }
-    else { qb.andWhere('o.status != :pend', { pend: 'PENDING' }) }
+    if (filters?.paymentMode) qb.andWhere('o.payType = :payType', { payType: filters.paymentMode })
+    if (filters?.postpayStatus) qb.andWhere('o.postpayStatus = :postpayStatus', { postpayStatus: filters.postpayStatus })
+    if (filters?.status && !['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(filters.status)) {
+      qb.andWhere('o.status = :st', { st: filters.status })
+    }
     if (filters?.startDate) qb.andWhere('o.createdAt >= :sd', { sd: filters.startDate })
     if (filters?.endDate) qb.andWhere('o.createdAt <= :ed', { ed: filters.endDate })
-    qb.skip((page - 1) * limit).take(limit)
-    const [items, total] = await qb.getManyAndCount()
+    const orders = await qb.getMany()
 
     // Light join: fetch User nicknames and Activity titles post-query
-    const userIds = [...new Set(items.map(o => o.userId).filter(Boolean))] as string[]
-    const activityIds = [...new Set(items.filter(o => o.activityId != null).map(o => o.activityId))] as number[]
+    const userIds = [...new Set(orders.map(o => o.userId).filter(Boolean))] as string[]
+    const activityIds = [...new Set(orders.filter(o => o.activityId != null).map(o => o.activityId))] as number[]
     const users = userIds.length > 0 ? await this.userRepo.find({ where: userIds.map(id => ({ id } as any)) }) : []
     const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: activityIds.map(id => ({ id } as any)) }) : []
+    const orderIds = orders.map(o => o.id)
+    const invoices = orderIds.length > 0 ? await this.invoiceRepo.find({ where: { orderId: In(orderIds) } }) : []
+    const refunds = orderIds.length > 0 ? await this.refundRepo.find({ where: { orderId: In(orderIds), status: 'SUCCESS' } }) : []
     const userMap = new Map<string, any>()
     const activityMap = new Map<number, any>()
+    const invoiceMap = new Map<number, ActivityInvoice[]>()
+    const refundMap = new Map<number, number>()
     for (const u of users) { userMap.set(u.id, u) }
     for (const a of activities) { activityMap.set(a.id, a) }
+    for (const invoice of invoices) {
+      const existing = invoiceMap.get(invoice.orderId) || []
+      existing.push(invoice)
+      invoiceMap.set(invoice.orderId, existing)
+    }
+    for (const refund of refunds) {
+      refundMap.set(refund.orderId, (refundMap.get(refund.orderId) || 0) + this.money(refund.amount))
+    }
 
-    const enriched = items.map(o => ({
-      id: o.id, registrationId: o.registrationId, userId: o.userId,
-      userNickname: (userMap.get(o.userId || '') as any)?.nickname || o.userId || '',
-      activityId: o.activityId,
-      activityTitle: o.activityId != null ? (activityMap.get(o.activityId) as any)?.title || '' : '',
-      amount: o.amount, refundedAmount: o.refundedAmount, status: o.status,
-      payType: o.payType, createdAt: o.createdAt, paidAt: o.paidAt, refundedAt: o.refundedAt,
-    }))
+    const keyword = filters?.keyword?.trim().toLowerCase()
+    const activityTitle = filters?.activityTitle?.trim().toLowerCase()
+    const enriched = orders.map(o => {
+      const user = userMap.get(o.userId || '') as any
+      const activity = o.activityId != null ? (activityMap.get(o.activityId) as any) : null
+      const relatedInvoices = invoiceMap.get(o.id) || []
+      const refundedAmount = refundMap.has(o.id) ? refundMap.get(o.id)! : this.money(o.refundedAmount)
+      const paidAmount = this.paidAmount(o)
+      const derivedStatus = this.orderStatus(o, refundedAmount)
+      return {
+        id: o.id, registrationId: o.registrationId, userId: o.userId,
+        userNickname: user?.nickname || o.userId || '',
+        userPhone: user?.phone || '',
+        activityId: o.activityId,
+        activityTitle: activity?.title || '',
+        amount: this.money(o.amount),
+        paidAmount,
+        refundableAmount: this.refundableAmount(o, refundedAmount),
+        refundedAmount,
+        status: derivedStatus,
+        rawStatus: o.status,
+        payType: o.payType,
+        postpayStatus: o.postpayStatus,
+        orderPrepayAmount: this.money(o.orderPrepayAmount),
+        orderPostpayAmount: this.money(o.orderPostpayAmount),
+        createdAt: o.createdAt,
+        paidAt: o.paidAt,
+        refundedAt: o.refundedAt,
+        hasIssuedInvoice: relatedInvoices.some((invoice) => invoice.status === 'ISSUED'),
+        invoiceStatus: relatedInvoices[0]?.status || null,
+      }
+    }).filter((o) => {
+      if (keyword) {
+        const haystack = `${o.userId || ''} ${o.userNickname || ''} ${o.userPhone || ''}`.toLowerCase()
+        if (!haystack.includes(keyword)) return false
+      }
+      if (activityTitle && !(o.activityTitle || '').toLowerCase().includes(activityTitle)) return false
+      if (filters?.status && ['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(filters.status) && o.status !== filters.status) return false
+      return true
+    })
+    const total = enriched.length
+    const items = enriched.slice((page - 1) * limit, page * limit)
 
-    return { items: enriched, total }
+    return { items, total }
   }
 
   // ──── Admin: refund ────
@@ -399,25 +502,29 @@ export class ActivityFlowService {
     if (!order) throw new NotFoundException(`Order ${orderId} not found`)
     if (order.status !== 'PAID' && order.status !== 'PARTIAL_REFUND')
       throw new BadRequestException('Only PAID or PARTIAL_REFUND orders can be refunded')
-    if (!amount || amount <= 0) throw new BadRequestException('amount must be > 0')
-    const remaining = (order.amount ?? 0) - (order.refundedAmount ?? 0)
-    if (amount > remaining) throw new BadRequestException(`Refund amount ${amount} exceeds remaining ${remaining}`)
+    const refundAmount = this.money(amount)
+    if (!refundAmount || refundAmount <= 0) throw new BadRequestException('amount must be > 0')
+    const currentRefundedAmount = await this.successfulRefundTotal(orderId)
+    const remaining = this.refundableAmount(order, currentRefundedAmount)
+    if (refundAmount > remaining) throw new BadRequestException(`Refund amount ${refundAmount} exceeds remaining ${remaining}`)
 
     const refund = this.refundRepo.create({
       orderId, userId: order.userId, activityId: order.activityId,
-      amount, reason: reason || null, status: 'SUCCESS',
+      amount: refundAmount, reason: reason || null, status: 'SUCCESS',
     })
     await this.refundRepo.save(refund)
 
-    order.refundedAmount = (order.refundedAmount ?? 0) + amount
+    const refundedAmount = await this.successfulRefundTotal(orderId)
+    order.refundedAmount = refundedAmount
     order.refundCount = (order.refundCount ?? 0) + 1
-    if (order.refundedAmount >= (order.amount ?? 0)) {
+    if (refundedAmount >= this.paidAmount(order)) {
       order.status = 'REFUNDED'; order.refundedAt = new Date()
     } else {
       order.status = 'PARTIAL_REFUND'
     }
     await this.orderRepo.save(order)
-    return { id: order.id, status: order.status, refundedAmount: order.refundedAmount, refundId: refund.id }
+    await this.syncPendingInvoicesAfterRefund(order, refundedAmount)
+    return { id: order.id, status: order.status, refundedAmount, refundId: refund.id }
   }
 
   // ──── Admin: finance summary ────
@@ -453,7 +560,7 @@ export class ActivityFlowService {
     if (!order) throw new NotFoundException(`Order ${orderId} not found`)
     if (!['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(order.status))
       throw new BadRequestException('Only paid/refunded orders can request invoice')
-    const invAmount = (order.amount ?? 0) - (order.refundedAmount ?? 0)
+    const invAmount = this.refundableAmount(order)
     if (invAmount <= 0) throw new BadRequestException('No invoice-able amount remaining')
     const inv = this.invoiceRepo.create({ orderId, userId: order.userId, activityId: order.activityId, title, taxNo: taxNo || null, invoiceType: taxNo ? 'COMPANY' : 'PERSONAL', amount: invAmount, status: 'REQUESTED' })
     return this.invoiceRepo.save(inv)

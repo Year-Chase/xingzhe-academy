@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm'
 
-export type InvoiceStatus = 'REQUESTED' | 'ISSUED' | 'CANCELED'
+export type InvoiceStatus = 'REQUESTED' | 'ISSUED' | 'CANCELED' | 'REFUNDED'
 export type InvoiceType = 'PERSONAL' | 'COMPANY'
 
 @Entity('activity_invoice')

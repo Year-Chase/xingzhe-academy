@@ -273,6 +273,7 @@ function Empty({ text }: { text: string }) {
 function statusLabel(status: string) {
   if (status === 'ISSUED') return '已开票'
   if (status === 'REQUESTED') return '待开票'
+  if (status === 'REFUNDED') return '已退款'
   return status || '待开票'
 }
 

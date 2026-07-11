@@ -189,14 +189,19 @@ export class AdminCrmController {
       userIds = new Set([...userIds].filter(id => qIds.has(id)))
     }
 
-    const allUserIds = [...userIds].sort()
-    const total = allUserIds.length
-    const paged = allUserIds.slice((pageNum - 1) * limitNum, pageNum * limitNum)
-
-    // Pre-build lookup maps
-    const userMap = new Map(users.map(u => [u.id, u]))
     const profiles = await this.profileRepo.find()
     const profileMap = new Map(profiles.map(p => [p.userId, p]))
+    const userMap = new Map(users.map(u => [u.id, u]))
+    const getRegisteredTime = (id: string) => {
+      const u = userMap.get(id)
+      const p = profileMap.get(id)
+      const raw = u?.registeredAt || p?.registeredAt || u?.createdAt || p?.createdAt || null
+      const time = raw ? new Date(raw).getTime() : 0
+      return Number.isFinite(time) ? time : 0
+    }
+    const allUserIds = [...userIds].sort((a, b) => getRegisteredTime(b) - getRegisteredTime(a) || b.localeCompare(a))
+    const total = allUserIds.length
+    const paged = allUserIds.slice((pageNum - 1) * limitNum, pageNum * limitNum)
 
     // Build items
     const items: any[] = []

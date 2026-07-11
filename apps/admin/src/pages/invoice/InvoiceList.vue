@@ -23,7 +23,8 @@ const fetchList = async () => {
 }
 
 const fmt = (s: string) => s ? new Date(s).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
-const statusLabel = (s: string) => ({ REQUESTED: '待开票', ISSUED: '已开票', CANCELED: '已取消' } as any)[s] || s
+const money = (n: number | string | null | undefined) => `¥${Number(n || 0).toFixed(2)}`
+const statusLabel = (s: string) => ({ REQUESTED: '待开票', PENDING: '待开票', ISSUED: '已开票', CANCELED: '已取消', REFUNDED: '已退款' } as any)[s] || s
 const typeLabel = (s: string) => s === 'COMPANY' ? '企业' : '个人'
 const onPageChange = (p: { current: number; pageSize: number }) => { page.value = p.current; limit.value = p.pageSize; fetchList() }
 const doIssue = async (row: InvoiceItem) => {
@@ -53,7 +54,7 @@ const columns = [
   { colKey: 'title', title: '抬头', width: 180, ellipsis: true },
   { colKey: 'invoiceType', title: '类型', width: 70, cell: (_h: any, { row }: any) => typeLabel(row.invoiceType) },
   { colKey: 'taxNo', title: '税号', width: 140, ellipsis: true },
-  { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => `¥${row.amount}` },
+  { colKey: 'amount', title: '金额', width: 80, cell: (_h: any, { row }: any) => money(row.amount) },
   { colKey: 'status', title: '状态', width: 80, cell: (_h: any, { row }: any) => statusLabel(row.status) },
   { colKey: 'issuedAt', title: '开票', width: 130, cell: (_h: any, { row }: any) => fmt(row.issuedAt) },
   { colKey: 'actions', title: '操作', width: 140 },
@@ -87,7 +88,7 @@ onMounted(fetchList)
           <span style="color:#8A9288;">用户</span><span>{{ detail.userNickname || '-' }} {{ detail.userPhone ? ' / ' + detail.userPhone : '' }}</span>
           <span style="color:#8A9288;">订单</span><span>{{ detail.orderId }}</span>
           <span style="color:#8A9288;">活动</span><span>{{ detail.activityTitle || '-' }}</span>
-          <span style="color:#8A9288;">金额</span><span>¥{{ detail.amount }}</span>
+          <span style="color:#8A9288;">金额</span><span>{{ money(detail.amount) }}</span>
           <span style="color:#8A9288;">发票类型</span><span>{{ typeLabel(detail.invoiceType) }}</span>
           <span style="color:#8A9288;">发票抬头</span><span>{{ detail.title }}</span>
           <span style="color:#8A9288;">税号</span><span>{{ detail.taxNo || '-' }}</span>

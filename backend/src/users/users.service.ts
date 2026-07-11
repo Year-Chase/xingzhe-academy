@@ -8,6 +8,7 @@ import { ActivityRegistration } from '../activity/entities/activity-registration
 import { ActivityRegistrationInfo } from '../activity/entities/activity-registration-info.entity'
 import { ActivityOrder } from '../activity/entities/activity-order.entity'
 import { ActivityInvoice } from '../activity/entities/activity-invoice.entity'
+import { ActivityRefund } from '../activity/entities/activity-refund.entity'
 import { CertificateTemplate } from '../certificate/entities/certificate-template.entity'
 import { UserInvoiceProfile, UserInvoiceType } from './entities/user-invoice-profile.entity'
 import { ContentSecurityService } from '../common/content-security.service'
@@ -37,6 +38,8 @@ export class UsersService {
     private readonly orderRepo: Repository<ActivityOrder>,
     @InjectRepository(ActivityInvoice)
     private readonly invoiceRepo: Repository<ActivityInvoice>,
+    @InjectRepository(ActivityRefund)
+    private readonly refundRepo: Repository<ActivityRefund>,
     @InjectRepository(UserInvoiceProfile)
     private readonly invoiceProfileRepo: Repository<UserInvoiceProfile>,
     @InjectRepository(CertificateTemplate)
@@ -388,15 +391,20 @@ export class UsersService {
     const orderIds = orders.map(o => o.id)
     const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: activityIds.map(id => ({ id } as any)) }) : []
     const invoices = orderIds.length > 0 ? await this.invoiceRepo.find({ where: { orderId: In(orderIds) } }) : []
+    const refunds = orderIds.length > 0 ? await this.refundRepo.find({ where: { orderId: In(orderIds), status: 'SUCCESS' } }) : []
     const activityMap = new Map(activities.map(a => [a.id, a]))
     const invoiceMap = new Map(invoices.map(i => [i.orderId, i]))
+    const refundMap = new Map<number, number>()
+    for (const refund of refunds) {
+      refundMap.set(refund.orderId, (refundMap.get(refund.orderId) || 0) + this.money(refund.amount))
+    }
 
     return orders
-      .filter(o => Number(o.amount || 0) - Number(o.refundedAmount || 0) > 0)
+      .filter(o => this.invoiceableAmount(o, refundMap.get(o.id)) > 0)
       .map(o => {
         const invoice = invoiceMap.get(o.id)
         const hasPendingPostpay = o.payType === 'PREPAY' && Number(o.orderPostpayAmount || 0) > 0 && o.postpayStatus !== 'PAID' && o.postpayStatus !== 'WAIVED'
-        const amount = Number(o.amount || 0) - Number(o.refundedAmount || 0)
+        const amount = this.invoiceableAmount(o, refundMap.get(o.id))
         return {
           orderId: o.id,
           activityId: o.activityId,
@@ -459,7 +467,8 @@ export class UsersService {
       throw new BadRequestException('后付款完成后可申请开票')
     }
 
-    const amount = Number(order.amount || 0) - Number(order.refundedAmount || 0)
+    const refundedAmount = await this.successfulRefundTotal(orderId)
+    const amount = this.invoiceableAmount(order, refundedAmount)
     if (amount <= 0) throw new BadRequestException('该订单暂无可开票金额')
 
     const invoice = this.invoiceRepo.create({
@@ -480,6 +489,29 @@ export class UsersService {
     })
 
     return this.invoiceRepo.save(invoice)
+  }
+
+  private money(value: unknown): number {
+    const n = Number(value ?? 0)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  private paidAmount(order: ActivityOrder): number {
+    if (order.payType === 'PREPAY') {
+      const prepay = this.money(order.orderPrepayAmount ?? order.amount)
+      const postpay = order.postpayStatus === 'PAID' ? this.money(order.orderPostpayAmount) : 0
+      return prepay + postpay
+    }
+    return this.money(order.amount)
+  }
+
+  private invoiceableAmount(order: ActivityOrder, refundedAmount = this.money(order.refundedAmount)): number {
+    return Math.max(0, this.paidAmount(order) - refundedAmount)
+  }
+
+  private async successfulRefundTotal(orderId: number): Promise<number> {
+    const refunds = await this.refundRepo.find({ where: { orderId, status: 'SUCCESS' } })
+    return refunds.reduce((sum, refund) => sum + this.money(refund.amount), 0)
   }
 
   private async ensureUser(userId: string) {

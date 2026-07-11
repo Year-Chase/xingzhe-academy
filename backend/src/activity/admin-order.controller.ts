@@ -17,18 +17,29 @@ export class AdminOrderController {
     @Query('limit') limit: string,
     @Query('activityId') activityId: string,
     @Query('userId') userId: string,
+    @Query('keyword') keyword: string,
+    @Query('activityTitle') activityTitle: string,
     @Query('status') status: string,
+    @Query('paymentMode') paymentMode: string,
+    @Query('postpayStatus') postpayStatus: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query('createdFrom') createdFrom: string,
+    @Query('createdTo') createdTo: string,
   ) {
     const p = Math.max(1, parseInt(page) || 1)
     const l = Math.min(100, Math.max(1, parseInt(limit) || 20))
+    const end = createdTo || endDate || undefined
     const { items, total } = await this.flow.getOrders(p, l, {
       activityId: activityId ? parseInt(activityId) : undefined,
       userId: userId || undefined,
+      keyword: keyword || undefined,
+      activityTitle: activityTitle || undefined,
       status: status || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
+      paymentMode: paymentMode || undefined,
+      postpayStatus: postpayStatus || undefined,
+      startDate: createdFrom || startDate || undefined,
+      endDate: end && /^\d{4}-\d{2}-\d{2}$/.test(end) ? `${end} 23:59:59` : end,
     })
     return { items, total, page: p, limit: l }
   }
