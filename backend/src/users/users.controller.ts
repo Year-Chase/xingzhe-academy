@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Put, Query, UnauthorizedException, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Param, ParseIntPipe, Patch, Post, Put, Query, UnauthorizedException, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage } from 'multer'
 import { extname } from 'path'
@@ -29,7 +29,14 @@ export class UsersController {
   }
 
   @Patch(':id/profile')
-  async updateProfile(@Param('id') id: string, @Body() body: any) {
+  async updateProfile(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Headers('x-user-id') headerUserId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const uid = this.resolveAuthenticatedUserId(undefined, headerUserId, authorization)
+    if (uid !== id) throw new ForbiddenException('不能修改其他用户资料')
     return this.usersService.updateProfile(id, body)
   }
 

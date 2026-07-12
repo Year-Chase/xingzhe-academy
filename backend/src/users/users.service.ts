@@ -440,6 +440,10 @@ export class UsersService {
     const user = await this.userRepo.findOne({ where: { id } })
     if (!user) throw new NotFoundException(`User ${id} not found`)
 
+    if (Object.prototype.hasOwnProperty.call(body || {}, 'identityType')) {
+      throw new BadRequestException('用户类型不能通过个人资料修改')
+    }
+
     if (body.birthday !== undefined) {
       if (body.birthday !== null && body.birthday !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(body.birthday)) {
         throw new BadRequestException('birthday must be YYYY-MM-DD format')
@@ -462,7 +466,7 @@ export class UsersService {
       if (!result.pass) throw new BadRequestException('昵称包含不适合展示的内容，请修改后再保存')
     }
 
-    const allowedFields = ['nickname', 'avatarUrl', 'gender', 'phone', 'birthday', 'birthYearMonth', 'identityType', 'intro']
+    const allowedFields = ['nickname', 'avatarUrl', 'gender', 'phone', 'birthday', 'birthYearMonth', 'intro']
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         (user as any)[field] = body[field]

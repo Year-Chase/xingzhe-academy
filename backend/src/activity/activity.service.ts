@@ -126,6 +126,20 @@ export class ActivityService implements OnModuleInit {
     return a.status
   }
 
+  private normalizePostpayDate(value: unknown): string | null | undefined {
+    if (value === undefined) return undefined
+    if (value === null || value === '') return null
+    if (typeof value !== 'string') throw new BadRequestException('后付款日期格式无效')
+    const raw = value.trim()
+    if (!raw) return null
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+    const dt = new Date(raw)
+    if (Number.isNaN(dt.getTime())) throw new BadRequestException('后付款日期格式无效')
+    const beijing = new Date(dt.getTime() + 8 * 60 * 60 * 1000)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${beijing.getUTCFullYear()}-${pad(beijing.getUTCMonth() + 1)}-${pad(beijing.getUTCDate())}`
+  }
+
   async adminGetList(page: number, limit: number, status?: string, keyword?: string) {
     const qb = this.activityRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC')
     if (status) {
@@ -207,7 +221,7 @@ export class ActivityService implements OnModuleInit {
       imageUrls: dto.imageUrls ?? null,
       contentBlocks: dto.contentBlocks ?? null,
       pricingRules: dto.pricingRules ?? null,
-      postpayDate: dto.postpayDate ?? null,
+      postpayDate: this.normalizePostpayDate(dto.postpayDate) ?? null,
       status: 'DRAFT',
     } as any)
     const saved: any = await this.activityRepo.save(a)
@@ -276,7 +290,7 @@ export class ActivityService implements OnModuleInit {
     if (dto.imageUrls !== undefined) a.imageUrls = dto.imageUrls ?? null
     if (dto.contentBlocks !== undefined) a.contentBlocks = dto.contentBlocks ?? null
     if (dto.pricingRules !== undefined) a.pricingRules = dto.pricingRules ?? null
-    if (dto.postpayDate !== undefined) a.postpayDate = dto.postpayDate ?? null
+    if (dto.postpayDate !== undefined) a.postpayDate = this.normalizePostpayDate(dto.postpayDate) ?? null
     if (dto.provinceName !== undefined) { a.provinceName = dto.provinceName; a.province = dto.provinceName }
     if (dto.provinceCode !== undefined) a.provinceCode = dto.provinceCode
     if (dto.cityName !== undefined) { a.cityName = dto.cityName; a.city = dto.cityName }

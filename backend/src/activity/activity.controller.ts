@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Query, Body, ParseIntPipe } from '@nestjs/common' 
+import { Controller, Get, Headers, Post, Param, Query, Body, ParseIntPipe, UnauthorizedException } from '@nestjs/common' 
 import { ActivityService } from './activity.service' 
 import { ActivityFlowService } from './activity-flow.service' 
 
@@ -136,18 +136,12 @@ export class ActivityController {
     @Get('activity/:id/qr') 
     async getQR( 
       @Param('id', ParseIntPipe) id: number, 
-      @Query('userId') userId: string, 
+      @Headers('x-user-id') headerUserId: string,
+      @Headers('authorization') authorization: string,
     ) { 
-      if (!userId) return { error: 'userId is required' } 
-      return this.flow.generateQR(userId, id) } 
-      
-      @Post('activity/:id/checkin') 
-      async checkin( 
-        @Param('id', ParseIntPipe) id: number, 
-        @Body() body: { code: string }, 
-      ) { 
-        if (!body?.code) return { error: 'code is required in body' } 
-        return this.flow.checkin(body.code) } 
+      const userId = this.resolveAuthenticatedUserId(headerUserId, authorization)
+      return this.flow.getQRCodeForUser(userId, id)
+    } 
         
         @Post('activity/:id/enroll-pay')
         async enrollPay(
@@ -191,5 +185,14 @@ export class ActivityController {
         ) {
           if (!userId) return { error: 'userId is required' }
           return this.flow.mockCompletePostpay(orderId, userId)
+        }
+
+        private resolveAuthenticatedUserId(headerUserId?: string, authorization?: string): string {
+          const token = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : ''
+          const userId = (headerUserId || '').trim()
+          if (!token || !userId) throw new UnauthorizedException('请先完成登录')
+          if (!userId.startsWith('user_')) throw new UnauthorizedException('请先完成登录')
+          if (!token.startsWith('xztok_') || !token.endsWith(`_${userId.slice(0, 12)}`)) throw new UnauthorizedException('请先完成登录')
+          return userId
         }
       }

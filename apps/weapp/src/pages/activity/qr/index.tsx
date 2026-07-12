@@ -1,7 +1,8 @@
 import { View, Text, Button, Image } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useState, useEffect, useCallback } from 'react'
-import { getUserId } from '../../../utils/user'
+import qrcode from 'qrcode-generator'
+import { getUserId, userAuthHeader } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
@@ -15,11 +16,23 @@ const C = {
   lightGreen: '#EEF5EF', border: '#EDE9DF', disabledBg: '#E9EAE5',
 }
 
+function buildQrMatrix(value: string): boolean[][] {
+  if (!value) return []
+  const qr = qrcode(0, 'M')
+  qr.addData(value)
+  qr.make()
+  const count = qr.getModuleCount()
+  return Array.from({ length: count }, (_, row) =>
+    Array.from({ length: count }, (_, col) => qr.isDark(row, col)),
+  )
+}
+
 export default function QRPage() {
   const router = useRouter()
   const [activityId, setActivityId] = useState(0)
   const [title, setTitle] = useState('')
   const [code, setCode] = useState('')
+  const [expiresAt, setExpiresAt] = useState('')
   const [qrStatus, setQrStatus] = useState<QRState>('loading')
   const [error, setError] = useState('')
   const [location, setLocation] = useState('')
@@ -46,12 +59,9 @@ export default function QRPage() {
   }, [activityId])
 
   const load = useCallback(async (id: number) => {
-    setQrStatus('loading'); setError('')
+    setQrStatus('loading'); setError(''); setCode(''); setExpiresAt(''); setIsFinished(false)
     try {
-      const [detail, qr] = await Promise.all([
-        Taro.request({ url: `${API}/activity/${id}` }),
-        Taro.request({ url: `${API}/activity/${id}/qr?userId=${getUserId()}` }),
-      ])
+      const detail = await Taro.request({ url: `${API}/activity/${id}` })
       const d = detail.data as any
       setTitle(d.title || title)
       setLocation(d.location || '')
@@ -64,23 +74,34 @@ export default function QRPage() {
       if (d.groupQrType && d.groupQrType !== 'NONE' && d.groupQrImageUrl) {
         setGroupQr({ type: d.groupQrType, imageUrl: d.groupQrImageUrl, title: d.groupQrTitle || '加入活动群', desc: d.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步' })
       }
-      const q = qr.data as any
-      setCode(q.code || '')
-      if (q.status === 'ACTIVE') { setQrStatus('ACTIVE') }
-      else {
+      try {
+        const qr = await Taro.request({ url: `${API}/activity/${id}/qr`, header: userAuthHeader() })
+        const q = qr.data as any
+        setCode(q.code || '')
+        setExpiresAt(q.expiresAt || '')
+        if (q.status === 'ACTIVE') { setQrStatus('ACTIVE') }
+        else if (q.status === 'CHECKED_IN') { setQrStatus('CHECKED_IN') }
+        else {
+          const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
+          const st = (s.data as any)?.status
+          setQrStatus(st === 'CHECKED_IN' ? 'CHECKED_IN' : 'EXPIRED')
+        }
+      } catch (qrError) {
         const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
         const st = (s.data as any)?.status
-        setQrStatus(st === 'CHECKED_IN' ? 'CHECKED_IN' : 'EXPIRED')
+        if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
+        else if (d.endTime && new Date(d.endTime).getTime() < Date.now()) { setError('活动已结束'); setQrStatus('EXPIRED') }
+        else if (st === 'EXPIRED') { setError('二维码已过期，请重新加载'); setQrStatus('EXPIRED') }
+        else { setError('暂无签到二维码'); setQrStatus('EXPIRED') }
       }
     } catch (e) {
-      console.error('[activity-qr] load', e)
       try {
         const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
         const st = (s.data as any)?.status
         if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
-        else if (st === 'EXPIRED') setQrStatus('EXPIRED')
-        else setQrStatus('ACTIVE')
-      } catch (e2) { console.error('[activity-qr] status fallback', e2); setError('加载失败'); setQrStatus('EXPIRED') }
+        else if (st === 'EXPIRED') { setError('二维码已过期，请重新加载'); setQrStatus('EXPIRED') }
+        else { setError('暂无签到二维码'); setQrStatus('EXPIRED') }
+      } catch (e2) { setError('加载失败'); setQrStatus('EXPIRED') }
     }
   }, [])
 
@@ -91,6 +112,7 @@ export default function QRPage() {
     const w = ['日', '一', '二', '三', '四', '五', '六'][dt.getDay()]
     return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
   }
+  const qrMatrix = qrStatus === 'ACTIVE' && code ? buildQrMatrix(code) : []
 
   if (activityId === 0 && !error) {
     return (
@@ -110,7 +132,7 @@ export default function QRPage() {
     return (
       <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}>
         <Text style={{ display: 'block', fontSize: '32rpx', color: C.body, marginBottom: '16rpx' }}>{error}</Text>
-        <Button onClick={() => load(activityId)} style={{ height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', lineHeight: '88rpx', border: 'none', padding: '0 48rpx' }}>重试</Button>
+        <Button onClick={() => load(activityId)} style={{ height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', lineHeight: '88rpx', border: 'none', padding: '0 48rpx' }}>重新加载</Button>
       </View>
     )
   }
@@ -121,13 +143,13 @@ export default function QRPage() {
       {/* ── V2.5.1: Finished banner ── */}
       {isFinished && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: '#F1F1EE', borderRadius: '16rpx', border: '1rpx solid #D9D9D2' }}>
-          <Text style={{ fontSize: '26rpx', color: C.secondary, textAlign: 'center', display: 'block' }}>活动已结束，签到码已失效</Text>
+          <Text style={{ fontSize: '26rpx', color: C.secondary, textAlign: 'center', display: 'block' }}>活动已结束</Text>
         </View>
       )}
       {/* ── Status banner ── */}
       {!isFinished && qrStatus === 'ACTIVE' && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: C.lightGreen, borderRadius: '16rpx', border: '1rpx solid rgba(46,125,90,0.12)' }}>
-          <Text style={{ fontSize: '26rpx', color: C.green, textAlign: 'center', display: 'block' }}>✓ 二维码有效 — 请出示给工作人员</Text>
+          <Text style={{ fontSize: '26rpx', color: C.green, textAlign: 'center', display: 'block' }}>请向工作人员出示签到二维码</Text>
         </View>
       )}
       {!isFinished && qrStatus === 'CHECKED_IN' && (
@@ -137,7 +159,7 @@ export default function QRPage() {
       )}
       {!isFinished && qrStatus === 'EXPIRED' && (
         <View style={{ margin: '24rpx 32rpx 0', padding: '20rpx 24rpx', background: 'rgba(179,91,75,0.05)', borderRadius: '16rpx', border: '1rpx solid rgba(179,91,75,0.1)' }}>
-          <Text style={{ fontSize: '26rpx', color: '#B35B4B', textAlign: 'center', display: 'block' }}>✗ 二维码已失效</Text>
+          <Text style={{ fontSize: '26rpx', color: '#B35B4B', textAlign: 'center', display: 'block' }}>{isFinished ? '活动已结束' : '二维码已过期，请重新加载'}</Text>
         </View>
       )}
 
@@ -181,17 +203,21 @@ export default function QRPage() {
           </View>
         ) : null}
         <View style={{ marginTop: '16rpx', padding: '4rpx 14rpx', background: C.lightGreen, borderRadius: '999rpx', alignSelf: 'flex-start', display: 'inline-block' }}>
-          <Text style={{ fontSize: '22rpx', color: C.green }}>{qrStatus === 'ACTIVE' ? '有效' : qrStatus === 'CHECKED_IN' ? '已签到' : '已失效'}</Text>
+          <Text style={{ fontSize: '22rpx', color: C.green }}>{qrStatus === 'ACTIVE' ? '有效' : qrStatus === 'CHECKED_IN' ? '已签到' : isFinished ? '活动已结束' : '已过期'}</Text>
         </View>
       </View>
 
       {/* ── QR code card ── */}
       <View style={{ margin: '0 32rpx 0', background: C.white, borderRadius: '28rpx', padding: '40rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 12rpx 32rpx rgba(24,35,30,0.08)', textAlign: 'center' }}>
-        <View style={{ width: '360rpx', height: '360rpx', background: '#FBFAF6', borderRadius: '20rpx', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-          {qrStatus === 'ACTIVE' && code && (
-            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexWrap: 'wrap', padding: '28rpx', alignItems: 'center', justifyContent: 'center' }}>
-              {Array.from({ length: 36 }).map((_, i) => (
-                <View key={i} style={{ width: '34rpx', height: '34rpx', margin: '5rpx', background: (i + Number(code.charCodeAt(i % code.length) || 0)) % 3 === 0 ? C.dark : 'rgba(24,35,30,0.12)', borderRadius: '4rpx' }} />
+        <View style={{ width: '400rpx', height: '400rpx', background: '#FFFFFF', borderRadius: '20rpx', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', border: '1rpx solid #EDE9DF' }}>
+          {qrStatus === 'ACTIVE' && qrMatrix.length > 0 && (
+            <View style={{ width: '336rpx', height: '336rpx', background: '#FFFFFF', display: 'flex', flexDirection: 'column' }}>
+              {qrMatrix.map((row, rowIndex) => (
+                <View key={rowIndex} style={{ flex: 1, display: 'flex', flexDirection: 'row' }}>
+                  {row.map((dark, colIndex) => (
+                    <View key={`${rowIndex}-${colIndex}`} style={{ flex: 1, background: dark ? '#000000' : '#FFFFFF' }} />
+                  ))}
+                </View>
               ))}
             </View>
           )}
@@ -204,18 +230,19 @@ export default function QRPage() {
           {qrStatus === 'EXPIRED' && (
             <View style={{ textAlign: 'center' }}>
               <Text style={{ fontSize: '48rpx', color: C.secondary, display: 'block' }}>✗</Text>
-              <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginTop: '8rpx' }}>已失效</Text>
+              <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginTop: '8rpx' }}>{isFinished ? '活动已结束' : '已过期'}</Text>
             </View>
           )}
         </View>
-        {code && (
-          <View style={{ marginTop: '20rpx' }}>
-            <Text style={{ fontSize: '22rpx', fontFamily: 'monospace', color: C.secondary, wordBreak: 'break-all', display: 'block', userSelect: 'all' }} selectable>
-              核销码：{code}
-            </Text>
-            <Text onClick={() => { Taro.setClipboardData({ data: code }); Taro.showToast({ title: '已复制核销码', icon: 'success' }) }}
-              style={{ fontSize: '22rpx', color: C.green, marginTop: '8rpx', display: 'inline-block' }}>复制核销码</Text>
-          </View>
+        {qrStatus === 'ACTIVE' && expiresAt && (
+          <Text style={{ fontSize: '24rpx', color: C.secondary, display: 'block', marginTop: '20rpx' }}>
+            有效期至 {fmtDate(expiresAt)}
+          </Text>
+        )}
+        {qrStatus === 'EXPIRED' && !isFinished && (
+          <Button onClick={() => load(activityId)}
+            style={{ marginTop: '24rpx', height: '76rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '28rpx', lineHeight: '76rpx', border: 'none', padding: '0 42rpx' }}
+          >重新加载</Button>
         )}
       </View>
 

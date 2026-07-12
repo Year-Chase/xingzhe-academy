@@ -271,11 +271,27 @@ export default function ActivityDetail() {
   const payMode = priceVM.payMode
   const isPrepay = payMode === 'PREPAY'
   const isLoggedInNow = isLoggedIn()
+  const orderPrepayAmount = Number(orderInfo?.orderPrepayAmount || 0)
+  const orderPostpayAmount = Number(orderInfo?.orderPostpayAmount || 0)
+  const orderFullAmount = Number(orderInfo?.amount || priceVM.myFull || 0)
+  const totalPayAmount = orderInfo?.payType === 'PREPAY' || isPrepay ? orderPrepayAmount + orderPostpayAmount || Number(priceVM.myPrepay || 0) + Number(priceVM.myPostpay || 0) : orderFullAmount
+  const currentPaidAmount = orderInfo
+    ? (orderInfo.payType === 'PREPAY' ? orderPrepayAmount + (orderInfo.postpayStatus === 'PAID' ? orderPostpayAmount : 0) : Number(orderInfo.amount || 0))
+    : 0
+  const postpayStatusText = orderInfo?.postpayStatus === 'PAID' ? '已完成' : orderInfo?.postpayStatus === 'WAIVED' ? '已免除' : orderInfo?.postpayStatus === 'OVERDUE' ? '待支付（已逾期）' : orderInfo?.postpayStatus === 'UNPAID' ? '待支付' : '无'
+  const overallPayStatusText = userStatus === 'CHECKED_IN' || userStatus === 'PAID'
+    ? (orderInfo?.payType === 'PREPAY' && orderPostpayAmount > 0 && orderInfo.postpayStatus !== 'PAID' && orderInfo.postpayStatus !== 'WAIVED' ? '预付款已完成，后付款待完成' : '已完成')
+    : userStatus === 'REGISTERED' ? '待支付' : '未报名'
+  const canShowPostpayButton = orderInfo?.payType === 'PREPAY'
+    && (orderInfo.postpayStatus === 'UNPAID' || orderInfo.postpayStatus === 'OVERDUE')
+    && orderPostpayAmount > 0
+    && isLoggedInNow
 
   // V2.5.1: toast helper for disabled actions
   const toastFinished = () => Taro.showToast({ title: '活动已结束', icon: 'none' })
   const handleGoQR = () => { if (isFinished) { toastFinished(); return }; goQR() }
   const handleGroupQr = () => { if (isFinished) { toastFinished(); return }; setShowGroupQr(true) }
+  const goOrders = () => Taro.navigateTo({ url: '/pages/mine/orders/index' })
   const handleLocationTap = () => {
     if (canOpenActivityLocation(activity)) { openActivityLocation(activity); return }
     const text = (activity as any)?.locationAddress || (activity as any)?.locationName || activity?.location || ''
@@ -367,89 +383,55 @@ export default function ActivityDetail() {
             }
           </Text>
         </View>
-        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
-          <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral, paddingTop: '2rpx' }}>价格</Text>
-          <View style={{ flex: 1 }}>
-            {!isLoggedInNow ? (
-              <Text style={{ fontSize: '26rpx', color: C.secondary }}>请登录后查看价格</Text>
-            ) : !priceVM.priceReady ? (
-              <Text style={{ fontSize: '26rpx', color: C.secondary }}>价格待确认</Text>
-            ) : isPrepay ? (
-              <View>
-                {/* PREPAY: total with optional strikethrough */}
-                <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'baseline', gap: '8rpx' }}>
-                  {priceVM.detailHasStrikethrough ? (
-                    <>
-                      <Text style={{ fontSize: '22rpx', color: C.secondary, textDecoration: 'line-through' }}>{priceVM.detailStrikethroughPrice}</Text>
-                      {priceVM.showIdentityLabel ? (
-                        <Text style={{ fontSize: '20rpx', color: '#4A7C5D', background: '#EEF5EF', borderRadius: '6rpx', padding: '2rpx 10rpx' }}>{priceVM.identityLabel}</Text>
-                      ) : null}
-                      <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
-                    </>
-                  ) : (
-                    <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
-                  )}
-                </View>
-                {/* PREPAY sub-lines */}
-                {priceVM.detailSubLines.map((line, i) => (
-                  <Text key={i} style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>{line}</Text>
-                ))}
-                {/* Postpay date */}
-                {priceVM.detailPostpayDateText ? (
-                  <Text style={{ display: 'block', fontSize: '22rpx', color: C.secondary, marginTop: '4rpx' }}>{priceVM.detailPostpayDateText}</Text>
+        <View>
+          <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '16rpx' }}>费用与付款</Text>
+          {!isLoggedInNow ? (
+            <Text style={{ fontSize: '26rpx', color: C.secondary }}>请登录后查看价格</Text>
+          ) : !priceVM.priceReady ? (
+            <Text style={{ fontSize: '26rpx', color: C.secondary }}>价格待确认</Text>
+          ) : (
+            <View>
+              <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'baseline', gap: '8rpx', marginBottom: '10rpx' }}>
+                {priceVM.detailHasStrikethrough ? (
+                  <>
+                    <Text style={{ fontSize: '22rpx', color: C.secondary, textDecoration: 'line-through' }}>{priceVM.detailStrikethroughPrice}</Text>
+                    {priceVM.showIdentityLabel ? (
+                      <Text style={{ fontSize: '20rpx', color: '#4A7C5D', background: '#EEF5EF', borderRadius: '6rpx', padding: '2rpx 10rpx' }}>{priceVM.identityLabel}</Text>
+                    ) : null}
+                  </>
                 ) : null}
+                <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
               </View>
-            ) : (
-              <View>
-                {/* FULL: price with optional strikethrough */}
-                <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'baseline', gap: '8rpx' }}>
-                  {priceVM.detailHasStrikethrough ? (
-                    <>
-                      <Text style={{ fontSize: '22rpx', color: C.secondary, textDecoration: 'line-through' }}>{priceVM.detailStrikethroughPrice}</Text>
-                      {priceVM.showIdentityLabel ? (
-                        <Text style={{ fontSize: '20rpx', color: '#4A7C5D', background: '#EEF5EF', borderRadius: '6rpx', padding: '2rpx 10rpx' }}>{priceVM.identityLabel}</Text>
-                      ) : null}
-                      <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
-                    </>
-                  ) : (
-                    <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark }}>{priceVM.detailCurrentPrice}</Text>
-                  )}
+
+              <Text style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>活动总费用：¥{totalPayAmount}</Text>
+              {isPrepay || orderInfo?.payType === 'PREPAY' ? (
+                <>
+                  <Text style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>预付款金额及状态：¥{orderPrepayAmount || Number(priceVM.myPrepay || 0)} / {userStatus === 'PAID' || userStatus === 'CHECKED_IN' ? '已完成' : '待支付'}</Text>
+                  <Text style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>后付款金额及状态：¥{orderPostpayAmount || Number(priceVM.myPostpay || 0)} / {postpayStatusText}</Text>
+                  {(orderInfo?.postpayDate || priceVM.detailPostpayDateText) ? (
+                    <Text style={{ display: 'block', fontSize: '22rpx', color: C.secondary, marginTop: '4rpx' }}>
+                      后付款截止时间：{formatBeijingDateTime(orderInfo?.postpayDate) || priceVM.detailPostpayDateText}
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+              <Text style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>当前已付金额：¥{currentPaidAmount}</Text>
+              <Text style={{ display: 'block', fontSize: '24rpx', color: C.neutral, marginTop: '4rpx' }}>整体付款状态：{overallPayStatusText}</Text>
+
+              {canShowPostpayButton ? (
+                <View onClick={handlePostpay} style={{ marginTop: '16rpx', width: '100%', height: '72rpx', borderRadius: '999rpx', background: postpayActing ? '#E9EAE5' : C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: '28rpx', fontWeight: '600', color: postpayActing ? '#8A9288' : '#FFFFFF' }}>{postpayActing ? '处理中...' : '完成后付款支付'}</Text>
                 </View>
+              ) : null}
+
+              <View onClick={goOrders} style={{ marginTop: '16rpx', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
+                <Text style={{ fontSize: '24rpx', color: C.green, fontWeight: '600' }}>查看付款记录 &gt;</Text>
               </View>
-            )}
-          </View>
+            </View>
+          )}
         </View>
 
       </View>
-
-      {/* V2.8-D: Postpay module — shown for registered PREPAY users */}
-      {orderInfo && orderInfo.payType === 'PREPAY' && isLoggedInNow && (
-        <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)' }}>
-          <Text style={{ fontSize: '28rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '12rpx' }}>
-            {orderInfo.postpayStatus === 'PAID' ? '后付款已完成' : orderInfo.postpayStatus === 'WAIVED' ? '后付款已免除' : '后付款'}
-          </Text>
-          {orderInfo.postpayStatus === 'UNPAID' || orderInfo.postpayStatus === 'OVERDUE' ? (
-            <View>
-              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block' }}>你已完成预付款：¥{orderInfo.orderPrepayAmount || 0}</Text>
-              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', marginTop: '4rpx' }}>待完成后付款：¥{orderInfo.orderPostpayAmount || 0}</Text>
-              {formatBeijingDateTime(orderInfo.postpayDate) ? (
-                <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginTop: '4rpx' }}>后付款日期：{formatBeijingDateTime(orderInfo.postpayDate)}</Text>
-              ) : null}
-              <View onClick={handlePostpay} style={{ marginTop: '16rpx', width: '100%', height: '72rpx', borderRadius: '999rpx', background: postpayActing ? '#E9EAE5' : C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: '28rpx', fontWeight: '600', color: postpayActing ? '#8A9288' : '#FFFFFF' }}>{postpayActing ? '处理中...' : '完成后付款'}</Text>
-              </View>
-            </View>
-          ) : orderInfo.postpayStatus === 'PAID' ? (
-            <View>
-              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block' }}>预付款：¥{orderInfo.orderPrepayAmount || 0}</Text>
-              <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', marginTop: '4rpx' }}>后付款：¥{orderInfo.orderPostpayAmount || 0}</Text>
-              <Text style={{ fontSize: '22rpx', color: '#2E7D5A', display: 'block', marginTop: '4rpx' }}>✓ 费用已完成</Text>
-            </View>
-          ) : orderInfo.postpayStatus === 'WAIVED' ? (
-            <Text style={{ fontSize: '24rpx', color: C.secondary, display: 'block' }}>该活动的后付款已被免除。</Text>
-          ) : null}
-        </View>
-      )}
 
       {/* 4. 活动介绍 — V2.8-B: contentBlocks or description fallback */}
       {displayBlocks.length > 0 && (
@@ -604,24 +586,29 @@ export default function ActivityDetail() {
         )}
         {isFinished && userStatus === 'PAID' && (
           <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '30rpx', color: C.disabledText, fontWeight: '600' }}>活动已结束 · 签到码已失效</Text>
+            <Text style={{ fontSize: '30rpx', color: C.disabledText, fontWeight: '600' }}>活动已结束</Text>
           </View>
         )}
         {isFinished && userStatus === 'CHECKED_IN' && (
           <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '30rpx', color: C.disabledText, fontWeight: '600' }}>活动已结束 · 已签到</Text>
+            <Text style={{ fontSize: '30rpx', color: C.disabledText, fontWeight: '600' }}>已签到</Text>
           </View>
         )}
-        {!isFinished && (userStatus === 'NOT_REGISTERED' || userStatus === 'REGISTERED') && (
+        {!isFinished && userStatus === 'NOT_REGISTERED' && (
           <Button onClick={handleEnroll} disabled={acting}
             style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: acting ? C.disabledBg : C.green, color: acting ? C.disabledText : '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none', textAlign: 'center' }}
           >{acting ? '...' : '立即报名'}</Button>
+        )}
+        {!isFinished && userStatus === 'REGISTERED' && (
+          <Button onClick={handleEnroll} disabled={acting}
+            style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: acting ? C.disabledBg : C.green, color: acting ? C.disabledText : '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none', textAlign: 'center' }}
+          >{acting ? '...' : '完成支付后查看二维码'}</Button>
         )}
         {!isFinished && userStatus === 'PAID' && (
           <View style={{ display: 'flex', flexDirection: 'column', gap: '12rpx' }}>
             <Button onClick={goQR}
               style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '32rpx', fontWeight: '600', lineHeight: '92rpx', border: 'none', textAlign: 'center' }}
-            >查看签到码</Button>
+            >查看签到二维码</Button>
             {hasGroupQr && (
               <Button onClick={handleGroupQr}
                 style={{ width: '100%', height: '72rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid ${C.border}`, color: C.green, fontSize: '28rpx', lineHeight: '72rpx', textAlign: 'center' }}
@@ -631,12 +618,12 @@ export default function ActivityDetail() {
         )}
         {!isFinished && userStatus === 'CHECKED_IN' && (
           <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '32rpx', color: C.disabledText, fontWeight: '600' }}>✓ 已签到</Text>
+            <Text style={{ fontSize: '32rpx', color: C.disabledText, fontWeight: '600' }}>已签到</Text>
           </View>
         )}
         {!isFinished && userStatus === 'EXPIRED' && (
           <View style={{ width: '100%', height: '92rpx', borderRadius: '999rpx', background: C.disabledBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '32rpx', color: C.disabledText, fontWeight: '600' }}>二维码已失效</Text>
+            <Text style={{ fontSize: '32rpx', color: C.disabledText, fontWeight: '600' }}>暂无签到二维码</Text>
           </View>
         )}
       </View>

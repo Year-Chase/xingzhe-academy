@@ -8,6 +8,16 @@ import { assetUrl, API_BASE_URL } from '@/config/api'
 const yuan = (n: number) => '¥' + (n || 0).toFixed(2)
 const fmtDate = (s: string | null) => s ? new Date(s).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
 const fmtDateFull = (s: string | null) => s ? new Date(s).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
+const normalizeDateOnly = (value: any): string => {
+  if (!value) return ''
+  const raw = String(value).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return ''
+  const beijing = new Date(d.getTime() + 8 * 60 * 60 * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${beijing.getUTCFullYear()}-${pad(beijing.getUTCMonth() + 1)}-${pad(beijing.getUTCDate())}`
+}
 
 function maskIdCard(val: string | null): string {
   if (!val) return '-'
@@ -306,7 +316,7 @@ const submitForm = async () => {
     price: Number(normalRule.fullAmount || 0), memberPrice: Number(memberRule.fullAmount || 0), lifetimeMemberPrice: Number(lifetimeRule.fullAmount || 0),
     paymentMode: form.paymentMode,
     prepayAmount: Number(normalRule.prepayAmount || 0), remainingAmount: Number(normalRule.postpayAmount || 0),
-    remainingPayDate: form.postpayDate || form.remainingPayDate || undefined,
+    remainingPayDate: normalizeDateOnly(form.postpayDate || form.remainingPayDate) || undefined,
     requiredUserInfoFields: form.requiredUserInfoFields,
     groupQrType: form.groupQrType || 'NONE',
     groupQrImageUrl: form.groupQrImageUrl,
@@ -319,7 +329,7 @@ const submitForm = async () => {
     imageUrls: JSON.stringify(form.imageUrls || []),
     contentBlocks: JSON.stringify(form.contentBlocks || []),
     pricingRules: JSON.stringify(form.pricingRules || []),
-    postpayDate: form.postpayDate || undefined,
+    postpayDate: normalizeDateOnly(form.postpayDate) || undefined,
     locationName: normalizedLocationName, locationAddress: normalizedLocationAddress,
     locationLat: lat, locationLng: lng,
     coordinateType: form.coordinateType || 'gcj02', locationProvider: form.locationProvider || 'manual',

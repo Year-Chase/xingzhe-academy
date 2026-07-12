@@ -81,6 +81,16 @@ export class ActivityFlowService {
     return Math.max(0, this.paidAmount(order) - refundedAmount)
   }
 
+  private qrExpiresAtForActivity(activity?: Activity | null): Date {
+    const raw = activity?.endTime || (activity?.startTime ? new Date(new Date(activity.startTime).getTime() + 24 * 60 * 60 * 1000) : null)
+    const dt = raw ? new Date(raw) : new Date(Date.now() + 24 * 60 * 60 * 1000)
+    return Number.isNaN(dt.getTime()) ? new Date(Date.now() + 24 * 60 * 60 * 1000) : dt
+  }
+
+  private isActivityQrExpired(activity?: Activity | null): boolean {
+    return Date.now() > this.qrExpiresAtForActivity(activity).getTime()
+  }
+
   private async successfulRefundTotal(orderId: number): Promise<number> {
     const refunds = await this.refundRepo.find({ where: { orderId, status: 'SUCCESS' } })
     return refunds.reduce((sum, refund) => sum + this.money(refund.amount), 0)
@@ -206,30 +216,49 @@ export class ActivityFlowService {
   async generateQR(userId: string, activityId: number) {
     const reg = await this.findReg(userId, activityId)
     if (reg.status !== 'PAID') throw new BadRequestException(`Cannot generate QR: status is ${reg.status}, expected PAID`)
+    const expiresAt = this.qrExpiresAtForActivity(reg.activity)
+    if (this.isActivityQrExpired(reg.activity)) throw new BadRequestException('活动已结束')
     const existing = await this.qrRepo.findOne({ where: { registrationId: reg.id } })
-    if (existing && existing.status === 'ACTIVE') {
-      if (existing.expiresAt && new Date() > existing.expiresAt) {
-        existing.status = 'EXPIRED'
-        await this.qrRepo.save(existing)
-      } else {
-        return { code: existing.code, status: 'ACTIVE' }
-      }
+    if (existing && (existing.status === 'ACTIVE' || existing.status === 'EXPIRED')) {
+      existing.status = 'ACTIVE'
+      existing.expiresAt = expiresAt
+      await this.qrRepo.save(existing)
+      return { code: existing.code, status: 'ACTIVE', expiresAt: existing.expiresAt }
     }
-    const qr = this.qrRepo.create({ registrationId: reg.id, code: randomUUID(), status: 'ACTIVE', expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) })
+    const qr = this.qrRepo.create({ registrationId: reg.id, code: randomUUID(), status: 'ACTIVE', expiresAt })
     const saved = await this.qrRepo.save(qr)
-    return { code: saved.code, status: 'ACTIVE' }
+    return { code: saved.code, status: 'ACTIVE', expiresAt: saved.expiresAt }
+  }
+
+  async getQRCodeForUser(userId: string, activityId: number) {
+    const reg = await this.findReg(userId, activityId)
+    if (reg.status === 'CHECKED_IN') {
+      return { code: null, status: 'CHECKED_IN', expiresAt: null, registrationStatus: reg.status, activity: { id: activityId, title: reg.activity?.title || '' } }
+    }
+    if (reg.status !== 'PAID') {
+      throw new BadRequestException('完成支付后查看二维码')
+    }
+    const qr = await this.generateQR(userId, activityId)
+    return { ...qr, registrationStatus: reg.status, activity: { id: activityId, title: reg.activity?.title || '' } }
   }
 
   // ──── getQR ────
   async getQR(userId: string, activityId: number) {
     const reg = await this.findReg(userId, activityId)
-    const qr = await this.qrRepo.findOne({ where: { registrationId: reg.id, status: 'ACTIVE' as any } })
+    const qr = await this.qrRepo.findOne({ where: { registrationId: reg.id } })
     if (!qr) throw new NotFoundException('No active QR found')
-    if (qr.expiresAt && new Date() > qr.expiresAt) {
+    if (this.isActivityQrExpired(reg.activity)) {
       qr.status = 'EXPIRED'
+      qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
       await this.qrRepo.save(qr)
       throw new BadRequestException('QR has expired')
     }
+    if (qr.status === 'EXPIRED') {
+      qr.status = 'ACTIVE'
+      qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
+      await this.qrRepo.save(qr)
+    }
+    if (qr.status !== 'ACTIVE') throw new NotFoundException('No active QR found')
     return { code: qr.code, status: 'ACTIVE', expiresAt: qr.expiresAt }
   }
 
@@ -237,8 +266,10 @@ export class ActivityFlowService {
   async checkin(code: string) {
     const qr = await this.qrRepo.findOne({ where: { code, status: 'ACTIVE' as any }, relations: ['registration'] })
     if (!qr) throw new NotFoundException('QR code not found or already used')
-    if (qr.expiresAt && new Date() > qr.expiresAt) {
+    const activity = await this.activityRepo.findOne({ where: { id: qr.registration.activityId } })
+    if (this.isActivityQrExpired(activity)) {
       qr.status = 'EXPIRED'
+      qr.expiresAt = this.qrExpiresAtForActivity(activity)
       await this.qrRepo.save(qr)
       throw new BadRequestException('QR has expired')
     }
@@ -260,6 +291,13 @@ export class ActivityFlowService {
     if (qr.registration?.activityId !== activityId) {
       throw new BadRequestException('该核销码不属于当前活动')
     }
+    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
+
+    if (qr.status === 'EXPIRED' && !this.isActivityQrExpired(activity)) {
+      qr.status = 'ACTIVE'
+      qr.expiresAt = this.qrExpiresAtForActivity(activity)
+      await this.qrRepo.save(qr)
+    }
 
     // Step 2: check QR status — already used?
     if (qr.status !== 'ACTIVE') {
@@ -268,8 +306,9 @@ export class ActivityFlowService {
     }
 
     // Step 3: check expiration
-    if (qr.expiresAt && new Date() > qr.expiresAt) {
+    if (this.isActivityQrExpired(activity)) {
       qr.status = 'EXPIRED'
+      qr.expiresAt = this.qrExpiresAtForActivity(activity)
       await this.qrRepo.save(qr)
       throw new BadRequestException('核销码已过期')
     }
@@ -291,8 +330,16 @@ export class ActivityFlowService {
   async getUserStatus(userId: string, activityId: number) {
     const reg = await this.regRepo.findOne({ where: { userId, activityId }, relations: ['qr'] })
     if (!reg) return { status: 'NOT_REGISTERED' }
-    if (reg.qr?.status === 'ACTIVE' && reg.qr?.expiresAt && new Date() > reg.qr.expiresAt) {
+    if (reg.status === 'EXPIRED' && reg.qr?.status === 'EXPIRED' && !this.isActivityQrExpired(reg.activity)) {
+      reg.qr.status = 'ACTIVE'
+      reg.qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
+      await this.qrRepo.save(reg.qr)
+      reg.status = 'PAID'
+      await this.regRepo.save(reg)
+    }
+    if (reg.qr?.status === 'ACTIVE' && this.isActivityQrExpired(reg.activity)) {
       reg.qr.status = 'EXPIRED'
+      reg.qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
       await this.qrRepo.save(reg.qr)
       reg.status = 'EXPIRED'
       await this.regRepo.save(reg)
@@ -359,7 +406,7 @@ export class ActivityFlowService {
 
     let qr = await this.qrRepo.findOne({ where: { registrationId: saved.id, status: 'ACTIVE' as any } })
     if (!qr) {
-      qr = this.qrRepo.create({ registrationId: saved.id, code: randomUUID(), status: 'ACTIVE', expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) })
+      qr = this.qrRepo.create({ registrationId: saved.id, code: randomUUID(), status: 'ACTIVE', expiresAt: this.qrExpiresAtForActivity(activity) })
       await this.qrRepo.save(qr)
     }
 
