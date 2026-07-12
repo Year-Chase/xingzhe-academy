@@ -56,6 +56,11 @@ export class ActivityFlowService {
     return Number.isFinite(n) ? n : 0
   }
 
+  private maskPhone(phone?: string | null): string | null {
+    if (!phone) return null
+    return phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+  }
+
   private paidAmount(order: ActivityOrder): number {
     if (order.payType === 'PREPAY') {
       const prepay = this.money(order.orderPrepayAmount ?? order.amount)
@@ -94,6 +99,26 @@ export class ActivityFlowService {
       }
     }
     if (pendingInvoices.length > 0) await this.invoiceRepo.save(pendingInvoices)
+  }
+
+  private postpayDueAt(order: ActivityOrder, activity: Activity | null): string | null {
+    let snapshotDue: string | null = null
+    try {
+      const snapshot = order.pricingSnapshot ? JSON.parse(order.pricingSnapshot) : null
+      snapshotDue = typeof snapshot?.postpayDateAtOrder === 'string' ? snapshot.postpayDateAtOrder : null
+    } catch {}
+    const raw = snapshotDue || activity?.postpayDate || null
+    if (!raw) return null
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T15:59:59.000Z`
+    const date = new Date(raw)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  }
+
+  private timelineItem(type: string, time: Date | string | null | undefined, label: string) {
+    if (!time) return null
+    const date = new Date(time)
+    if (Number.isNaN(date.getTime())) return null
+    return { type, time: date.toISOString(), label }
   }
 
   private parseRequiredUserInfoFields(raw: string | null): RegistrationInfoField[] {
@@ -524,7 +549,7 @@ export class ActivityFlowService {
       return {
         id: o.id, registrationId: o.registrationId, userId: o.userId,
         userNickname: user?.nickname || o.userId || '',
-        userPhone: user?.phone || '',
+        searchPhone: user?.phone || '',
         activityId: o.activityId,
         activityTitle: activity?.title || '',
         amount: this.money(o.amount),
@@ -545,7 +570,7 @@ export class ActivityFlowService {
       }
     }).filter((o) => {
       if (keyword) {
-        const haystack = `${o.userId || ''} ${o.userNickname || ''} ${o.userPhone || ''}`.toLowerCase()
+        const haystack = `${o.userId || ''} ${o.userNickname || ''} ${o.searchPhone || ''}`.toLowerCase()
         if (!haystack.includes(keyword)) return false
       }
       if (activityTitle && !(o.activityTitle || '').toLowerCase().includes(activityTitle)) return false
@@ -553,9 +578,102 @@ export class ActivityFlowService {
       return true
     })
     const total = enriched.length
-    const items = enriched.slice((page - 1) * limit, page * limit)
+    const items = enriched.slice((page - 1) * limit, page * limit).map(({ searchPhone, ...item }) => item)
 
     return { items, total }
+  }
+
+  async getOrderDetail(orderId: number) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId } })
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+
+    const [activity, user, registration, registrationInfo, refunds, invoices] = await Promise.all([
+      order.activityId != null ? this.activityRepo.findOne({ where: { id: order.activityId } }) : Promise.resolve(null),
+      order.userId ? this.userRepo.findOne({ where: { id: order.userId as any } }) : Promise.resolve(null),
+      this.regRepo.findOne({ where: { id: order.registrationId } }),
+      this.regInfoRepo.findOne({ where: { registrationId: order.registrationId } }),
+      this.refundRepo.find({ where: { orderId }, order: { createdAt: 'DESC' } }),
+      this.invoiceRepo.find({ where: { orderId }, order: { createdAt: 'DESC' } }),
+    ])
+
+    const successfulRefundedAmount = refunds
+      .filter((refund) => refund.status === 'SUCCESS')
+      .reduce((sum, refund) => sum + this.money(refund.amount), 0)
+    const paidAmount = this.paidAmount(order)
+    const derivedStatus = this.orderStatus(order, successfulRefundedAmount)
+    const phoneMasked = this.maskPhone(registrationInfo?.phone || user?.phone || null)
+
+    const timeline = [
+      this.timelineItem('ORDER_CREATED', order.createdAt, '订单创建'),
+      this.timelineItem('ORDER_PAID', order.paidAt, '订单支付'),
+      this.timelineItem('POSTPAY_PAID', order.postpayPaidAt, '后付款完成'),
+      order.postpayReminderCount > 0 ? this.timelineItem('POSTPAY_REMINDER_RECORDED', order.lastPostpayReminderAt, '最后一次提醒记录') : null,
+      this.timelineItem('POSTPAY_WAIVED', order.postpayWaivedAt, '后付款免除'),
+      ...refunds.map((refund) => this.timelineItem('REFUND_RECORDED', refund.createdAt, `退款登记 ¥${this.money(refund.amount).toFixed(2)}`)),
+      ...invoices.map((invoice) => this.timelineItem('INVOICE_REQUESTED', invoice.createdAt, '发票申请')),
+      ...invoices.map((invoice) => this.timelineItem('INVOICE_ISSUED', invoice.issuedAt, '发票已开具')),
+    ]
+      .filter((item): item is { type: string; time: string; label: string } => !!item)
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+
+    return {
+      id: order.id,
+      status: derivedStatus,
+      createdAt: order.createdAt,
+      paidAt: order.paidAt,
+      payType: order.payType,
+      activity: activity ? {
+        id: activity.id,
+        title: activity.title,
+        startTime: activity.startTime || null,
+        endTime: activity.endTime || null,
+        locationName: activity.locationName || activity.location || null,
+        locationAddress: activity.locationAddress || null,
+      } : null,
+      user: {
+        id: order.userId || registration?.userId || null,
+        nickname: user?.nickname || null,
+        avatarUrl: user?.avatarUrl || null,
+        phoneMasked,
+        identityType: user?.identityType || null,
+        userTypeAtOrder: order.userTypeAtOrder || null,
+      },
+      money: {
+        priceSource: order.priceSource || null,
+        fullAmount: this.money(order.fullAmount ?? order.amount),
+        orderAmount: this.money(order.amount),
+        prepayAmount: this.money(order.orderPrepayAmount),
+        postpayAmount: this.money(order.orderPostpayAmount),
+        paidAmount,
+        refundedAmount: successfulRefundedAmount,
+        refundableAmount: this.refundableAmount(order, successfulRefundedAmount),
+      },
+      postpay: {
+        dueAt: this.postpayDueAt(order, activity),
+        status: order.postpayStatus || 'NONE',
+        paidAt: order.postpayPaidAt || null,
+        reminderCount: Number(order.postpayReminderCount || 0),
+        lastReminderAt: order.lastPostpayReminderAt || null,
+        waivedAt: order.postpayWaivedAt || null,
+        waiveReason: order.postpayWaiveReason || null,
+      },
+      refunds: refunds.map((refund) => ({
+        id: refund.id,
+        amount: this.money(refund.amount),
+        reason: refund.reason || null,
+        status: refund.status,
+        createdAt: refund.createdAt,
+      })),
+      invoices: invoices.map((invoice) => ({
+        id: invoice.id,
+        title: invoice.title,
+        amount: this.money(invoice.amount),
+        status: invoice.status,
+        createdAt: invoice.createdAt,
+        issuedAt: invoice.issuedAt || null,
+      })),
+      timeline,
+    }
   }
 
   // ──── Admin: refund ────

@@ -1,6 +1,5 @@
 import { Controller, Get, Post, Param, Query, Body, ParseIntPipe, BadRequestException, UseGuards } from '@nestjs/common'
 import { ActivityFlowService } from './activity-flow.service'
-import { ActivityService } from './activity.service'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 @Controller('admin')
@@ -8,7 +7,6 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 export class AdminOrderController {
   constructor(
     private readonly flow: ActivityFlowService,
-    private readonly activitySvc: ActivityService,
   ) {}
 
   @Get('orders')
@@ -46,10 +44,7 @@ export class AdminOrderController {
 
   @Get('orders/:id')
   async getOne(@Param('id', ParseIntPipe) id: number) {
-    const { items } = await this.flow.getOrders(1, 1, {})
-    const order = items.find((o) => o.id === id)
-    if (!order) throw new BadRequestException('Order not found')
-    return order
+    return this.flow.getOrderDetail(id)
   }
 
   @Post('orders/:id/refund')
