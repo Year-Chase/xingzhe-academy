@@ -55,7 +55,9 @@ export class AdminOrderController {
   @Post('orders/:id/refund')
   async refund(@Param('id', ParseIntPipe) id: number, @Body() body: { amount: number; reason?: string }) {
     if (!body.amount || body.amount <= 0) throw new BadRequestException('amount must be > 0')
-    return this.flow.refund(id, body.amount, body.reason || '')
+    const reason = (body.reason || '').trim()
+    if (!reason) throw new BadRequestException('退款原因不能为空')
+    return this.flow.refund(id, body.amount, reason)
   }
 
   // ── V2.8-D: Postpay management endpoints ──

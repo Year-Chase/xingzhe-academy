@@ -1,11 +1,13 @@
 import { View, Text, Button, ScrollView, Image, Swiper, SwiperItem } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
-import Taro, { useRouter } from '@tarojs/taro'
-import { getUserId, isLoggedIn } from '../../../utils/user'
+import Taro, { useDidShow, useRouter } from '@tarojs/taro'
+import { consumeLoginReturnAction, getUserId, isLoggedIn, navigateToLoginWithRedirect } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
+import { formatBeijingDateTime } from '../../../utils/date'
 import { getActivityPrice } from '../../../utils/priceEngine'
+import navigationIcon from '../../../assets/icons/navigation-user-provided.png'
 
 function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; style: React.CSSProperties; mode?: string }) {
   const [failed, setFailed] = useState(false)
@@ -24,6 +26,12 @@ function AvatarCircle({ src, size, fontSize = '28rpx' }: { src?: string; size: s
         <Text style={{ fontSize, color: C.secondary }}>头像</Text>
       )}
     </View>
+  )
+}
+
+function NavPointerIcon() {
+  return (
+    <Image src={navigationIcon} mode='aspectFit' style={{ width: '42rpx', height: '42rpx', marginLeft: '12rpx', flexShrink: 0 }} />
   )
 }
 
@@ -92,9 +100,20 @@ export default function ActivityDetail() {
   // V2.8-D: Postpay order info
   const [orderInfo, setOrderInfo] = useState<any>(null)
   const [postpayActing, setPostpayActing] = useState(false)
+  const [handledLoginAction, setHandledLoginAction] = useState(false)
+  const [pendingLoginAction, setPendingLoginAction] = useState<any>(null)
 
   useEffect(() => { const p = router.params as any; if (p.id) setId(Number(p.id)) }, [router.params])
   useEffect(() => { if (id === 0) return; load(id) }, [id])
+  useDidShow(() => {
+    if (id === 0) return
+    const action = consumeLoginReturnAction()
+    if (action?.action === 'REGISTER' && String(action.activityId || '') === String(id)) {
+      setPendingLoginAction(action)
+      setHandledLoginAction(false)
+    }
+    load(id)
+  })
   // V2.5C: check enrollSuccess to show group QR
   useEffect(() => {
     const p = router.params as any
@@ -121,11 +140,7 @@ export default function ActivityDetail() {
     finally { setLoading(false) }
   }, [])
 
-  const handleEnroll = async () => {
-    if (!isLoggedIn()) {
-      Taro.reLaunch({ url: '/pages/auth/login/index' })
-      return
-    }
+  const openEnrollmentStep = useCallback(() => {
     const cap = activity?.capacity ?? 0
     const reg = activity?.registeredCount ?? 0
     if (cap > 0 && reg >= cap) { Taro.showToast({ title: '活动名额已满', icon: 'none' }); return }
@@ -139,6 +154,29 @@ export default function ActivityDetail() {
 
     // No required fields — use existing flow
     setShowPayConfirm(true)
+  }, [activity, id])
+
+  useEffect(() => {
+    const p = router.params as any
+    const shouldRegister = p?.loginAction === 'REGISTER' || pendingLoginAction?.action === 'REGISTER'
+    if (!shouldRegister || handledLoginAction || loading || !activity || !isLoggedIn()) return
+    if (userStatus !== 'NOT_REGISTERED' && userStatus !== 'REGISTERED') return
+    setHandledLoginAction(true)
+    setPendingLoginAction(null)
+    openEnrollmentStep()
+  }, [router.params, pendingLoginAction, handledLoginAction, loading, activity, userStatus, openEnrollmentStep])
+
+  const handleEnroll = async () => {
+    if (!isLoggedIn()) {
+      navigateToLoginWithRedirect({
+        returnUrl: `/pages/activity/detail/index?id=${id}&loginAction=REGISTER`,
+        action: 'REGISTER',
+        activityId: id,
+        preferBack: true,
+      })
+      return
+    }
+    openEnrollmentStep()
   }
 
   const confirmPay = async () => {
@@ -238,12 +276,35 @@ export default function ActivityDetail() {
   const toastFinished = () => Taro.showToast({ title: '活动已结束', icon: 'none' })
   const handleGoQR = () => { if (isFinished) { toastFinished(); return }; goQR() }
   const handleGroupQr = () => { if (isFinished) { toastFinished(); return }; setShowGroupQr(true) }
+  const handleLocationTap = () => {
+    if (canOpenActivityLocation(activity)) { openActivityLocation(activity); return }
+    const text = (activity as any)?.locationAddress || (activity as any)?.locationName || activity?.location || ''
+    if (text) {
+      Taro.setClipboardData({ data: text })
+      Taro.showToast({ title: '地点已复制', icon: 'success' })
+    }
+  }
+  const handleBack = () => {
+    const pages = Taro.getCurrentPages?.() || []
+    if (pages.length > 1) {
+      Taro.navigateBack()
+      return
+    }
+    Taro.navigateTo({ url: '/pages/activity/list/index' })
+  }
 
   if (loading) return <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ color: C.secondary, fontSize: '28rpx' }}>加载中...</Text></View>
   if (error || !activity) return <View style={{ padding: '160rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ display: 'block', fontSize: '32rpx', color: C.body, marginBottom: '20rpx' }}>{error || '活动未找到'}</Text><Button onClick={() => load(id)} style={{ height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', lineHeight: '88rpx', border: 'none', padding: '0 56rpx' }}>重试</Button></View>
 
   return (
     <View style={{ minHeight: '100vh', background: C.bg, paddingBottom: '260rpx' }}>
+      <View style={{ height: '112rpx', padding: '48rpx 24rpx 0', display: 'flex', flexDirection: 'row', alignItems: 'center', background: C.bg }}>
+        <View onClick={handleBack} style={{ width: '64rpx', height: '64rpx', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: '40rpx', color: C.dark }}>&lt;</Text>
+        </View>
+        <Text style={{ flex: 1, textAlign: 'center', fontSize: '30rpx', fontWeight: '700', color: C.dark }}>活动详情</Text>
+        <View style={{ width: '64rpx', height: '64rpx' }} />
+      </View>
 
       {/* 1. Title + status pill */}
       <View style={{ margin: '0 32rpx', padding: '32rpx 0 24rpx' }}>
@@ -289,13 +350,13 @@ export default function ActivityDetail() {
           <Text style={{ flex: 1, fontSize: '26rpx', color: C.body, lineHeight: '1.5' }}>{fmtTimeRange(activity.startTime, activity.endTime)}</Text>
         </View>
         {/* V2.6E: Location card — full row clickable, icon replaces '导航' text */}
-        <View onClick={() => { if (canOpenActivityLocation(activity)) openActivityLocation(activity); else Taro.showToast({ title: '暂无可导航定位', icon: 'none' }) }}
+        <View onClick={handleLocationTap}
           style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>地点</Text>
           <Text style={{ flex: 1, fontSize: '26rpx', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(activity as any).locationName || activity.location || '活动地点待确认'}
           </Text>
-          <Text style={{ flexShrink: 0, fontSize: '32rpx', color: C.green, marginLeft: '12rpx' }}>↗</Text>
+          <NavPointerIcon />
         </View>
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>名额</Text>
@@ -371,8 +432,8 @@ export default function ActivityDetail() {
             <View>
               <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block' }}>你已完成预付款：¥{orderInfo.orderPrepayAmount || 0}</Text>
               <Text style={{ fontSize: '24rpx', color: C.neutral, display: 'block', marginTop: '4rpx' }}>待完成后付款：¥{orderInfo.orderPostpayAmount || 0}</Text>
-              {orderInfo.postpayDate ? (
-                <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginTop: '4rpx' }}>后付款日期：{orderInfo.postpayDate}</Text>
+              {formatBeijingDateTime(orderInfo.postpayDate) ? (
+                <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', marginTop: '4rpx' }}>后付款日期：{formatBeijingDateTime(orderInfo.postpayDate)}</Text>
               ) : null}
               <View onClick={handlePostpay} style={{ marginTop: '16rpx', width: '100%', height: '72rpx', borderRadius: '999rpx', background: postpayActing ? '#E9EAE5' : C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: '28rpx', fontWeight: '600', color: postpayActing ? '#8A9288' : '#FFFFFF' }}>{postpayActing ? '处理中...' : '完成后付款'}</Text>

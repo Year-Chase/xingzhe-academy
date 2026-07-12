@@ -241,3 +241,46 @@ Claude 完成后必须输出：
 - 不默认用户懂 Python
 - 不让用户手动拼 JSON
 - 账号、密码、密钥、.env、pem、key、secret 不让用户发到聊天里
+
+固定流程：
+
+需求
+
+↓
+
+ChatGPT 产品拆解
+
+↓
+
+Codex只读分析
+
+↓
+
+开发
+
+↓
+
+Build
+
+↓
+
+QA
+
+↓
+
+部署
+
+↓
+
+人工验收
+
+↓
+
+Commit
+
+禁止：
+
+自动commit
+自动push
+git add .
+修改生产配置

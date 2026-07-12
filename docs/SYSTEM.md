@@ -140,6 +140,7 @@ ActivityQR（核销二维码）
 ActivityRefund（退款事实源）
 ActivityInvoice（发票事实源）
 ActivityRegistrationInfo（报名信息快照）
+UserRegistrationProfile（用户常用报名资料）
 ActivityFlowService（状态流转核心，enrollPay / refund / checkin / checkinForActivity / getOrders / financeSummary）
 AdminActivityController（/admin/activity/* + /admin/activity/:id/checkin）
 activity.controller.ts（小程序公开路由 /activity/*）
@@ -147,8 +148,15 @@ activity.controller.ts（小程序公开路由 /activity/*）
 backend/src/users/
 
 User Entity（主表，id 为 user_xxx，openid 唯一）
-UsersService（微信登录 / profile 查询 / mock openid 解析）
+UsersService（微信登录 / profile 查询 / 常用报名资料 / mock openid 解析）
 UsersController（/users/* 公开路由）
+
+V2.8.3 报名补充信息：
+- Activity.requiredUserInfoFields 是活动报名字段配置唯一来源
+- 非空 requiredUserInfoFields 表示报名前必须补充对应字段
+- UserRegistrationProfile 只做下次报名自动带出
+- ActivityRegistrationInfo 保存本次报名实际提交快照
+- 报名快照不因后续常用资料修改而自动覆盖
 
 backend/src/certificate/
 
@@ -292,3 +300,20 @@ V3.0：
 - 提交 .env / pem / key / secret
 - 对 0 元订单产生真实退款调用
 
+新增：
+
+订单聚合：
+
+GET /users/me/orders
+
+报名聚合：
+
+GET /users/me/registrations
+
+登录：
+
+returnUrl
+
+10分钟有效
+
+一次消费

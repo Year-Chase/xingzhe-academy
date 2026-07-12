@@ -205,3 +205,26 @@ ENABLE_DEMO_SEED：演示数据开关（生产必须 false）
 ADMIN_USERNAME / ADMIN_PASSWORD：Admin 登录凭证
 ADMIN_TOKEN_SECRET：HMAC-SHA256 签名密钥（至少 64 字符）
 ADMIN_TOKEN_EXPIRES_SECONDS：token 过期秒数（默认 86400）
+
+本地：
+
+API:
+http://127.0.0.1:3000
+
+生产：
+
+https://api.tenselog.cn
+
+数据库：
+
+本地：
+
+SQLite
+
+生产：
+
+MySQL
+
+规则：
+
+本地.env禁止DB_HOST

@@ -124,14 +124,6 @@ const memoryDrawer = ref(false); const memoryId = ref(0); const memoryTitle = re
 const memoryImages = ref<any[]>([]); const memoryText = ref(''); const memoryUploadLoading = ref(false)
 const memoryLoading = ref(false); const memoryError = ref('')
 const certTemplates = ref<any[]>([]); const certTemplatesLoading = ref(false)
-// V2.8-D: Postpay management
-const postpayDrawer = ref(false); const postpayActivityId = ref(0); const postpayActivityTitle = ref('')
-const postpaySummary = ref<any>(null); const postpayOrders = ref<any[]>([])
-const postpayLoading = ref(false); const postpaySummaryLoading = ref(false)
-const postpayStatusFilter = ref('UNPAID'); const postpayKeyword = ref('')
-const postpayActionLoading = ref(0); const postpayWaiveOrderId = ref(0); const postpayWaiveReason = ref('')
-const postpayWaiveVisible = ref(false)
-
 const statusOptions = [
   { label: '全部', value: '' }, { label: '未发布', value: 'DRAFT' },
   { label: '已发布', value: 'PUBLISHED' }, { label: '已下架', value: 'CLOSED' },
@@ -403,52 +395,6 @@ const fetchCertTemplates = async () => {
   finally { certTemplatesLoading.value = false }
 }
 
-
-  // V2.8-D: Postpay management functions
-  const openPostpayMgmt = async (row: ActivityItem) => {
-    postpayActivityId.value = row.id; postpayActivityTitle.value = row.title
-    postpayStatusFilter.value = 'UNPAID'; postpayKeyword.value = ''; postpayDrawer.value = true
-    await Promise.all([fetchPostpaySummary(), fetchPostpayOrders()])
-  }
-  const fetchPostpaySummary = async () => {
-    postpaySummaryLoading.value = true
-    try { postpaySummary.value = await get('/admin/activities/' + postpayActivityId.value + '/postpay-summary') }
-    catch { postpaySummary.value = null }
-    finally { postpaySummaryLoading.value = false }
-  }
-  const fetchPostpayOrders = async () => {
-    postpayLoading.value = true
-    try {
-      const res = await get<any>('/admin/activities/' + postpayActivityId.value + '/postpay-orders', {
-        status: postpayStatusFilter.value || undefined,
-        keyword: postpayKeyword.value || undefined,
-      })
-      postpayOrders.value = res.items || []
-    } catch { postpayOrders.value = [] }
-    finally { postpayLoading.value = false }
-  }
-  const postpayMarkPaid = async (orderId: number) => {
-    const dlg = DialogPlugin.confirm({ header: '确认已后付', body: '确认将该订单标记为后付款已完成？此操作不可撤销。', onConfirm: async () => { dlg.hide(); postpayActionLoading.value = orderId; try { await post('/admin/orders/' + orderId + '/mark-postpay-paid'); MessagePlugin.success('已标记后付款完成'); fetchPostpaySummary(); fetchPostpayOrders() } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') } finally { postpayActionLoading.value = 0 } } })
-  }
-  const postpayOpenWaive = (orderId: number) => { postpayWaiveOrderId.value = orderId; postpayWaiveReason.value = ''; postpayWaiveVisible.value = true }
-  const postpayConfirmWaive = async () => {
-    if (!postpayWaiveReason.value.trim()) { MessagePlugin.warning('请填写免除原因'); return }
-    postpayActionLoading.value = postpayWaiveOrderId.value
-    try {
-      await post('/admin/orders/' + postpayWaiveOrderId.value + '/waive-postpay', { reason: postpayWaiveReason.value })
-      MessagePlugin.success('后付款已免除'); postpayWaiveVisible.value = false; fetchPostpaySummary(); fetchPostpayOrders()
-    } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') }
-    finally { postpayActionLoading.value = 0 }
-  }
-  const postpaySendReminder = async (orderId: number) => {
-    const dlg = DialogPlugin.confirm({ header: '发送提醒', body: '确认向该用户发送后付款提醒？', onConfirm: async () => { dlg.hide(); postpayActionLoading.value = orderId; try { const res = await post('/admin/orders/' + orderId + '/postpay-reminder'); MessagePlugin.success('提醒已记录 · 第' + ((res as any)?.postpayReminderCount || '') + '次'); fetchPostpaySummary(); fetchPostpayOrders() } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') } finally { postpayActionLoading.value = 0 } } })
-  }
-  const postpayBatchRemind = async () => {
-    const unpaid = postpayOrders.value.filter((o: any) => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE')
-    if (unpaid.length === 0) { MessagePlugin.warning('没有待后付的用户'); return }
-    const dlg = DialogPlugin.confirm({ header: '批量发送提醒', body: '将向 ' + unpaid.length + ' 位待后付用户发送后付款提醒。', onConfirm: async () => { dlg.hide(); postpayActionLoading.value = -1; try { const res = await post('/admin/activities/' + postpayActivityId.value + '/postpay-reminders'); MessagePlugin.success('已向 ' + ((res as any)?.sentCount || 0) + ' 位用户发送提醒'); fetchPostpaySummary(); fetchPostpayOrders() } catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '操作失败') } finally { postpayActionLoading.value = 0 } } })
-  }
-
   onMounted(() => { fetchList(); fetchCertTemplates() })
 </script>
 
@@ -472,7 +418,6 @@ const fetchCertTemplates = async () => {
             <t-button theme="default" variant="text" size="small" @click="openDetail(row)">详情</t-button>
             <t-button theme="default" variant="text" size="small" @click="openEdit(row)">编辑</t-button>
             <t-button theme="default" variant="text" size="small" @click="openMemory(row)">上传</t-button>
-            <t-button v-if="(row.paymentMode || 'FULL') === 'PREPAY'" theme="default" variant="text" size="small" style="color: #8A6D3B;" @click="openPostpayMgmt(row)">后付款管理</t-button>
             <t-button v-if="row.status === 'DRAFT'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">发布</t-button>
             <t-button v-if="row.status === 'PUBLISHED'" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="doClose(row)">下架</t-button>
             <t-button v-if="row.status === 'CLOSED'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">重新发布</t-button>
@@ -644,83 +589,4 @@ const fetchCertTemplates = async () => {
     </t-drawer>
   </div>
 
-    <!-- V2.8-D: Postpay management drawer -->
-    <t-drawer v-model:visible="postpayDrawer" :header="'后付款管理 — ' + postpayActivityTitle" size="800px" :footer="false">
-      <div v-if="postpaySummary" style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #F7F6F2; border-radius: 10px; border: 1px solid #EDE9DF; text-align: center;">
-          <div style="font-size: 12px; color: #8A9288;">应后付人数</div>
-          <div style="font-size: 22px; font-weight: 700; color: #18231E;">{{ postpaySummary.totalCount }}</div>
-        </div>
-        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #EEF5EF; border-radius: 10px; border: 1px solid rgba(46,125,90,0.12); text-align: center;">
-          <div style="font-size: 12px; color: #8A9288;">已后付</div>
-          <div style="font-size: 22px; font-weight: 700; color: #2E7D5A;">{{ postpaySummary.paidCount }}</div>
-        </div>
-        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #FFF9E5; border-radius: 10px; border: 1px solid rgba(138,109,59,0.12); text-align: center;">
-          <div style="font-size: 12px; color: #8A9288;">待后付</div>
-          <div style="font-size: 22px; font-weight: 700; color: #8A6D3B;">{{ postpaySummary.unpaidCount + postpaySummary.overdueCount }}</div>
-        </div>
-        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #F7F6F2; border-radius: 10px; border: 1px solid #EDE9DF; text-align: center;">
-          <div style="font-size: 12px; color: #8A9288;">待收金额</div>
-          <div style="font-size: 20px; font-weight: 700; color: #8A6D3B;">¥{{ (postpaySummary.unpaidPostpayAmount || 0).toFixed(2) }}</div>
-        </div>
-        <div style="flex: 1; min-width: 100px; padding: 12px 16px; background: #F7F6F2; border-radius: 10px; border: 1px solid #EDE9DF; text-align: center;">
-          <div style="font-size: 12px; color: #8A9288;">已收金额</div>
-          <div style="font-size: 20px; font-weight: 700; color: #2E7D5A;">¥{{ (postpaySummary.paidPostpayAmount || 0).toFixed(2) }}</div>
-        </div>
-      </div>
-      <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
-        <t-select v-model="postpayStatusFilter" :options="[{ label: '待后付', value: 'UNPAID' }, { label: '已后付', value: 'PAID' }, { label: '已逾期', value: 'OVERDUE' }, { label: '已免除', value: 'WAIVED' }, { label: '全部', value: 'ALL' }]" style="width: 120px;" @change="fetchPostpayOrders" />
-        <t-input v-model="postpayKeyword" placeholder="搜索昵称/手机号" clearable @enter="fetchPostpayOrders" style="width: 200px;" />
-        <t-button @click="fetchPostpayOrders" size="small" style="background: #2E7D5A; border-color: #2E7D5A; color: #fff;">搜索</t-button>
-        <t-button @click="postpayBatchRemind" size="small" variant="outline" style="margin-left: auto; color: #8A6D3B; border-color: #8A6D3B;">提醒待后付用户</t-button>
-      </div>
-      <div v-if="postpayLoading" style="text-align: center; padding: 32px 0; color: #8A9288;">加载中...</div>
-      <div v-else-if="postpayOrders.length === 0" style="text-align: center; padding: 48px 0; color: #8A9288;">暂无匹配的后付款记录</div>
-      <table v-else style="width: 100%; border-collapse: collapse; font-size: 13px;">
-        <thead><tr style="background: #F7F6F2; border-bottom: 2px solid #EDE9DF;">
-          <th style="padding: 10px 8px; text-align: left; color: #8A9288; font-weight: 500;">用户</th>
-          <th style="padding: 10px 8px; text-align: left; color: #8A9288; font-weight: 500;">手机号</th>
-          <th style="padding: 10px 8px; text-align: left; color: #8A9288; font-weight: 500;">身份</th>
-          <th style="padding: 10px 8px; text-align: right; color: #8A9288; font-weight: 500;">预付款</th>
-          <th style="padding: 10px 8px; text-align: right; color: #8A9288; font-weight: 500;">后付款</th>
-          <th style="padding: 10px 8px; text-align: center; color: #8A9288; font-weight: 500;">状态</th>
-          <th style="padding: 10px 8px; text-align: center; color: #8A9288; font-weight: 500;">提醒</th>
-          <th style="padding: 10px 8px; text-align: center; color: #8A9288; font-weight: 500;">操作</th>
-        </tr></thead>
-        <tbody>
-          <tr v-for="o in postpayOrders" :key="o.id" style="border-bottom: 1px solid #EDE9DF;">
-            <td style="padding: 10px 8px; color: #18231E;">{{ o.nickname }}</td>
-            <td style="padding: 10px 8px; color: #3E463F;">{{ o.phoneMasked || '-' }}</td>
-            <td style="padding: 10px 8px; color: #3E463F;">{{ o.userType }}</td>
-            <td style="padding: 10px 8px; text-align: right; color: #3E463F;">{{ yuan(o.prepayAmount) }}</td>
-            <td style="padding: 10px 8px; text-align: right; font-weight: 600;" :style="{ color: o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE' ? '#8A6D3B' : '#3E463F' }">{{ yuan(o.postpayAmount) }}</td>
-            <td style="padding: 10px 8px; text-align: center;">
-              <span v-if="o.postpayStatus === 'PAID'" style="color: #2E7D5A; font-size: 12px;">✓ 已后付</span>
-              <span v-else-if="o.postpayStatus === 'UNPAID'" style="color: #8A6D3B; font-size: 12px;">待后付</span>
-              <span v-else-if="o.postpayStatus === 'OVERDUE'" style="color: #B35B4B; font-size: 12px;">已逾期</span>
-              <span v-else-if="o.postpayStatus === 'WAIVED'" style="color: #8A9288; font-size: 12px;">已免除</span>
-              <span v-else style="color: #8A9288;">{{ o.postpayStatus }}</span>
-            </td>
-            <td style="padding: 10px 8px; text-align: center; font-size: 12px; color: #8A9288;">
-              {{ o.postpayReminderCount > 0 ? o.postpayReminderCount + '次' : '-' }}
-              <div v-if="o.lastPostpayReminderAt" style="font-size: 10px;">{{ o.lastPostpayReminderAt ? new Date(o.lastPostpayReminderAt).toLocaleDateString('zh-CN') : '' }}</div>
-            </td>
-            <td style="padding: 10px 8px; text-align: center;">
-              <t-space size="small">
-                <t-button v-if="o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="postpayMarkPaid(o.id)" :loading="postpayActionLoading === o.id">标记已付</t-button>
-                <t-button v-if="o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE'" theme="default" variant="text" size="small" style="color: #8A6D3B;" @click="postpaySendReminder(o.id)" :loading="postpayActionLoading === o.id">提醒</t-button>
-                <t-button v-if="o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE'" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="postpayOpenWaive(o.id)">免除</t-button>
-              </t-space>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </t-drawer>
-
-    <!-- V2.8-D: Waive postpay confirm dialog -->
-    <t-dialog v-model:visible="postpayWaiveVisible" header="免除后付款" :on-confirm="postpayConfirmWaive" :confirm-btn="{ content: '确认免除', loading: postpayActionLoading === postpayWaiveOrderId }">
-      <div style="padding: 8px 0;">
-        <t-textarea v-model="postpayWaiveReason" placeholder="请填写免除原因（必填）" :autosize="{ minRows: 2, maxRows: 4 }" />
-      </div>
-    </t-dialog>
 </template>

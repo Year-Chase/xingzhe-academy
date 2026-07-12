@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { useRouter } from 'vue-router'
 import { get, post } from '@/api/client'
 
@@ -16,7 +16,8 @@ interface PageData { items: OrderItem[]; total: number; page: number; limit: num
 const list = ref<OrderItem[]>([]); const total = ref(0); const page = ref(1); const limit = ref(20); const loading = ref(false)
 const keyword = ref(''); const activityTitle = ref(''); const statusFilter = ref(''); const createdFrom = ref(''); const createdTo = ref('')
 const paymentMode = ref(''); const postpayStatus = ref('')
-const refundDialog = ref(false); const refundId = ref(0); const refundMax = ref(0); const refundAmount = ref(0); const refundReason = ref(''); const refundWarning = ref(''); const refundLoading = ref(false)
+const refundDialog = ref(false); const refundId = ref(0); const refundMax = ref(0); const refundAmount = ref(0); const refundReason = ref(''); const refundReasonError = ref(''); const refundWarning = ref(''); const refundLoading = ref(false)
+const postpayActionLoading = ref(0); const postpayWaiveOrderId = ref(0); const postpayWaiveReason = ref(''); const postpayWaiveVisible = ref(false)
 
 const statusOptions = [
   { label: '全部状态', value: '' },
@@ -82,8 +83,9 @@ const normalizeOrder = (row: any): OrderItem => ({
 const openRefund = (row: OrderItem) => {
   refundId.value = row.id
   refundMax.value = Number(row.refundableAmount || 0)
-  refundAmount.value = refundMax.value
+  refundAmount.value = 0
   refundReason.value = ''
+  refundReasonError.value = ''
   refundWarning.value = row.hasIssuedInvoice ? '该订单已开发票，请线下处理退款' : ''
   if (refundWarning.value) MessagePlugin.warning(refundWarning.value)
   refundDialog.value = true
@@ -92,8 +94,14 @@ const doRefund = async () => {
   const amount = Number(refundAmount.value || 0)
   if (amount <= 0) { MessagePlugin.warning('退款金额必须大于 0'); return }
   if (amount > refundMax.value) { MessagePlugin.warning('退款金额不能超过可退金额'); return }
+  const reason = refundReason.value.trim()
+  if (!reason) {
+    refundReasonError.value = '请填写退款原因'
+    MessagePlugin.warning('请填写退款原因')
+    return
+  }
   refundLoading.value = true
-  try { await post('/admin/orders/' + refundId.value + '/refund', { amount, reason: refundReason.value }); MessagePlugin.success('退款成功'); refundDialog.value = false; fetchList() }
+  try { await post('/admin/orders/' + refundId.value + '/refund', { amount, reason }); MessagePlugin.success('退款成功'); refundDialog.value = false; fetchList() }
   catch (e: any) { MessagePlugin.error(e?.response?.data?.message || '退款失败') }
   finally { refundLoading.value = false }
 }
@@ -103,6 +111,70 @@ const statusColor = (s: string) => ({ PAID: '#2E7D5A', REFUNDED: '#8A9288', PART
 
 const canRefund = (row: OrderItem) => {
   return (row.status === 'PAID' || row.status === 'PARTIAL_REFUND') && Number(row.refundableAmount || 0) > 0
+}
+const canPostpayAction = (row: OrderItem) => {
+  return row.payType === 'PREPAY'
+    && Number(row.orderPostpayAmount || 0) > 0
+    && (row.postpayStatus === 'UNPAID' || row.postpayStatus === 'OVERDUE')
+    && row.status !== 'REFUNDED'
+}
+
+const postpayMarkPaid = async (orderId: number) => {
+  const dlg = DialogPlugin.confirm({
+    header: '确认已后付',
+    body: '确认将该订单标记为后付款已完成？此操作不可撤销。',
+    onConfirm: async () => {
+      dlg.hide()
+      postpayActionLoading.value = orderId
+      try {
+        await post('/admin/orders/' + orderId + '/mark-postpay-paid')
+        MessagePlugin.success('已标记后付款完成')
+        fetchList()
+      } catch (e: any) {
+        MessagePlugin.error(e?.response?.data?.message || '操作失败')
+      } finally {
+        postpayActionLoading.value = 0
+      }
+    },
+  })
+}
+const postpaySendReminder = async (orderId: number) => {
+  const dlg = DialogPlugin.confirm({
+    header: '发送提醒',
+    body: '确认向该用户发送后付款提醒？',
+    onConfirm: async () => {
+      dlg.hide()
+      postpayActionLoading.value = orderId
+      try {
+        const res = await post('/admin/orders/' + orderId + '/postpay-reminder')
+        MessagePlugin.success('当前仅记录提醒次数，尚未接入微信通知 · 第' + ((res as any)?.postpayReminderCount || '') + '次')
+        fetchList()
+      } catch (e: any) {
+        MessagePlugin.error(e?.response?.data?.message || '操作失败')
+      } finally {
+        postpayActionLoading.value = 0
+      }
+    },
+  })
+}
+const postpayOpenWaive = (orderId: number) => {
+  postpayWaiveOrderId.value = orderId
+  postpayWaiveReason.value = ''
+  postpayWaiveVisible.value = true
+}
+const postpayConfirmWaive = async () => {
+  if (!postpayWaiveReason.value.trim()) { MessagePlugin.warning('请填写免除原因'); return }
+  postpayActionLoading.value = postpayWaiveOrderId.value
+  try {
+    await post('/admin/orders/' + postpayWaiveOrderId.value + '/waive-postpay', { reason: postpayWaiveReason.value.trim() })
+    MessagePlugin.success('后付款已免除')
+    postpayWaiveVisible.value = false
+    fetchList()
+  } catch (e: any) {
+    MessagePlugin.error(e?.response?.data?.message || '操作失败')
+  } finally {
+    postpayActionLoading.value = 0
+  }
 }
 
 const router = useRouter()
@@ -125,7 +197,7 @@ const columns = [
   { colKey: 'postpayStatus', title: '后付款', width: 80, cell: (_h: any, { row }: any) => ({ NONE: '无', UNPAID: '待后付', PAID: '已后付', OVERDUE: '已逾期', WAIVED: '已免除' } as any)[row.postpayStatus] || row.postpayStatus || '-' },
   { colKey: 'createdAt', title: '创建时间', width: 130, cell: (_h: any, { row }: any) => fmt(row.createdAt) },
   { colKey: 'paidAt', title: '最近支付时间', width: 140, cell: (_h: any, { row }: any) => fmt(row.paidAt) },
-  { colKey: 'actions', title: '操作', width: 80, fixed: 'right' as const },
+  { colKey: 'actions', title: '操作', width: 170, fixed: 'right' as const },
 ]
 
 onMounted(fetchList)
@@ -161,7 +233,12 @@ onMounted(fetchList)
           <span :style="{ color: statusColor(row.status), fontSize: '13px', fontWeight: 500 }">{{ statusLabel(row.status) }}</span>
         </template>
         <template #actions="{ row }">
-          <t-button v-if="canRefund(row)" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="openRefund(row)">退款</t-button>
+          <t-space size="small" break-line>
+            <t-button v-if="canPostpayAction(row)" theme="default" variant="text" size="small" style="color: #2E7D5A;" :loading="postpayActionLoading === row.id" @click="postpayMarkPaid(row.id)">标记已付</t-button>
+            <t-button v-if="canPostpayAction(row)" theme="default" variant="text" size="small" style="color: #8A6D3B;" :loading="postpayActionLoading === row.id" @click="postpaySendReminder(row.id)">记录提醒</t-button>
+            <t-button v-if="canPostpayAction(row)" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="postpayOpenWaive(row.id)">免除</t-button>
+            <t-button v-if="canRefund(row)" theme="default" variant="text" size="small" style="color: #B35B4B;" @click="openRefund(row)">退款</t-button>
+          </t-space>
         </template>
       </t-table>
     </div>
@@ -169,9 +246,19 @@ onMounted(fetchList)
     <t-dialog v-model:visible="refundDialog" header="退款" width="440px" :confirm-btn="{ content: '确认退款', loading: refundLoading, theme: 'primary' }" :cancel-btn="{ content: '取消' }" @confirm="doRefund">
       <div style="display: flex; flex-direction: column; gap: 14px;">
         <div v-if="refundWarning" style="padding: 10px 12px; border-radius: 8px; background: #FFF7E8; color: #A05A00; font-size: 13px;">{{ refundWarning }}</div>
-        <div style="color: #3E463F; font-size: 13px;">可退金额：<strong>{{ money(refundMax) }}</strong></div>
-        <div><label style="color: #8A9288; font-size: 13px;">退款金额</label><t-input-number v-model="refundAmount" :min="0.01" :max="refundMax" style="width: 100%;" /></div>
-        <div><label style="color: #8A9288; font-size: 13px;">退款原因</label><t-textarea v-model="refundReason" placeholder="可选" :autosize="{ minRows: 2, maxRows: 4 }" /></div>
+        <div style="color: #3E463F; font-size: 13px;">当前最多可退 <strong>{{ money(refundMax) }}</strong></div>
+        <div><label style="color: #8A9288; font-size: 13px;">退款金额</label><t-input-number v-model="refundAmount" :min="0" :max="refundMax" style="width: 100%;" /></div>
+        <div>
+          <label style="color: #8A9288; font-size: 13px;">退款原因</label>
+          <t-textarea v-model="refundReason" placeholder="请填写退款原因" :autosize="{ minRows: 2, maxRows: 4 }" @input="refundReasonError = ''" />
+          <div v-if="refundReasonError" style="color: #B35B4B; font-size: 12px; margin-top: 4px;">{{ refundReasonError }}</div>
+        </div>
+      </div>
+    </t-dialog>
+
+    <t-dialog v-model:visible="postpayWaiveVisible" header="免除后付款" :on-confirm="postpayConfirmWaive" :confirm-btn="{ content: '确认免除', loading: postpayActionLoading === postpayWaiveOrderId }">
+      <div style="padding: 8px 0;">
+        <t-textarea v-model="postpayWaiveReason" placeholder="请填写免除原因（必填）" :autosize="{ minRows: 2, maxRows: 4 }" />
       </div>
     </t-dialog>
   </div>

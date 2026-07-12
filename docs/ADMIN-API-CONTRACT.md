@@ -184,6 +184,52 @@ POST /activity//enroll-pay
 GET /activity//qr
 POST /activity//checkin
 GET /activity//participants
+
+V2.8.3 用户常用报名资料：
+
+GET /users/me/registration-profile?userId=
+
+Header:
+- Authorization: Bearer xztok_...
+- X-User-Id: user_xxx
+
+返回：
+- userId
+- realName
+- phone（优先常用报名资料，fallback User.phone）
+- idCardNo
+- departureCity
+- transportPreference
+- roomPreference
+- updatedAt
+
+规则：
+- 用于小程序报名补充信息自动带出
+- 不写入小程序 Storage
+- 身份证号不得出现在 URL query 或日志中
+
+POST /activity//enroll-pay
+
+Request body 可带：
+```json
+{
+  "registrationInfo": {
+    "realName": "string",
+    "phone": "string",
+    "idCardNo": "string",
+    "departureCity": "string",
+    "transportPreference": "高铁|飞机|自驾|其他",
+    "roomPreference": "单住|拼房|无所谓|其他"
+  }
+}
+```
+
+规则：
+- 后端只接受当前活动 requiredUserInfoFields 中的标准字段
+- requiredUserInfoFields 中的字段均为必填
+- 报名成功后写 ActivityRegistrationInfo 快照
+- 报名成功后合并更新 UserRegistrationProfile
+- 未收集字段不清空常用报名资料历史值
 6. 报名管理 API
 
 GET /admin/activity//registrations?page=1&limit=50
@@ -487,3 +533,19 @@ POST /activity/:id/enroll-pay
 ```
 PATCH /admin/crm/users/:userId/type
 ```
+
+新增：
+
+users/me/orders
+
+users/me/registrations
+
+接口原则：
+
+敏感字段：
+
+身份证
+手机号
+openid
+
+禁止无权限返回。

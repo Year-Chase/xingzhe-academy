@@ -10,6 +10,23 @@ import { ActivityRefund } from './entities/activity-refund.entity'
 import { ActivityInvoice, InvoiceStatus } from './entities/activity-invoice.entity'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 import { User } from '../users/entities/user.entity'
+import { UserRegistrationProfile } from '../users/entities/user-registration-profile.entity'
+
+type RegistrationInfoField = 'realName' | 'phone' | 'idCardNo' | 'departureCity' | 'transportPreference' | 'roomPreference'
+
+const REGISTRATION_INFO_FIELDS: RegistrationInfoField[] = ['realName', 'phone', 'idCardNo', 'departureCity', 'transportPreference', 'roomPreference']
+const REGISTRATION_INFO_LABELS: Record<RegistrationInfoField, string> = {
+  realName: '真实姓名',
+  phone: '手机号',
+  idCardNo: '身份证号',
+  departureCity: '出发城市',
+  transportPreference: '交通工具偏好',
+  roomPreference: '房间偏好',
+}
+const TRANSPORT_OPTIONS = ['高铁', '飞机', '自驾', '其他']
+const ROOM_OPTIONS = ['单住', '拼房', '无所谓', '其他']
+const PHONE_RE = /^1\d{10}$/
+const ID_CARD_RE = /^(?:\d{15}|\d{17}[\dXx])$/
 
 @Injectable()
 export class ActivityFlowService {
@@ -30,6 +47,8 @@ export class ActivityFlowService {
     private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(UserRegistrationProfile)
+    private readonly registrationProfileRepo: Repository<UserRegistrationProfile>,
   ) {}
 
   private money(value: unknown): number {
@@ -75,6 +94,59 @@ export class ActivityFlowService {
       }
     }
     if (pendingInvoices.length > 0) await this.invoiceRepo.save(pendingInvoices)
+  }
+
+  private parseRequiredUserInfoFields(raw: string | null): RegistrationInfoField[] {
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter((field): field is RegistrationInfoField => REGISTRATION_INFO_FIELDS.includes(field))
+    } catch {
+      return []
+    }
+  }
+
+  private sanitizeRegistrationInfo(requiredFields: RegistrationInfoField[], input?: Record<string, unknown>): Partial<Record<RegistrationInfoField, string>> {
+    const body = input || {}
+    const clean: Partial<Record<RegistrationInfoField, string>> = {}
+    const missing: string[] = []
+
+    for (const field of requiredFields) {
+      let value = String(body[field] ?? '').trim()
+      if (field === 'idCardNo') value = value.replace(/x$/, 'X')
+      if (!value) {
+        missing.push(REGISTRATION_INFO_LABELS[field])
+        continue
+      }
+
+      if (field === 'realName' && (value.length < 2 || value.length > 20)) throw new BadRequestException('请填写真实姓名')
+      if (field === 'phone' && !PHONE_RE.test(value)) throw new BadRequestException('请填写正确的手机号')
+      if (field === 'idCardNo' && !ID_CARD_RE.test(value)) throw new BadRequestException('请填写正确的身份证号')
+      if (field === 'departureCity' && value.length > 30) throw new BadRequestException('出发城市最多30字')
+      if (field === 'transportPreference' && !TRANSPORT_OPTIONS.includes(value)) throw new BadRequestException('请选择正确的交通工具偏好')
+      if (field === 'roomPreference' && !ROOM_OPTIONS.includes(value)) throw new BadRequestException('请选择正确的房间偏好')
+
+      clean[field] = value
+    }
+
+    if (missing.length > 0) {
+      throw new BadRequestException(`缺少必填报名信息: ${missing.join(', ')}`)
+    }
+
+    return clean
+  }
+
+  private async mergeUserRegistrationProfile(userId: string, fields: RegistrationInfoField[], info: Partial<Record<RegistrationInfoField, string>>) {
+    if (fields.length === 0) return
+    let profile = await this.registrationProfileRepo.findOne({ where: { userId } })
+    if (!profile) profile = this.registrationProfileRepo.create({ userId })
+    for (const field of fields) {
+      if (info[field] !== undefined) {
+        ;(profile as any)[field] = info[field] || null
+      }
+    }
+    await this.registrationProfileRepo.save(profile)
   }
 
   // ──── register ────
@@ -220,20 +292,9 @@ export class ActivityFlowService {
     const paidCount = await this.regRepo.count({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
     if (activity.capacity > 0 && paidCount >= activity.capacity) throw new BadRequestException('活动名额已满')
 
-    // ── V2.5A: Validate requiredUserInfoFields ──
-    let requiredFields: string[] = []
-    try { const v = JSON.parse(activity.requiredUserInfoFields || 'null'); requiredFields = Array.isArray(v) ? v : [] } catch {}
-
-    if (requiredFields.length > 0) {
-      const info = registrationInfo || {}
-      const missing: string[] = []
-      for (const field of requiredFields) {
-        if (!(info as any)[field]) missing.push(field)
-      }
-      if (missing.length > 0) {
-        throw new BadRequestException(`缺少必填报名信息: ${missing.join(', ')}`)
-      }
-    }
+    // ── V2.8.3: Validate only the activity-configured standard fields ──
+    const requiredFields = this.parseRequiredUserInfoFields(activity.requiredUserInfoFields)
+    const cleanRegistrationInfo = this.sanitizeRegistrationInfo(requiredFields, registrationInfo as any)
 
     const existing = await this.regRepo.findOne({ where: { userId, activityId } })
     if (existing && (existing.status === 'PAID' || existing.status === 'CHECKED_IN')) {
@@ -277,17 +338,17 @@ export class ActivityFlowService {
       await this.qrRepo.save(qr)
     }
 
-    // ── V2.5A: Save ActivityRegistrationInfo ──
-    if (registrationInfo) {
+    // ── V2.8.3: Save per-registration snapshot + merge reusable profile ──
+    if (requiredFields.length > 0) {
       const existingInfo = await this.regInfoRepo.findOne({ where: { userId, activityId } })
       if (existingInfo) {
         existingInfo.registrationId = saved.id
-        if (registrationInfo.realName !== undefined) existingInfo.realName = registrationInfo.realName || null
-        if (registrationInfo.phone !== undefined) existingInfo.phone = registrationInfo.phone || null
-        if (registrationInfo.idCardNo !== undefined) existingInfo.idCardNo = registrationInfo.idCardNo || null
-        if (registrationInfo.departureCity !== undefined) existingInfo.departureCity = registrationInfo.departureCity || null
-        if (registrationInfo.transportPreference !== undefined) existingInfo.transportPreference = registrationInfo.transportPreference || null
-        if (registrationInfo.roomPreference !== undefined) existingInfo.roomPreference = registrationInfo.roomPreference || null
+        existingInfo.realName = cleanRegistrationInfo.realName || null
+        existingInfo.phone = cleanRegistrationInfo.phone || null
+        existingInfo.idCardNo = cleanRegistrationInfo.idCardNo || null
+        existingInfo.departureCity = cleanRegistrationInfo.departureCity || null
+        existingInfo.transportPreference = cleanRegistrationInfo.transportPreference || null
+        existingInfo.roomPreference = cleanRegistrationInfo.roomPreference || null
         existingInfo.confirmedAt = new Date()
         await this.regInfoRepo.save(existingInfo)
       } else {
@@ -296,15 +357,16 @@ export class ActivityFlowService {
           activityId,
           registrationId: saved.id,
           userId,
-          realName: registrationInfo.realName || null,
-          phone: registrationInfo.phone || null,
-          idCardNo: registrationInfo.idCardNo || null,
-          departureCity: registrationInfo.departureCity || null,
-          transportPreference: registrationInfo.transportPreference || null,
-          roomPreference: registrationInfo.roomPreference || null,
+          realName: cleanRegistrationInfo.realName || null,
+          phone: cleanRegistrationInfo.phone || null,
+          idCardNo: cleanRegistrationInfo.idCardNo || null,
+          departureCity: cleanRegistrationInfo.departureCity || null,
+          transportPreference: cleanRegistrationInfo.transportPreference || null,
+          roomPreference: cleanRegistrationInfo.roomPreference || null,
           confirmedAt: new Date(),
         }))
       }
+      await this.mergeUserRegistrationProfile(userId, requiredFields, cleanRegistrationInfo)
     }
 
     return { status: 'PAID', id: saved.id, code: qr.code, orderId: orderExists?.id || null, amount }
@@ -498,6 +560,8 @@ export class ActivityFlowService {
 
   // ──── Admin: refund ────
   async refund(orderId: number, amount: number, reason: string) {
+    const cleanReason = (reason || '').trim()
+    if (!cleanReason) throw new BadRequestException('退款原因不能为空')
     const order = await this.orderRepo.findOne({ where: { id: orderId } })
     if (!order) throw new NotFoundException(`Order ${orderId} not found`)
     if (order.status !== 'PAID' && order.status !== 'PARTIAL_REFUND')
@@ -510,7 +574,7 @@ export class ActivityFlowService {
 
     const refund = this.refundRepo.create({
       orderId, userId: order.userId, activityId: order.activityId,
-      amount: refundAmount, reason: reason || null, status: 'SUCCESS',
+      amount: refundAmount, reason: cleanReason, status: 'SUCCESS',
     })
     await this.refundRepo.save(refund)
 

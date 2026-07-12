@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Put, Query, UnauthorizedException, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage } from 'multer'
 import { extname } from 'path'
@@ -15,7 +15,16 @@ export class UsersController {
   }
 
   @Get(':id/profile')
-  async getProfile(@Param('id') id: string) {
+  async getProfile(
+    @Param('id') id: string,
+    @Headers('x-user-id') headerUserId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    if (headerUserId || authorization) {
+      const uid = this.resolveAuthenticatedUserId(undefined, headerUserId, authorization)
+      if (uid !== id) throw new UnauthorizedException('不能读取其他用户资料')
+      return this.usersService.getPrivateProfile(id)
+    }
     return this.usersService.getProfile(id)
   }
 
@@ -55,6 +64,36 @@ export class UsersController {
   @Get(':id/journey')
   async getJourney(@Param('id') id: string) {
     return this.usersService.getJourney(id)
+  }
+
+  @Get('me/orders')
+  async getMyOrders(
+    @Query('userId') userId: string,
+    @Headers('x-user-id') headerUserId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
+    return this.usersService.getMyOrders(uid)
+  }
+
+  @Get('me/registrations')
+  async getMyRegistrations(
+    @Query('userId') userId: string,
+    @Headers('x-user-id') headerUserId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
+    return this.usersService.getMyRegistrations(uid)
+  }
+
+  @Get('me/registration-profile')
+  async getRegistrationProfile(
+    @Query('userId') userId: string,
+    @Headers('x-user-id') headerUserId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const uid = this.resolveAuthenticatedUserId(userId, headerUserId, authorization)
+    return this.usersService.getRegistrationProfile(uid)
   }
 
   @Get('me/invoice-profile')
@@ -113,6 +152,16 @@ export class UsersController {
     const userId = headerUserId || queryUserId
     if (!userId) throw new BadRequestException('userId is required')
     if (!authorization?.startsWith('Bearer ')) throw new BadRequestException('请先完成登录')
+    return userId
+  }
+
+  private resolveAuthenticatedUserId(queryUserId?: string, headerUserId?: string, authorization?: string): string {
+    const token = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : ''
+    const userId = (headerUserId || '').trim()
+    if (!token || !userId) throw new UnauthorizedException('请先完成登录')
+    if (!userId.startsWith('user_')) throw new UnauthorizedException('请先完成登录')
+    if (!token.startsWith('xztok_') || !token.endsWith(`_${userId.slice(0, 12)}`)) throw new UnauthorizedException('请先完成登录')
+    if (queryUserId && queryUserId !== userId) throw new UnauthorizedException('不能读取其他用户资料')
     return userId
   }
 }

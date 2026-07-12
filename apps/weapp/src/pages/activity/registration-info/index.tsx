@@ -1,10 +1,11 @@
-import { View, Text, Input, Picker } from '@tarojs/components'
+import { View, Text, Input, Picker, Image } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { getUserId, isLoggedIn } from '../../../utils/user'
+import { getRegistrationProfile, getUserId, isLoggedIn } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
+import navigationIcon from '../../../assets/icons/navigation-user-provided.png'
 
 const C = {
   bg: '#F7F6F2', white: '#FFFFFF', green: '#3F6B4F', dark: '#18231E',
@@ -16,8 +17,8 @@ const FIELD_LABELS: Record<string, string> = {
   realName: '真实姓名', phone: '手机号', idCardNo: '身份证号',
   departureCity: '出发城市', transportPreference: '交通工具偏好', roomPreference: '房间偏好',
 }
-const TRANSPORT = ['自驾', '高铁', '飞机', '大巴', '其他']
-const ROOM = ['无特殊要求', '单人间', '双人间', '愿意拼房', '其他']
+const TRANSPORT = ['高铁', '飞机', '自驾', '其他']
+const ROOM = ['单住', '拼房', '无所谓', '其他']
 
 function maskPhone(p: string) { return p.length >= 11 ? p.slice(0, 3) + '****' + p.slice(7) : p }
 function maskIdCard(v: string) { return v.length >= 8 ? v.slice(0, 3) + '***********' + v.slice(-4).toUpperCase() : v }
@@ -28,6 +29,12 @@ function safeFields(raw: any): string[] {
   if (Array.isArray(raw)) return raw
   if (!raw) return []
   try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (e) { console.error('[registration-info] parse error', e); return [] }
+}
+
+function NavPointerIcon() {
+  return (
+    <Image src={navigationIcon} mode='aspectFit' style={{ width: '42rpx', height: '42rpx', marginLeft: '12rpx', flexShrink: 0 }} />
+  )
 }
 
 interface FormData { [key: string]: string }
@@ -42,19 +49,31 @@ export default function RegistrationInfoPage() {
   const [submitting, setSubmitting] = useState(false)
   const [activity, setActivity] = useState<any>(null)
 
-  // Parse activityId from URL; fetch activity detail + requiredUserInfoFields from API
+  // Parse activityId from URL; fetch activity detail + configured fields.
   useEffect(() => {
     const p = router.params as any
     const id = Number(p.activityId)
     if (!id || Number.isNaN(id)) return
     setActivityId(id)
-    // Fetch activity detail — store full data (location fields included) + extract requiredFields
-    Taro.request({ url: `${API}/activity/${id}` }).then(res => {
+    Taro.request({ url: `${API}/activity/${id}` }).then(async res => {
       const data = (res.data as any) || {}
-      setActivity(data)
       const fields = safeFields(data?.requiredUserInfoFields)
+      setActivity(data)
       setRequiredFields(fields)
-    }).catch((e) => { console.error('[registration-info] activity fetch', e) })
+
+      if (!isLoggedIn() || fields.length === 0) return
+      try {
+        const profile = await getRegistrationProfile()
+        const next: FormData = {}
+        fields.forEach(field => {
+          const value = String(profile[field] || '').trim()
+          if (value) next[field] = value
+        })
+        setForm(next)
+      } catch (_e) {
+        // Prefill is best-effort;报名仍可手动填写。
+      }
+    }).catch(() => { console.warn('[registration-info] activity fetch failed') })
   }, [router.params])
 
   const updateField = (key: string, value: string) => {
@@ -99,7 +118,7 @@ export default function RegistrationInfoPage() {
     setSubmitting(true)
     try {
       const regInfo: any = {}
-      for (const k of Object.keys(form)) regInfo[k] = form[k]
+      for (const k of requiredFields) regInfo[k] = (form[k] || '').trim()
 
       const res = await Taro.request({
         method: 'POST',
@@ -122,7 +141,6 @@ export default function RegistrationInfoPage() {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
     } catch (e) {
-      console.error('[registration-info]', e)
       Taro.showToast({ title: '操作失败，请重试', icon: 'none' })
     } finally {
       setSubmitting(false)
@@ -130,6 +148,14 @@ export default function RegistrationInfoPage() {
   }
 
   const handleModify = () => setShowConfirm(false)
+  const handleLocationTap = () => {
+    if (canOpenActivityLocation(activity)) { openActivityLocation(activity); return }
+    const text = activity?.locationAddress || activity?.locationName || activity?.location || ''
+    if (text) {
+      Taro.setClipboardData({ data: text })
+      Taro.showToast({ title: '地点已复制', icon: 'success' })
+    }
+  }
 
   const renderField = (key: string) => {
     const val = form[key] || ''
@@ -204,14 +230,14 @@ export default function RegistrationInfoPage() {
 
       {/* V2.6E: 集合地点卡片 — full row clickable, icon replaces '导航' text */}
       {activity && (
-        <View onClick={() => { if (canOpenActivityLocation(activity)) openActivityLocation(activity); else Taro.showToast({ title: '暂无可导航定位', icon: 'none' }) }}
+        <View onClick={handleLocationTap}
           style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: `1rpx solid ${C.border}` }}>
           <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '18rpx' }}>集合地点</Text>
           <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ flex: 1, fontSize: '26rpx', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activity.locationName || activity.location || activity.province + (activity.city ? ' ' + activity.city : '') || '活动地点待确认'}
             </Text>
-            <Text style={{ flexShrink: 0, fontSize: '32rpx', color: C.green, marginLeft: '12rpx' }}>↗</Text>
+            <NavPointerIcon />
           </View>
         </View>
       )}

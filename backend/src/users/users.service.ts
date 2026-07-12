@@ -11,6 +11,7 @@ import { ActivityInvoice } from '../activity/entities/activity-invoice.entity'
 import { ActivityRefund } from '../activity/entities/activity-refund.entity'
 import { CertificateTemplate } from '../certificate/entities/certificate-template.entity'
 import { UserInvoiceProfile, UserInvoiceType } from './entities/user-invoice-profile.entity'
+import { UserRegistrationProfile } from './entities/user-registration-profile.entity'
 import { ContentSecurityService } from '../common/content-security.service'
 
 const MOCK_CODE_MAP: Record<string, string> = {
@@ -42,6 +43,8 @@ export class UsersService {
     private readonly refundRepo: Repository<ActivityRefund>,
     @InjectRepository(UserInvoiceProfile)
     private readonly invoiceProfileRepo: Repository<UserInvoiceProfile>,
+    @InjectRepository(UserRegistrationProfile)
+    private readonly registrationProfileRepo: Repository<UserRegistrationProfile>,
     @InjectRepository(CertificateTemplate)
     private readonly certTemplateRepo: Repository<CertificateTemplate>,
     private readonly contentSecurity: ContentSecurityService,
@@ -83,6 +86,34 @@ export class UsersService {
     return `xztok_${randomUUID().replace(/-/g, '')}_${userId.slice(0, 12)}`
   }
 
+  private maskPhone(phone?: string | null): string | null {
+    if (!phone) return null
+    return phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+  }
+
+  private userSummary(user: User) {
+    return {
+      id: user.id,
+      nickname: user.nickname,
+      avatarUrl: user.avatarUrl,
+      identityType: user.identityType || '普通用户',
+      isMember: user.isMember,
+      isLifetimeMember: user.isLifetimeMember,
+      phoneMasked: this.maskPhone(user.phone),
+      gender: user.gender,
+      intro: user.intro || '',
+    }
+  }
+
+  private userPrivateProfile(user: User) {
+    return {
+      ...this.userSummary(user),
+      phone: user.phone,
+      birthday: user.birthday,
+      birthYearMonth: user.birthYearMonth,
+    }
+  }
+
   // ──── V2.6B: WeChat login ────
   async wechatLogin(body: { code: string; nickname?: string; avatarUrl?: string; gender?: string; phoneCode?: string }) {
     const { code, nickname, avatarUrl, gender } = body
@@ -99,7 +130,9 @@ export class UsersService {
     // Find existing user by openid — V2.6B: stable openid ensures same user
     let user = await this.userRepo.findOne({ where: { openid } })
 
+    let isNewUser = false
     if (!user) {
+      isNewUser = true
       const id = `user_${randomUUID()}`
       const now = new Date()
       user = this.userRepo.create({
@@ -130,22 +163,8 @@ export class UsersService {
     return {
       userId: user.id,
       token,
-      user: {
-        id: user.id,
-        nickname: user.nickname,
-        avatarUrl: user.avatarUrl,
-        gender: user.gender,
-        phone: user.phone,
-        phoneMasked: user.phone ? user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : null,
-        birthday: user.birthday,
-        birthYearMonth: user.birthYearMonth,
-        identityType: user.identityType || '普通用户',
-        intro: user.intro || '',
-        isMember: user.isMember,
-        isLifetimeMember: user.isLifetimeMember,
-        registeredAt: user.registeredAt,
-        lastLoginAt: user.lastLoginAt,
-      },
+      user: this.userSummary(user),
+      isNewUser,
     }
   }
 
@@ -153,23 +172,27 @@ export class UsersService {
   async getProfile(id: string) {
     const user = await this.userRepo.findOne({ where: { id } })
     if (!user) throw new NotFoundException(`User ${id} not found`)
+    return this.userSummary(user)
+  }
+
+  async getPrivateProfile(id: string) {
+    const user = await this.userRepo.findOne({ where: { id } })
+    if (!user) throw new NotFoundException(`User ${id} not found`)
+    return this.userPrivateProfile(user)
+  }
+
+  async getRegistrationProfile(userId: string) {
+    const user = await this.ensureUser(userId)
+    const profile = await this.registrationProfileRepo.findOne({ where: { userId } })
     return {
-      id: user.id,
-      openid: user.openid,
-      unionid: user.unionid,
-      nickname: user.nickname,
-      avatarUrl: user.avatarUrl,
-      gender: user.gender,
-      phone: user.phone,
-      birthday: user.birthday,
-      birthYearMonth: user.birthYearMonth,
-      identityType: user.identityType || '普通用户',
-      intro: user.intro || '',
-      isMember: user.isMember,
-      isLifetimeMember: user.isLifetimeMember,
-      registeredAt: user.registeredAt,
-      lastLoginAt: user.lastLoginAt,
-      status: user.status,
+      userId,
+      realName: profile?.realName || null,
+      phone: profile?.phone || user.phone || null,
+      idCardNo: profile?.idCardNo || null,
+      departureCity: profile?.departureCity || null,
+      transportPreference: profile?.transportPreference || null,
+      roomPreference: profile?.roomPreference || null,
+      updatedAt: profile?.updatedAt || null,
     }
   }
 
@@ -300,6 +323,118 @@ export class UsersService {
     }
   }
 
+  async getMyOrders(userId: string) {
+    await this.ensureUser(userId)
+    const orders = await this.orderRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' as any, id: 'DESC' as any },
+    })
+    const orderIds = orders.map(o => o.id)
+    const activityIds = [...new Set(orders.map(o => o.activityId).filter((id): id is number => id != null))]
+    const activities = activityIds.length > 0 ? await this.activityRepo.find({ where: { id: In(activityIds) } }) : []
+    const invoices = orderIds.length > 0 ? await this.invoiceRepo.find({ where: { orderId: In(orderIds) } }) : []
+    const refunds = orderIds.length > 0 ? await this.refundRepo.find({ where: { orderId: In(orderIds), status: 'SUCCESS' } }) : []
+    const activityMap = new Map(activities.map(a => [a.id, a]))
+    const invoiceMap = new Map<number, ActivityInvoice>()
+    for (const invoice of invoices) {
+      if (!invoiceMap.has(invoice.orderId)) invoiceMap.set(invoice.orderId, invoice)
+    }
+    const refundMap = new Map<number, number>()
+    for (const refund of refunds) {
+      refundMap.set(refund.orderId, (refundMap.get(refund.orderId) || 0) + this.money(refund.amount))
+    }
+
+    const items = orders.map(order => {
+      const activity = order.activityId != null ? activityMap.get(order.activityId) : null
+      const invoice = invoiceMap.get(order.id) || null
+      const refundedAmount = Math.max(this.money(order.refundedAmount), refundMap.get(order.id) || 0)
+      const paidAmount = this.paidAmount(order)
+      const invoiceableAmount = Math.max(0, paidAmount - refundedAmount)
+      const hasPendingPostpay = order.payType === 'PREPAY'
+        && this.money(order.orderPostpayAmount) > 0
+        && order.postpayStatus !== 'PAID'
+        && order.postpayStatus !== 'WAIVED'
+      const refundStatus = refundedAmount <= 0
+        ? 'NONE'
+        : refundedAmount >= paidAmount
+          ? 'REFUNDED'
+          : 'PARTIAL_REFUND'
+
+      return {
+        id: order.id,
+        orderId: order.id,
+        registrationId: order.registrationId,
+        activityId: order.activityId,
+        activityTitle: activity?.title || '',
+        activityCoverUrl: activity?.coverImage || '',
+        activityStartTime: activity?.startTime || null,
+        activityEndTime: activity?.endTime || null,
+        activityLocation: activity?.locationName || activity?.location || '',
+        paymentMode: order.payType,
+        payType: order.payType,
+        orderStatus: order.status,
+        paymentStatus: ['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(order.status) ? 'PAID' : order.status,
+        fullAmount: this.money(order.fullAmount ?? order.amount),
+        amount: this.money(order.amount),
+        orderPrepayAmount: this.money(order.orderPrepayAmount),
+        orderPostpayAmount: this.money(order.orderPostpayAmount),
+        paidAmount,
+        refundedAmount,
+        invoiceableAmount,
+        refundStatus,
+        postpayStatus: order.postpayStatus || 'NONE',
+        postpayDate: activity?.postpayDate || null,
+        postpayPaidAt: order.postpayPaidAt,
+        invoiceStatus: invoice ? this.userInvoiceStatus(invoice.status) : 'NONE',
+        invoiceRequestId: invoice?.id || null,
+        canApplyInvoice: !invoice && invoiceableAmount > 0 && !hasPendingPostpay && refundStatus !== 'REFUNDED',
+        invoiceBlockedReason: invoice
+          ? '该订单已提交过开票申请'
+          : hasPendingPostpay
+            ? '后付款完成后可申请开票'
+            : invoiceableAmount <= 0
+              ? '该订单暂无可开票金额'
+              : '',
+        canRequestRefund: paidAmount - refundedAmount > 0,
+        createdAt: order.createdAt,
+      }
+    })
+
+    return { items, total: items.length }
+  }
+
+  async getMyRegistrations(userId: string) {
+    await this.ensureUser(userId)
+    const regs = await this.regRepo.find({
+      where: { userId, status: In(['REGISTERED', 'PAID', 'CHECKED_IN']) },
+      order: { createdAt: 'DESC' as any, id: 'DESC' as any },
+    })
+    const now = Date.now()
+    const items = regs.map(reg => {
+      const activity = reg.activity
+      const isCompleted = activity?.endTime ? new Date(activity.endTime).getTime() < now : false
+      const isCheckedIn = reg.status === 'CHECKED_IN'
+      return {
+        registrationId: reg.id,
+        activityId: reg.activityId,
+        activityTitle: activity?.title || '',
+        activityCoverUrl: activity?.coverImage || '',
+        activityStartTime: activity?.startTime || null,
+        activityEndTime: activity?.endTime || null,
+        activityLocation: activity?.locationName || activity?.location || '',
+        province: activity?.province || '',
+        city: activity?.city || '',
+        registrationStatus: reg.status,
+        checkinStatus: isCheckedIn ? 'CHECKED_IN' : 'NOT_CHECKED_IN',
+        qrAvailable: reg.status === 'PAID' && !isCheckedIn && !isCompleted,
+        isCompleted,
+        createdAt: reg.createdAt,
+      }
+    })
+    const pendingCheckinCount = items.filter(i => i.registrationStatus === 'PAID' && i.checkinStatus !== 'CHECKED_IN' && !i.isCompleted).length
+    return { items, total: items.length, pendingCheckinCount }
+  }
+
   // ──── Update profile ────
   async updateProfile(id: string, body: { nickname?: string; avatarUrl?: string; gender?: string; phone?: string; birthday?: string; birthYearMonth?: string; identityType?: string; intro?: string }) {
     const user = await this.userRepo.findOne({ where: { id } })
@@ -335,7 +470,7 @@ export class UsersService {
     }
 
     await this.userRepo.save(user)
-    return this.getProfile(id)
+    return this.getPrivateProfile(id)
   }
 
   async getInvoiceProfile(userId: string) {
@@ -512,6 +647,13 @@ export class UsersService {
   private async successfulRefundTotal(orderId: number): Promise<number> {
     const refunds = await this.refundRepo.find({ where: { orderId, status: 'SUCCESS' } })
     return refunds.reduce((sum, refund) => sum + this.money(refund.amount), 0)
+  }
+
+  private userInvoiceStatus(status?: string | null): string {
+    if (status === 'REQUESTED') return 'PENDING'
+    if (status === 'ISSUED') return 'ISSUED'
+    if (status === 'REFUNDED') return 'REFUNDED'
+    return status || 'NONE'
   }
 
   private async ensureUser(userId: string) {

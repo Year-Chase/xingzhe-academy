@@ -370,3 +370,35 @@ bash scripts/ops/xz-verify-online.sh
 4. bash scripts/ops/xz-verify-online.sh           ← 线上鉴权验证
 5. pm2 save && git tag vX.Y.Z-online-test         ← 固化
 ```
+
+服务器：
+
+82.156.129.114
+
+路径：
+
+/srv/xingzhe/backend
+
+/var/www/xingzhe-admin
+
+/data/xingzhe/uploads
+
+流程：
+
+本地build
+
+↓
+
+上传
+
+↓
+
+PM2 restart
+
+↓
+
+health检查
+
+↓
+
+体验版上传

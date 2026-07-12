@@ -325,3 +325,21 @@ V2.5D：Documentation Update
 - V2.8：活动内容增强 / 会员价格 / 发票 / 证书证书图片生成
 - V2.9：真实微信支付与财务闭环
 - V3.0：正式提审 / 增长 / CRM 运营体系强化 / 云部署完整化
+
+记录：
+
+V2.8 Release Fix
+
+V2.8.1
+
+V2.8.2
+
+V2.8.2-Fix
+
+格式：
+
+Added
+Fixed
+Changed
+Migration
+Deployment

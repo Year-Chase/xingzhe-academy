@@ -21,6 +21,7 @@ import { UserInviteRecord } from './entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './entities/activity-invite-record.entity'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 import { User } from '../users/entities/user.entity'
+import { UserRegistrationProfile } from '../users/entities/user-registration-profile.entity'
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { User } from '../users/entities/user.entity'
       ActivityInviteRecord,
       ActivityRegistrationInfo,
       User,
+      UserRegistrationProfile,
     ]),
   ],
   controllers: [

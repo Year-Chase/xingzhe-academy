@@ -19,13 +19,14 @@ import { ActivityInviteRecord } from './activity/entities/activity-invite-record
 import { ActivityRegistrationInfo } from './activity/entities/activity-registration-info.entity'
 import { User } from './users/entities/user.entity'
 import { UserInvoiceProfile } from './users/entities/user-invoice-profile.entity'
+import { UserRegistrationProfile } from './users/entities/user-registration-profile.entity'
 import { CertificateTemplate } from './certificate/entities/certificate-template.entity'
 import { ActivityModule } from './activity/activity.module'
 import { UsersModule } from './users/users.module'
 import { CertificateModule } from './certificate/certificate.module'
 import { AuthModule } from './auth/auth.module'
 
-const entities = [Activity, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, CertificateTemplate, User, UserInvoiceProfile]
+const entities = [Activity, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, CertificateTemplate, User, UserInvoiceProfile, UserRegistrationProfile]
 
 // Production uses MySQL from env vars; development uses local SQLite
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.DB_HOST

@@ -5,6 +5,7 @@ import { getUserId } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
+import navigationIcon from '../../../assets/icons/navigation-user-provided.png'
 
 type QRState = 'ACTIVE' | 'CHECKED_IN' | 'EXPIRED' | 'loading'
 
@@ -176,7 +177,7 @@ export default function QRPage() {
             <Text style={{ flex: 1, fontSize: '24rpx', color: C.neutral, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               📍 {(activity as any)?.locationName || location || '活动地点待确认'}
             </Text>
-            <Text style={{ flexShrink: 0, fontSize: '28rpx', color: C.green, marginLeft: '8rpx' }}>↗</Text>
+            <Image src={navigationIcon} mode='aspectFit' style={{ width: '38rpx', height: '38rpx', marginLeft: '10rpx', flexShrink: 0 }} />
           </View>
         ) : null}
         <View style={{ marginTop: '16rpx', padding: '4rpx 14rpx', background: C.lightGreen, borderRadius: '999rpx', alignSelf: 'flex-start', display: 'inline-block' }}>

@@ -4,6 +4,7 @@ export default defineAppConfig({
     'pages/trail/index',
     'pages/trail/memories/index',
     'pages/journey/certificate/index',
+    'pages/mine/orders/index',
     'pages/mine/registrations/index',
     'pages/mine/invoices/index',
     'pages/mine/certificates/index',

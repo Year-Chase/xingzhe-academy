@@ -1,8 +1,8 @@
 import { View, Text, Input, Picker, ScrollView } from '@tarojs/components'
 import { useEffect, useState } from 'react'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidShow, useRouter } from '@tarojs/taro'
 import { API_BASE_URL as API } from '../../../config/api'
-import { getStoredToken, getUserId, isLoggedIn, userAuthHeader } from '../../../utils/user'
+import { getStoredToken, getUserId, isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
 
 const C = {
   bg: '#F7F6F2',
@@ -30,30 +30,6 @@ interface InvoiceProfile {
   remark: string
 }
 
-interface InvoiceOrder {
-  orderId: number
-  activityTitle: string
-  amount: number
-  payType: string
-  createdAt: string
-  canApply: boolean
-  reason: string
-  existingInvoiceStatus: string | null
-}
-
-interface InvoiceRequest {
-  id: number
-  orderId: number
-  activityTitle: string
-  amount: number
-  invoiceType: InvoiceType
-  invoiceTitle: string
-  taxNumber: string
-  status: string
-  createdAt: string
-  issuedAt: string | null
-}
-
 const emptyProfile: InvoiceProfile = {
   invoiceType: 'PERSONAL',
   invoiceTitle: '',
@@ -67,12 +43,10 @@ const emptyProfile: InvoiceProfile = {
 }
 
 export default function InvoicePage() {
+  const router = useRouter()
   const [profile, setProfile] = useState<InvoiceProfile>(emptyProfile)
-  const [orders, setOrders] = useState<InvoiceOrder[]>([])
-  const [requests, setRequests] = useState<InvoiceRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [actingOrderId, setActingOrderId] = useState<number | null>(null)
 
   const auth = () => {
     const uid = getUserId()
@@ -83,17 +57,13 @@ export default function InvoicePage() {
 
   const load = async () => {
     if (!isLoggedIn()) {
-      Taro.reLaunch({ url: '/pages/auth/login/index' })
+      navigateToLoginWithRedirect({ returnUrl: '/pages/mine/invoices/index', action: 'OPEN_INVOICE' })
       return
     }
     setLoading(true)
     try {
       const { uid, header } = auth()
-      const [profileRes, ordersRes, requestsRes] = await Promise.all([
-        Taro.request({ url: `${API}/users/me/invoice-profile?userId=${uid}`, header }).catch(() => ({ data: null })),
-        Taro.request({ url: `${API}/users/me/invoice-orders?userId=${uid}`, header }),
-        Taro.request({ url: `${API}/users/me/invoice-requests?userId=${uid}`, header }),
-      ])
+      const profileRes = await Taro.request({ url: `${API}/users/me/invoice-profile?userId=${uid}`, header }).catch(() => ({ data: null }))
       const p = profileRes.data as any
       setProfile(p ? {
         invoiceType: p.invoiceType || 'PERSONAL',
@@ -106,8 +76,6 @@ export default function InvoicePage() {
         email: p.email || '',
         remark: p.remark || '',
       } : emptyProfile)
-      setOrders((ordersRes.data || []) as InvoiceOrder[])
-      setRequests((requestsRes.data || []) as InvoiceRequest[])
     } catch (e: any) {
       Taro.showToast({ title: e?.message || '加载失败', icon: 'none' })
     } finally {
@@ -140,42 +108,13 @@ export default function InvoicePage() {
       if (res.statusCode < 200 || res.statusCode >= 300) throw new Error((res.data as any)?.message || '保存失败')
       Taro.showToast({ title: '保存成功', icon: 'success' })
       load()
+      if ((router.params as any)?.returnToOrders === '1') {
+        setTimeout(() => Taro.navigateBack(), 700)
+      }
     } catch (e: any) {
       Taro.showToast({ title: e?.message || '保存失败', icon: 'none' })
     } finally {
       setSaving(false)
-    }
-  }
-
-  const submitRequest = async (order: InvoiceOrder) => {
-    if (!order.canApply || actingOrderId) {
-      if (order.reason) Taro.showToast({ title: order.reason, icon: 'none' })
-      return
-    }
-    if (!profile.invoiceTitle.trim()) {
-      Taro.showToast({ title: '请先保存默认开票信息', icon: 'none' })
-      return
-    }
-    if (profile.invoiceType === 'COMPANY' && !profile.taxNumber.trim()) {
-      Taro.showToast({ title: '企业发票请填写税号', icon: 'none' })
-      return
-    }
-    setActingOrderId(order.orderId)
-    try {
-      const { uid, header } = auth()
-      const res = await Taro.request({
-        method: 'POST',
-        url: `${API}/users/me/invoice-requests?userId=${uid}`,
-        data: { orderId: order.orderId },
-        header: { 'content-type': 'application/json', ...header },
-      })
-      if (res.statusCode < 200 || res.statusCode >= 300) throw new Error((res.data as any)?.message || '提交失败')
-      Taro.showToast({ title: '开票申请已提交，请等待处理', icon: 'none' })
-      load()
-    } catch (e: any) {
-      Taro.showToast({ title: e?.message || '提交失败', icon: 'none' })
-    } finally {
-      setActingOrderId(null)
     }
   }
 
@@ -207,34 +146,11 @@ export default function InvoicePage() {
           </View>
         </Section>
 
-        <Section title='可申请订单'>
-          {orders.length === 0 ? (
-            <Empty text='暂无可申请开票的订单' />
-          ) : orders.map(order => (
-            <View key={order.orderId} style={itemCard}>
-              <Text style={itemTitle}>{order.activityTitle || `订单 ${order.orderId}`}</Text>
-              <Text style={itemMeta}>订单号：{order.orderId} · 金额：¥{Number(order.amount || 0).toFixed(2)}</Text>
-              {order.reason ? <Text style={itemHint}>{order.reason}</Text> : null}
-              <View onClick={() => submitRequest(order)} style={smallBtn(order.canApply && actingOrderId !== order.orderId)}>
-                <Text style={{ fontSize: '24rpx', color: order.canApply ? '#FFFFFF' : C.secondary }}>{actingOrderId === order.orderId ? '提交中...' : order.existingInvoiceStatus ? statusLabel(order.existingInvoiceStatus) : '提交开票申请'}</Text>
-              </View>
-            </View>
-          ))}
-        </Section>
-
-        <Section title='开票申请记录'>
-          {requests.length === 0 ? (
-            <Empty text='暂无开票申请记录' />
-          ) : requests.map(req => (
-            <View key={req.id} style={itemCard}>
-              <Text style={itemTitle}>{req.activityTitle || `订单 ${req.orderId}`}</Text>
-              <Text style={itemMeta}>申请ID：{req.id} · 金额：¥{Number(req.amount || 0).toFixed(2)}</Text>
-              <Text style={itemMeta}>抬头：{req.invoiceTitle}</Text>
-              {req.taxNumber ? <Text style={itemMeta}>税号：{req.taxNumber}</Text> : null}
-              <Text style={{ fontSize: '24rpx', color: req.status === 'ISSUED' ? C.green : '#8A6D3B', marginTop: '8rpx' }}>{statusLabel(req.status)}</Text>
-            </View>
-          ))}
-        </Section>
+        <View style={{ padding: '0 8rpx' }}>
+          <Text style={{ fontSize: '24rpx', color: C.secondary, lineHeight: '1.6' }}>
+            开票申请请从“我的订单”中选择对应订单发起。这里仅维护默认开票信息。
+          </Text>
+        </View>
       </View>
     </ScrollView>
   )
@@ -266,21 +182,5 @@ function FormInput({ label, value, placeholder, onChange, last }: { label: strin
   )
 }
 
-function Empty({ text }: { text: string }) {
-  return <View style={{ padding: '24rpx', background: C.bg, borderRadius: '18rpx', textAlign: 'center' }}><Text style={{ fontSize: '26rpx', color: C.secondary }}>{text}</Text></View>
-}
-
-function statusLabel(status: string) {
-  if (status === 'ISSUED') return '已开票'
-  if (status === 'REQUESTED') return '待开票'
-  if (status === 'REFUNDED') return '已退款'
-  return status || '待开票'
-}
-
 const center: React.CSSProperties = { minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-const itemCard: React.CSSProperties = { padding: '22rpx 0', borderBottom: `1rpx solid ${C.border}` }
-const itemTitle: React.CSSProperties = { display: 'block', fontSize: '28rpx', color: C.dark, fontWeight: '600', marginBottom: '8rpx' }
-const itemMeta: React.CSSProperties = { display: 'block', fontSize: '24rpx', color: C.neutral, lineHeight: '1.6' }
-const itemHint: React.CSSProperties = { display: 'block', fontSize: '24rpx', color: '#8A6D3B', marginTop: '8rpx' }
 const primaryBtn = (loading: boolean): React.CSSProperties => ({ marginTop: '24rpx', height: '80rpx', borderRadius: '999rpx', background: loading ? '#E9EAE5' : C.green, display: 'flex', alignItems: 'center', justifyContent: 'center' })
-const smallBtn = (enabled: boolean): React.CSSProperties => ({ marginTop: '16rpx', height: '64rpx', borderRadius: '999rpx', background: enabled ? C.green : '#E9EAE5', display: 'flex', alignItems: 'center', justifyContent: 'center' })

@@ -2,6 +2,23 @@ import Taro from '@tarojs/taro'
 
 import { API_BASE_URL as API } from '../config/api'
 
+const LOGIN_REDIRECT_KEY = 'xingzhe_login_redirect_state'
+const LOGIN_RETURN_ACTION_KEY = 'xingzhe_login_return_action'
+const USER_PROFILE_STORAGE_KEY = 'xingzhe_user_profile'
+const LOGIN_REDIRECT_TTL = 10 * 60 * 1000
+const TAB_BAR_PAGES = new Set(['/pages/index/index', '/pages/trail/index', '/pages/mine/index'])
+
+export type LoginRedirectAction = 'REGISTER' | 'OPEN_ORDER' | 'OPEN_REGISTRATION' | 'OPEN_INVOICE'
+
+export type LoginRedirectState = {
+  returnUrl: string
+  action?: LoginRedirectAction
+  activityId?: number | string
+  orderId?: number | string
+  timestamp?: number
+  preferBack?: boolean
+}
+
 /**
  * Read login state from Storage.
  */
@@ -16,7 +33,48 @@ export function getStoredToken(): string {
 }
 
 export function getStoredProfile(): any | null {
-  return Taro.getStorageSync('xingzhe_user_profile') || null
+  return cleanStoredProfileCache()
+}
+
+export function sanitizeUserProfileForStorage(profile: any): any | null {
+  if (!profile || typeof profile !== 'object') return null
+  const safe: Record<string, any> = {}
+  const allowedKeys = [
+    'id',
+    'nickname',
+    'avatarUrl',
+    'identityType',
+    'isMember',
+    'isLifetimeMember',
+    'phoneMasked',
+    'gender',
+    'intro',
+  ]
+  for (const key of allowedKeys) {
+    if (Object.prototype.hasOwnProperty.call(profile, key)) safe[key] = profile[key]
+  }
+  return safe
+}
+
+export function saveStoredProfile(profile: any): any | null {
+  const safe = sanitizeUserProfileForStorage(profile)
+  if (safe) Taro.setStorageSync(USER_PROFILE_STORAGE_KEY, safe)
+  else Taro.removeStorageSync(USER_PROFILE_STORAGE_KEY)
+  return safe
+}
+
+export function cleanStoredProfileCache(): any | null {
+  const raw = Taro.getStorageSync(USER_PROFILE_STORAGE_KEY)
+  if (!raw || typeof raw !== 'object') return raw || null
+  const safe = sanitizeUserProfileForStorage(raw)
+  const changed =
+    Object.keys(raw).some(key => !Object.prototype.hasOwnProperty.call(safe || {}, key)) ||
+    Object.keys(safe || {}).some(key => raw[key] !== (safe as any)[key])
+  if (changed) {
+    if (safe) Taro.setStorageSync(USER_PROFILE_STORAGE_KEY, safe)
+    else Taro.removeStorageSync(USER_PROFILE_STORAGE_KEY)
+  }
+  return safe
 }
 
 /**
@@ -34,9 +92,114 @@ export function isLoggedIn(): boolean {
 export function logoutUser() {
   Taro.removeStorageSync('xingzhe_user_id')
   Taro.removeStorageSync('xingzhe_auth_token')
-  Taro.removeStorageSync('xingzhe_user_profile')
+  Taro.removeStorageSync(USER_PROFILE_STORAGE_KEY)
   Taro.removeStorageSync('xingzhe_reginfo_pending')
+  Taro.removeStorageSync(LOGIN_REDIRECT_KEY)
+  Taro.removeStorageSync(LOGIN_RETURN_ACTION_KEY)
   Taro.reLaunch({ url: '/pages/auth/login/index' })
+}
+
+function safeInternalUrl(url: string): string {
+  const value = (url || '').trim()
+  if (!value.startsWith('/pages/')) return ''
+  if (value.includes('://') || value.startsWith('//')) return ''
+  return value
+}
+
+export function saveLoginRedirectState(state: LoginRedirectState) {
+  const returnUrl = safeInternalUrl(state.returnUrl)
+  if (!returnUrl) return
+  Taro.setStorageSync(LOGIN_REDIRECT_KEY, {
+    ...state,
+    returnUrl,
+    timestamp: Date.now(),
+  })
+}
+
+export function consumeLoginRedirectState(): LoginRedirectState | null {
+  const raw = Taro.getStorageSync(LOGIN_REDIRECT_KEY)
+  Taro.removeStorageSync(LOGIN_REDIRECT_KEY)
+  if (!raw || typeof raw !== 'object') return null
+  const state = raw as LoginRedirectState
+  if (!safeInternalUrl(state.returnUrl)) return null
+  if (!state.timestamp || Date.now() - state.timestamp > LOGIN_REDIRECT_TTL) return null
+  return state
+}
+
+function splitUrl(url: string): { path: string; full: string } {
+  const safe = safeInternalUrl(url) || '/pages/index/index'
+  const path = safe.split('?')[0]
+  return { path, full: safe }
+}
+
+function queryValue(url: string, key: string): string {
+  const query = url.split('?')[1] || ''
+  const params = query.split('&').filter(Boolean)
+  for (const param of params) {
+    const [k, v = ''] = param.split('=')
+    if (decodeURIComponent(k) === key) return decodeURIComponent(v)
+  }
+  return ''
+}
+
+function findPageDelta(targetUrl: string): number {
+  const pages = Taro.getCurrentPages?.() || []
+  const { path } = splitUrl(targetUrl)
+  const route = path.replace(/^\//, '')
+  const targetId = queryValue(targetUrl, 'id') || queryValue(targetUrl, 'activityId')
+  for (let i = pages.length - 2; i >= 0; i--) {
+    const page = pages[i] as any
+    if (page?.route !== route) continue
+    if (targetId) {
+      const options = page?.options || {}
+      const pageId = String(options.id || options.activityId || '')
+      if (pageId && pageId !== targetId) continue
+    }
+    return pages.length - 1 - i
+  }
+  return 0
+}
+
+function saveLoginReturnAction(state: LoginRedirectState) {
+  if (!state.action) return
+  Taro.setStorageSync(LOGIN_RETURN_ACTION_KEY, { ...state, timestamp: Date.now() })
+}
+
+export function consumeLoginReturnAction(): LoginRedirectState | null {
+  const raw = Taro.getStorageSync(LOGIN_RETURN_ACTION_KEY)
+  Taro.removeStorageSync(LOGIN_RETURN_ACTION_KEY)
+  if (!raw || typeof raw !== 'object') return null
+  const state = raw as LoginRedirectState
+  if (!state.timestamp || Date.now() - state.timestamp > LOGIN_REDIRECT_TTL) return null
+  return state
+}
+
+export async function redirectAfterLogin(fallback = '/pages/index/index') {
+  const state = consumeLoginRedirectState()
+  const target = state?.returnUrl || fallback
+  const { path, full } = splitUrl(target)
+  const delta = state?.preferBack ? findPageDelta(full) : 0
+  if (delta > 0 && state) {
+    saveLoginReturnAction(state)
+    return Taro.navigateBack({ delta })
+  }
+  if (TAB_BAR_PAGES.has(path)) {
+    return Taro.switchTab({ url: path })
+  }
+  try {
+    return await Taro.redirectTo({ url: full })
+  } catch (e) {
+    return Taro.reLaunch({ url: full })
+  }
+}
+
+export async function navigateToLoginWithRedirect(state: LoginRedirectState) {
+  saveLoginRedirectState(state)
+  try {
+    return await Taro.navigateTo({ url: '/pages/auth/login/index' })
+  } catch (e) {
+    return Taro.reLaunch({ url: '/pages/auth/login/index' })
+  }
 }
 
 /**
@@ -52,7 +215,7 @@ export async function loginWithPhone(input: {
   phoneCode?: string
   encryptedData?: string
   iv?: string
-}): Promise<{ userId: string; token: string; profile: any } | null> {
+}): Promise<{ userId: string; token: string; profile: any; isNewUser: boolean } | null> {
   if (!input.phoneCode && !input.encryptedData) {
     console.warn('[xingzhe-login] no phone authorization data')
     return null
@@ -90,14 +253,14 @@ export async function loginWithPhone(input: {
       Taro.setStorageSync('xingzhe_user_id', userId)
       if (data.token) Taro.setStorageSync('xingzhe_auth_token', data.token)
       const profile = data?.user || data
-      Taro.setStorageSync('xingzhe_user_profile', profile)
-      return { userId, token: data.token, profile }
+      saveStoredProfile(profile)
+      return { userId, token: data.token, profile, isNewUser: !!data.isNewUser }
     }
 
     console.warn('[xingzhe-login] response missing userId')
     return null
-  } catch (err) {
-    console.error('[auth]', err)
+  } catch (_err) {
+    console.error('[auth] login failed')
     return null
   }
 }
@@ -124,8 +287,29 @@ export async function updateUserProfile(body: Record<string, any>) {
     throw new Error((res.data as any)?.message || '保存失败')
   }
   const profile = res.data as any
-  Taro.setStorageSync('xingzhe_user_profile', profile)
+  saveStoredProfile(profile)
   return profile
+}
+
+export async function getRegistrationProfile(): Promise<Record<string, string>> {
+  const uid = getStoredUserId()
+  if (!uid) throw new Error('请先完成登录')
+  const res = await Taro.request({
+    url: `${API}/users/me/registration-profile`,
+    header: userAuthHeader(),
+  })
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw new Error((res.data as any)?.message || '读取报名资料失败')
+  }
+  const data = (res.data || {}) as Record<string, any>
+  return {
+    realName: data.realName || '',
+    phone: data.phone || '',
+    idCardNo: data.idCardNo || '',
+    departureCity: data.departureCity || '',
+    transportPreference: data.transportPreference || '',
+    roomPreference: data.roomPreference || '',
+  }
 }
 
 export async function uploadUserAvatar(filePath: string): Promise<string> {
