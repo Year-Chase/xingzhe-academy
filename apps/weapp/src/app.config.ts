@@ -9,6 +9,8 @@ export default defineAppConfig({
     'pages/mine/invoices/index',
     'pages/mine/certificates/index',
     'pages/mine/index',
+    'pages/staff/index',
+    'pages/staff/checkin/index',
     'pages/auth/login/index',
     'pages/activity/detail/index',
     'pages/activity/registration-info/index',

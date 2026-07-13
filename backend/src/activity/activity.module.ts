@@ -6,6 +6,7 @@ import { AdminOrderController } from './admin-order.controller'
 import { AdminFinanceController } from './admin-finance.controller'
 import { AdminInvoiceController } from './admin-invoice.controller'
 import { AdminCrmController } from './admin-crm.controller'
+import { StaffCheckinController } from './staff-checkin.controller'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
 import { Activity } from './entities/activity.entity'
@@ -49,6 +50,7 @@ import { UserRegistrationProfile } from '../users/entities/user-registration-pro
     AdminFinanceController,
     AdminInvoiceController,
     AdminCrmController,
+    StaffCheckinController,
   ],
   providers: [ActivityService, ActivityFlowService],
 })

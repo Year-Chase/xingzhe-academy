@@ -207,6 +207,7 @@ export default function MinePage() {
     setLoading(false)
     logoutUser() // clears storage + reLaunches to login page
   }
+  const isStaff = profile?.identityType === '工作人员'
 
   // ── Not logged in (profile null, no error) ──
   if (!profile && !loading) {
@@ -363,6 +364,12 @@ export default function MinePage() {
           <Text style={{ fontSize: '28rpx', color: C.dark }}>发票管理</Text>
           <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
         </View>
+        {isStaff && (
+          <View onClick={() => Taro.navigateTo({ url: '/pages/staff/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx' }}>
+            <Text style={{ fontSize: '28rpx', color: C.dark }}>工作人员工具</Text>
+            <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+          </View>
+        )}
 {/* 我的邀请 — temporarily hidden (V2.7.1) */}
       </View>
 

@@ -1,11 +1,11 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository, In } from 'typeorm'
+import { Repository, In, DataSource, EntityManager, SelectQueryBuilder, ObjectLiteral } from 'typeorm'
 import { randomUUID } from 'crypto'
 import { Activity } from './entities/activity.entity'
 import { ActivityRegistration } from './entities/activity-registration.entity'
 import { ActivityOrder } from './entities/activity-order.entity'
-import { ActivityQR } from './entities/activity-qr.entity'
+import { ActivityQR, QRStage, QRStatus } from './entities/activity-qr.entity'
 import { ActivityRefund } from './entities/activity-refund.entity'
 import { ActivityInvoice, InvoiceStatus } from './entities/activity-invoice.entity'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
@@ -27,10 +27,40 @@ const TRANSPORT_OPTIONS = ['高铁', '飞机', '自驾', '其他']
 const ROOM_OPTIONS = ['单住', '拼房', '无所谓', '其他']
 const PHONE_RE = /^1\d{10}$/
 const ID_CARD_RE = /^(?:\d{15}|\d{17}[\dXx])$/
+type CheckinResultCode =
+  | 'CHECKIN_SUCCESS'
+  | 'ALREADY_CHECKED_IN'
+  | 'INVALID_QR'
+  | 'QR_EXPIRED'
+  | 'QR_SUPERSEDED'
+  | 'QR_REVOKED'
+  | 'QR_STAGE_MISMATCH'
+  | 'ACTIVITY_MISMATCH'
+  | 'REGISTRATION_NOT_ELIGIBLE'
+  | 'FULLY_REFUNDED'
+  | 'ACTIVITY_ENDED'
+
+type CheckinSource = 'MINIAPP_STAFF' | 'ADMIN'
+
+type CheckinResult = {
+  resultCode: CheckinResultCode
+  message: string
+  registrationId?: number
+  userId?: string
+  activityId?: number
+  activityTitle?: string
+  nickname?: string
+  maskedPhone?: string | null
+  checkedInAt?: string | Date | null
+  warnings: string[]
+}
 
 @Injectable()
 export class ActivityFlowService {
+  private checkinQueue: Promise<void> = Promise.resolve()
+
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(Activity)
     private readonly activityRepo: Repository<Activity>,
     @InjectRepository(ActivityRegistration)
@@ -89,6 +119,124 @@ export class ActivityFlowService {
 
   private isActivityQrExpired(activity?: Activity | null): boolean {
     return Date.now() > this.qrExpiresAtForActivity(activity).getTime()
+  }
+
+  private qrStageForOrder(activity: Activity | null, order?: ActivityOrder | null): QRStage {
+    if ((order?.payType || activity?.paymentMode) === 'PREPAY') return 'PREPAY'
+    return 'FULL'
+  }
+
+  private effectiveQrStage(qr: ActivityQR, activity: Activity | null, order?: ActivityOrder | null): QRStage {
+    if (qr.stage && qr.stage !== 'LEGACY') return qr.stage
+    return this.qrStageForOrder(activity, order)
+  }
+
+  private normalizeScanStage(activity: Activity | null, stage?: string | null): QRStage | null {
+    if ((activity?.paymentMode || 'FULL') !== 'PREPAY') return 'FULL'
+    const clean = String(stage || '').trim().toUpperCase()
+    return clean === 'PREPAY' || clean === 'POSTPAY' ? clean : null
+  }
+
+  private async latestQR(registrationId: number, manager?: EntityManager): Promise<ActivityQR | null> {
+    const repo = manager ? manager.getRepository(ActivityQR) : this.qrRepo
+    return repo.findOne({ where: { registrationId }, order: { version: 'DESC', id: 'DESC' } })
+  }
+
+  private async activeQR(registrationId: number, manager?: EntityManager): Promise<ActivityQR | null> {
+    const repo = manager ? manager.getRepository(ActivityQR) : this.qrRepo
+    return repo.findOne({ where: { registrationId, status: 'ACTIVE' as QRStatus }, order: { version: 'DESC', id: 'DESC' } })
+  }
+
+  private withWriteLock<T extends ObjectLiteral>(qb: SelectQueryBuilder<T>): SelectQueryBuilder<T> {
+    if (this.dataSource.options.type === 'mysql' || this.dataSource.options.type === 'mariadb') {
+      return qb.setLock('pessimistic_write')
+    }
+    return qb
+  }
+
+  private async createRegistrationQR(
+    registration: ActivityRegistration,
+    activity: Activity,
+    stage: QRStage,
+    manager?: EntityManager,
+  ): Promise<ActivityQR> {
+    const repo = manager ? manager.getRepository(ActivityQR) : this.qrRepo
+    const latest = await this.latestQR(registration.id, manager)
+    const version = (latest?.version || 0) + 1
+    const qr = repo.create({
+      registrationId: registration.id,
+      code: randomUUID(),
+      status: 'ACTIVE',
+      stage,
+      version,
+      expiresAt: this.qrExpiresAtForActivity(activity),
+    })
+    return repo.save(qr)
+  }
+
+  private async rotateRegistrationQR(
+    registration: ActivityRegistration,
+    activity: Activity,
+    stage: QRStage,
+    manager?: EntityManager,
+  ): Promise<ActivityQR | null> {
+    if (registration.status === 'CHECKED_IN') return null
+    const repo = manager ? manager.getRepository(ActivityQR) : this.qrRepo
+    const now = new Date()
+    const currentActive = await this.activeQR(registration.id, manager)
+    if (currentActive && currentActive.stage === stage) {
+      currentActive.expiresAt = this.qrExpiresAtForActivity(activity)
+      return repo.save(currentActive)
+    }
+    await repo.update({ registrationId: registration.id, status: 'ACTIVE' as QRStatus }, { status: 'SUPERSEDED', supersededAt: now })
+    return this.createRegistrationQR(registration, activity, stage, manager)
+  }
+
+  private async ensurePostpayQR(order: ActivityOrder, manager?: EntityManager) {
+    const regRepo = manager ? manager.getRepository(ActivityRegistration) : this.regRepo
+    const activityRepo = manager ? manager.getRepository(Activity) : this.activityRepo
+    const registration = await regRepo.findOne({ where: { id: order.registrationId } })
+    const activity = order.activityId ? await activityRepo.findOne({ where: { id: order.activityId } }) : null
+    if (!registration || !activity || registration.status === 'CHECKED_IN') return null
+    return this.rotateRegistrationQR(registration, activity, 'POSTPAY', manager)
+  }
+
+  private async revokeActiveQRs(registrationId: number, manager?: EntityManager) {
+    const repo = manager ? manager.getRepository(ActivityQR) : this.qrRepo
+    await repo.update({ registrationId, status: 'ACTIVE' as QRStatus }, { status: 'REVOKED', revokedAt: new Date() })
+  }
+
+  private checkinMessage(code: CheckinResultCode): string {
+    const messages: Record<CheckinResultCode, string> = {
+      CHECKIN_SUCCESS: '核销成功',
+      ALREADY_CHECKED_IN: '已经核销',
+      INVALID_QR: '二维码无效',
+      QR_EXPIRED: '二维码已过期',
+      QR_SUPERSEDED: '二维码已更新，请使用最新二维码',
+      QR_REVOKED: '报名已失效',
+      QR_STAGE_MISMATCH: '二维码阶段不匹配',
+      ACTIVITY_MISMATCH: '该二维码不属于当前活动',
+      REGISTRATION_NOT_ELIGIBLE: '报名状态不可核销',
+      FULLY_REFUNDED: '订单已全额退款，不能核销',
+      ACTIVITY_ENDED: '活动已结束',
+    }
+    return messages[code]
+  }
+
+  private async requireStaffUser(userId: string) {
+    const user = await this.userRepo.findOne({ where: { id: userId as any } })
+    if (!user || user.identityType !== '工作人员') throw new ForbiddenException('无工作人员权限')
+    return user
+  }
+
+  private runCheckinTransaction<T>(work: (manager: EntityManager) => Promise<T>): Promise<T> {
+    const run = () => this.dataSource.transaction(work)
+    if (this.dataSource.options.type !== 'better-sqlite3' && this.dataSource.options.type !== 'sqlite') {
+      return run()
+    }
+    const next = this.checkinQueue.then(run, run)
+    this.checkinQueue = next.then(() => undefined, () => undefined)
+    return next
   }
 
   private async successfulRefundTotal(orderId: number): Promise<number> {
@@ -218,15 +366,17 @@ export class ActivityFlowService {
     if (reg.status !== 'PAID') throw new BadRequestException(`Cannot generate QR: status is ${reg.status}, expected PAID`)
     const expiresAt = this.qrExpiresAtForActivity(reg.activity)
     if (this.isActivityQrExpired(reg.activity)) throw new BadRequestException('活动已结束')
-    const existing = await this.qrRepo.findOne({ where: { registrationId: reg.id } })
+    const order = await this.orderRepo.findOne({ where: { registrationId: reg.id } })
+    const stage = this.qrStageForOrder(reg.activity, order)
+    const existing = await this.activeQR(reg.id) || await this.latestQR(reg.id)
     if (existing && (existing.status === 'ACTIVE' || existing.status === 'EXPIRED')) {
       existing.status = 'ACTIVE'
+      if (!existing.stage || existing.stage === 'LEGACY') existing.stage = stage
       existing.expiresAt = expiresAt
       await this.qrRepo.save(existing)
       return { code: existing.code, status: 'ACTIVE', expiresAt: existing.expiresAt }
     }
-    const qr = this.qrRepo.create({ registrationId: reg.id, code: randomUUID(), status: 'ACTIVE', expiresAt })
-    const saved = await this.qrRepo.save(qr)
+    const saved = await this.createRegistrationQR(reg, reg.activity, stage)
     return { code: saved.code, status: 'ACTIVE', expiresAt: saved.expiresAt }
   }
 
@@ -245,7 +395,7 @@ export class ActivityFlowService {
   // ──── getQR ────
   async getQR(userId: string, activityId: number) {
     const reg = await this.findReg(userId, activityId)
-    const qr = await this.qrRepo.findOne({ where: { registrationId: reg.id } })
+    const qr = await this.activeQR(reg.id) || await this.latestQR(reg.id)
     if (!qr) throw new NotFoundException('No active QR found')
     if (this.isActivityQrExpired(reg.activity)) {
       qr.status = 'EXPIRED'
@@ -264,87 +414,214 @@ export class ActivityFlowService {
 
   // ──── checkin ────
   async checkin(code: string) {
-    const qr = await this.qrRepo.findOne({ where: { code, status: 'ACTIVE' as any }, relations: ['registration'] })
-    if (!qr) throw new NotFoundException('QR code not found or already used')
-    const activity = await this.activityRepo.findOne({ where: { id: qr.registration.activityId } })
-    if (this.isActivityQrExpired(activity)) {
-      qr.status = 'EXPIRED'
-      qr.expiresAt = this.qrExpiresAtForActivity(activity)
-      await this.qrRepo.save(qr)
-      throw new BadRequestException('QR has expired')
-    }
-    qr.status = 'USED'
-    await this.qrRepo.save(qr)
-    const reg = await this.regRepo.findOne({ where: { id: qr.registrationId } })
-    if (reg) {
-      reg.status = 'CHECKED_IN'
-      await this.regRepo.save(reg)
-    }
-    return { status: 'CHECKED_IN', registrationId: qr.registrationId, userId: reg?.userId, activityId: reg?.activityId }
+    const result = await this.performCheckin({ code, source: 'ADMIN' })
+    if (result.resultCode !== 'CHECKIN_SUCCESS') throw new BadRequestException(result.message)
+    return { status: 'CHECKED_IN', registrationId: result.registrationId, userId: result.userId, activityId: result.activityId }
   }
 
   // ──── checkinForActivity (Admin): validate activityId BEFORE modifying state ────
   async checkinForActivity(activityId: number, code: string) {
-    // Step 1: look up the QR code — read-only, no state change
-    const qr = await this.qrRepo.findOne({ where: { code }, relations: ['registration'] })
-    if (!qr) throw new NotFoundException('无效二维码，核销码不存在')
-    if (qr.registration?.activityId !== activityId) {
-      throw new BadRequestException('该核销码不属于当前活动')
+    const result = await this.performCheckin({ activityId, code, source: 'ADMIN' })
+    if (result.resultCode !== 'CHECKIN_SUCCESS') {
+      if (result.resultCode === 'INVALID_QR') throw new NotFoundException(result.message)
+      throw new BadRequestException(result.message)
     }
-    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
+    return { status: 'CHECKED_IN', registrationId: result.registrationId, userId: result.userId, activityId: result.activityId }
+  }
 
-    if (qr.status === 'EXPIRED' && !this.isActivityQrExpired(activity)) {
-      qr.status = 'ACTIVE'
-      qr.expiresAt = this.qrExpiresAtForActivity(activity)
-      await this.qrRepo.save(qr)
+  async getStaffCheckinActivities(userId: string) {
+    await this.requireStaffUser(userId)
+    const now = new Date()
+    const activities = await this.activityRepo.find({ where: { status: 'PUBLISHED' as any } })
+    return activities
+      .filter((activity) => !activity.endTime || new Date(activity.endTime) >= now)
+      .sort((a, b) => {
+        const aStart = a.startTime ? new Date(a.startTime).getTime() : Number.MAX_SAFE_INTEGER
+        const bStart = b.startTime ? new Date(b.startTime).getTime() : Number.MAX_SAFE_INTEGER
+        return aStart - bStart
+      })
+      .map((activity) => ({
+        id: activity.id,
+        title: activity.title,
+        startTime: activity.startTime || null,
+        endTime: activity.endTime || null,
+        location: activity.locationName || activity.location || '',
+        paymentMode: activity.paymentMode || 'FULL',
+        availableStages: activity.paymentMode === 'PREPAY' ? ['PREPAY', 'POSTPAY'] : ['FULL'],
+        status: activity.startTime && new Date(activity.startTime) <= now ? 'ONGOING' : 'UPCOMING',
+      }))
+  }
+
+  async staffScanCheckin(userId: string, body: { activityId?: number; stage?: string; code?: string }) {
+    const staff = await this.requireStaffUser(userId)
+    const activityId = Number(body?.activityId || 0)
+    const code = String(body?.code || '').trim()
+    if (!activityId || !code) throw new BadRequestException('缺少活动或二维码')
+    const result = await this.performCheckin({
+      activityId,
+      stage: body?.stage,
+      code,
+      source: 'MINIAPP_STAFF',
+      checkedInByUserId: staff.id,
+    })
+    return {
+      resultCode: result.resultCode,
+      message: result.message,
+      nickname: result.nickname || null,
+      maskedPhone: result.maskedPhone || null,
+      activityTitle: result.activityTitle || null,
+      checkedInAt: result.checkedInAt || null,
+      warnings: result.warnings || [],
     }
+  }
 
-    // Step 2: check QR status — already used?
-    if (qr.status !== 'ACTIVE') {
-      if (qr.status === 'USED') throw new BadRequestException('该核销码已签到，请勿重复核销')
-      throw new BadRequestException('该核销码已失效')
-    }
+  private async performCheckin(options: {
+    activityId?: number
+    stage?: string | null
+    code: string
+    source: CheckinSource
+    checkedInByUserId?: string | null
+  }): Promise<CheckinResult> {
+    return this.runCheckinTransaction(async (manager) => {
+      const qrQb = manager.getRepository(ActivityQR).createQueryBuilder('qr').where('qr.code = :code', { code: options.code })
+      const qr = await this.withWriteLock(qrQb).getOne()
+      if (!qr) return { resultCode: 'INVALID_QR' as CheckinResultCode, message: this.checkinMessage('INVALID_QR'), warnings: [] as string[] }
 
-    // Step 3: check expiration
-    if (this.isActivityQrExpired(activity)) {
-      qr.status = 'EXPIRED'
-      qr.expiresAt = this.qrExpiresAtForActivity(activity)
-      await this.qrRepo.save(qr)
-      throw new BadRequestException('核销码已过期')
-    }
+      const regRepo = manager.getRepository(ActivityRegistration)
+      const orderRepo = manager.getRepository(ActivityOrder)
+      const activityRepo = manager.getRepository(Activity)
+      const userRepo = manager.getRepository(User)
+      const regInfoRepo = manager.getRepository(ActivityRegistrationInfo)
+      const qrRepo = manager.getRepository(ActivityQR)
 
-    // Step 4: only now, after all validations pass — execute the actual checkin
-    qr.status = 'USED'
-    await this.qrRepo.save(qr)
+      const regQb = regRepo.createQueryBuilder('reg').where('reg.id = :id', { id: qr.registrationId })
+      const registration = await this.withWriteLock(regQb).getOne()
+      if (!registration) return { resultCode: 'INVALID_QR' as CheckinResultCode, message: this.checkinMessage('INVALID_QR'), warnings: [] as string[] }
 
-    const reg = await this.regRepo.findOne({ where: { id: qr.registrationId } })
-    if (reg) {
-      reg.status = 'CHECKED_IN'
-      await this.regRepo.save(reg)
-    }
+      const [activity, order, user, registrationInfo] = await Promise.all([
+        activityRepo.findOne({ where: { id: registration.activityId } }),
+        orderRepo.findOne({ where: { registrationId: registration.id } }),
+        userRepo.findOne({ where: { id: registration.userId as any } }),
+        regInfoRepo.findOne({ where: { registrationId: registration.id } }),
+      ])
+      const activityTitle = activity?.title || ''
+      const baseData = {
+        registrationId: registration.id,
+        userId: registration.userId,
+        activityId: registration.activityId,
+        activityTitle,
+        nickname: user?.nickname || '行者',
+        maskedPhone: this.maskPhone(registrationInfo?.phone || user?.phone || null),
+        warnings: [] as string[],
+      }
 
-    return { status: 'CHECKED_IN', registrationId: qr.registrationId, userId: reg?.userId, activityId: reg?.activityId }
+      if (!activity) return { resultCode: 'INVALID_QR' as CheckinResultCode, message: this.checkinMessage('INVALID_QR'), ...baseData }
+      if (this.isActivityQrExpired(activity)) {
+        if (qr.status === 'ACTIVE') {
+          qr.status = 'EXPIRED'
+          qr.expiresAt = this.qrExpiresAtForActivity(activity)
+          await qrRepo.save(qr)
+        }
+        return { resultCode: 'ACTIVITY_ENDED' as CheckinResultCode, message: this.checkinMessage('ACTIVITY_ENDED'), ...baseData }
+      }
+      if (options.activityId && registration.activityId !== options.activityId) {
+        return { resultCode: 'ACTIVITY_MISMATCH' as CheckinResultCode, message: this.checkinMessage('ACTIVITY_MISMATCH'), ...baseData }
+      }
+
+      const qrStage = this.effectiveQrStage(qr, activity, order)
+      let selectedStage = this.normalizeScanStage(activity, options.stage)
+      if (!selectedStage && options.source === 'ADMIN') selectedStage = qrStage
+      if (!selectedStage) {
+        return { resultCode: 'QR_STAGE_MISMATCH' as CheckinResultCode, message: this.checkinMessage('QR_STAGE_MISMATCH'), ...baseData }
+      }
+      if (qrStage !== selectedStage) {
+        return { resultCode: 'QR_STAGE_MISMATCH' as CheckinResultCode, message: this.checkinMessage('QR_STAGE_MISMATCH'), ...baseData }
+      }
+
+      if (registration.status === 'CHECKED_IN') {
+        return {
+          resultCode: 'ALREADY_CHECKED_IN' as CheckinResultCode,
+          message: this.checkinMessage('ALREADY_CHECKED_IN'),
+          checkedInAt: registration.checkedInAt || null,
+          ...baseData,
+        }
+      }
+      if (registration.status !== 'PAID' || !order || !['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(order.status)) {
+        return { resultCode: 'REGISTRATION_NOT_ELIGIBLE' as CheckinResultCode, message: this.checkinMessage('REGISTRATION_NOT_ELIGIBLE'), ...baseData }
+      }
+
+      const refundedAmount = await this.successfulRefundTotal(order.id)
+      if (this.paidAmount(order) > 0 && refundedAmount >= this.paidAmount(order)) {
+        await this.revokeActiveQRs(registration.id, manager)
+        return { resultCode: 'FULLY_REFUNDED' as CheckinResultCode, message: this.checkinMessage('FULLY_REFUNDED'), ...baseData }
+      }
+
+      if (qr.status === 'EXPIRED') {
+        qr.status = 'ACTIVE'
+        qr.expiresAt = this.qrExpiresAtForActivity(activity)
+        await qrRepo.save(qr)
+      }
+      if (qr.status === 'USED') {
+        return { resultCode: 'ALREADY_CHECKED_IN' as CheckinResultCode, message: this.checkinMessage('ALREADY_CHECKED_IN'), checkedInAt: registration.checkedInAt || null, ...baseData }
+      }
+      if (qr.status === 'SUPERSEDED') return { resultCode: 'QR_SUPERSEDED' as CheckinResultCode, message: this.checkinMessage('QR_SUPERSEDED'), ...baseData }
+      if (qr.status === 'REVOKED') return { resultCode: 'QR_REVOKED' as CheckinResultCode, message: this.checkinMessage('QR_REVOKED'), ...baseData }
+      if (qr.status !== 'ACTIVE') return { resultCode: 'INVALID_QR' as CheckinResultCode, message: this.checkinMessage('INVALID_QR'), ...baseData }
+
+      const checkedInAt = new Date()
+      const qrUpdate = await qrRepo.update({ id: qr.id, status: 'ACTIVE' as QRStatus }, { status: 'USED' })
+      if (!qrUpdate.affected) {
+        const latestRegistration = await regRepo.findOne({ where: { id: registration.id } })
+        if (latestRegistration?.status === 'CHECKED_IN') {
+          return { resultCode: 'ALREADY_CHECKED_IN' as CheckinResultCode, message: this.checkinMessage('ALREADY_CHECKED_IN'), checkedInAt: latestRegistration.checkedInAt || null, ...baseData }
+        }
+        return { resultCode: 'INVALID_QR' as CheckinResultCode, message: this.checkinMessage('INVALID_QR'), ...baseData }
+      }
+
+      const regUpdate = await regRepo.update(
+        { id: registration.id, status: 'PAID' as any },
+        { status: 'CHECKED_IN', checkedInAt, checkedInByUserId: options.checkedInByUserId || null, checkinSource: options.source },
+      )
+      if (!regUpdate.affected) {
+        return { resultCode: 'ALREADY_CHECKED_IN' as CheckinResultCode, message: this.checkinMessage('ALREADY_CHECKED_IN'), checkedInAt: registration.checkedInAt || null, ...baseData }
+      }
+
+      const warnings: string[] = []
+      if (order.payType === 'PREPAY' && selectedStage === 'PREPAY' && order.postpayStatus !== 'PAID' && order.postpayStatus !== 'WAIVED' && this.money(order.orderPostpayAmount) > 0) {
+        warnings.push('后付款尚未完成')
+      }
+      if (refundedAmount > 0) warnings.push('该订单存在部分退款')
+
+      return {
+        resultCode: 'CHECKIN_SUCCESS' as CheckinResultCode,
+        message: this.checkinMessage('CHECKIN_SUCCESS'),
+        checkedInAt: checkedInAt.toISOString(),
+        ...baseData,
+        warnings,
+      }
+    })
   }
 
   // ──── getUserStatus ────
   async getUserStatus(userId: string, activityId: number) {
-    const reg = await this.regRepo.findOne({ where: { userId, activityId }, relations: ['qr'] })
+    const reg = await this.regRepo.findOne({ where: { userId, activityId } })
     if (!reg) return { status: 'NOT_REGISTERED' }
-    if (reg.status === 'EXPIRED' && reg.qr?.status === 'EXPIRED' && !this.isActivityQrExpired(reg.activity)) {
-      reg.qr.status = 'ACTIVE'
-      reg.qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
-      await this.qrRepo.save(reg.qr)
+    const qr = await this.activeQR(reg.id) || await this.latestQR(reg.id)
+    if (reg.status === 'EXPIRED' && qr?.status === 'EXPIRED' && !this.isActivityQrExpired(reg.activity)) {
+      qr.status = 'ACTIVE'
+      qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
+      await this.qrRepo.save(qr)
       reg.status = 'PAID'
       await this.regRepo.save(reg)
     }
-    if (reg.qr?.status === 'ACTIVE' && this.isActivityQrExpired(reg.activity)) {
-      reg.qr.status = 'EXPIRED'
-      reg.qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
-      await this.qrRepo.save(reg.qr)
+    if (qr?.status === 'ACTIVE' && this.isActivityQrExpired(reg.activity)) {
+      qr.status = 'EXPIRED'
+      qr.expiresAt = this.qrExpiresAtForActivity(reg.activity)
+      await this.qrRepo.save(qr)
       reg.status = 'EXPIRED'
       await this.regRepo.save(reg)
     }
-    return { status: reg.status, qrCode: reg.qr?.code || null, qrStatus: reg.qr?.status || null }
+    return { status: reg.status, qrCode: qr?.code || null, qrStatus: qr?.status || null }
   }
 
   // ──── enrollPay ────
@@ -404,10 +681,9 @@ export class ActivityFlowService {
       await this.orderRepo.update({ registrationId: saved.id }, orderData)
     }
 
-    let qr = await this.qrRepo.findOne({ where: { registrationId: saved.id, status: 'ACTIVE' as any } })
+    let qr = await this.activeQR(saved.id)
     if (!qr) {
-      qr = this.qrRepo.create({ registrationId: saved.id, code: randomUUID(), status: 'ACTIVE', expiresAt: this.qrExpiresAtForActivity(activity) })
-      await this.qrRepo.save(qr)
+      qr = await this.createRegistrationQR(saved, activity, this.qrStageForOrder(activity, { ...orderData, payType: orderData.payType } as ActivityOrder))
     }
 
     // ── V2.8.3: Save per-registration snapshot + merge reusable profile ──
@@ -752,6 +1028,9 @@ export class ActivityFlowService {
       order.status = 'PARTIAL_REFUND'
     }
     await this.orderRepo.save(order)
+    if (order.status === 'REFUNDED') {
+      await this.revokeActiveQRs(order.registrationId)
+    }
     await this.syncPendingInvoicesAfterRefund(order, refundedAmount)
     return { id: order.id, status: order.status, refundedAmount, refundId: refund.id }
   }
@@ -951,6 +1230,7 @@ export class ActivityFlowService {
     order.postpayStatus = 'PAID'
     order.postpayPaidAt = new Date()
     await this.orderRepo.save(order)
+    await this.ensurePostpayQR(order)
 
     return {
       id: order.id,
@@ -1033,6 +1313,7 @@ export class ActivityFlowService {
     order.postpayStatus = 'PAID'
     order.postpayPaidAt = new Date()
     await this.orderRepo.save(order)
+    await this.ensurePostpayQR(order)
     return { id: order.id, postpayStatus: order.postpayStatus, postpayPaidAt: order.postpayPaidAt }
   }
 
@@ -1048,6 +1329,7 @@ export class ActivityFlowService {
     order.postpayWaivedAt = new Date()
     order.postpayWaiveReason = reason.trim()
     await this.orderRepo.save(order)
+    await this.ensurePostpayQR(order)
     return { id: order.id, postpayStatus: order.postpayStatus, postpayWaivedAt: order.postpayWaivedAt, postpayWaiveReason: order.postpayWaiveReason }
   }
 
