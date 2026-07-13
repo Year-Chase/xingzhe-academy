@@ -277,3 +277,23 @@ V2.8.3：
 UserProfile
 RegistrationSnapshot
 ActivityFieldConfig
+
+## V2.8-Final 数据模型
+
+### 报名补充资料
+
+- 活动字段配置：`activity.requiredUserInfoFields`，勾选即收集且必填。
+- 用户常用报名资料：`user_registration_profile`，按 `userId` 一人一条，用于下次报名自动带出。
+- 本次报名快照：`activity_registration_info`，按报名/活动独立保存，不随用户常用资料后续变化覆盖历史。
+
+### 订单与后付款
+
+- `activity_order` 保存价格快照、预付款、后付款、后付款状态、提醒次数、免除信息和退款累计。
+- 未支付后付款不计入可退款金额。
+
+### 核销与 QR
+
+- `activity_registration` 保存最终签到状态和留痕字段：`checkedInAt`、`checkedInByUserId`、`checkinSource`。
+- `activity_qr` 支持多版本：`stage`、`version`、`supersededAt`、`revokedAt`。
+- `activity_qr.code` 仍唯一；`registrationId + version` 唯一；`registrationId` 单列不再唯一。
+- 历史 QR 默认为 `stage=LEGACY`、`version=1`，不伪造历史 `checkedInAt`。

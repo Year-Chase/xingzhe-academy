@@ -343,3 +343,26 @@ Fixed
 Changed
 Migration
 Deployment
+
+## V2.8 Final
+
+### Added
+- V2.8.3：报名补充资料、用户常用报名资料、报名快照和 Admin 查看。
+- V2.8.3.1：Admin 订单详情 Drawer。
+- V2.8.4A：公开核销接口封堵、二维码鉴权、真实二维码展示、二维码状态文案修复。
+- V2.8.4B：QR 多版本、核销留痕字段、工作人员活动列表、工作人员扫码接口、原子核销与幂等。
+- V2.8.4C：小程序工作人员工具、活动/阶段选择、单次扫码、连续扫码。
+
+### Fixed
+- 普通用户不能修改 `identityType`。
+- `/users/me/registration-profile` 不再携带 `userId` query。
+- `postpayDate` 保存兼容 ISO datetime，并按 Asia/Shanghai 归一为 `YYYY-MM-DD`。
+- 活动详情费用与后付款卡片合并，后付款入口保留。
+
+### Migration
+- 新增 `user_registration_profile`。
+- `activity_registration` 新增 `checkedInAt`、`checkedInByUserId`、`checkinSource`。
+- `activity_qr` 新增 `stage`、`version`、`supersededAt`、`revokedAt`，移除 `registrationId` 单列唯一，保留 `code` 唯一，新增 `registrationId + version` 唯一。
+
+### Not Included
+- 真实微信支付、真实原路退款、微信订阅消息、支付/退款账本、活动级工作人员权限。

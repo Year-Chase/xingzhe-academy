@@ -228,3 +228,12 @@ MySQL
 规则：
 
 本地.env禁止DB_HOST
+
+## V2.8-Final 环境约束
+
+- 本地开发使用 SQLite；生产使用 MySQL。
+- 生产 `DB_SYNCHRONIZE=false`，不得用 synchronize 代替迁移。
+- 生产 API：`https://api.tenselog.cn`；小程序生产构建必须指向该地址。
+- Admin 生产地址：`https://admin.tenselog.cn`。
+- 线上 `.env`、pem、secret、数据库文件、uploads、`.local` 不得提交。
+- V2.8.4 QR 多版本迁移后，回滚数据库结构前必须确认没有多版本 QR 数据。

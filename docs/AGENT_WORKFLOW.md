@@ -284,3 +284,11 @@ Commit
 自动push
 git add .
 修改生产配置
+
+## V2.8-Final 工作流补充
+
+- 每个阶段必须先确认 `git status --short`，`.release/` 不处理。
+- 数据库变更必须先只读检查线上表结构、索引真实名称和 Entity 定义，再给出 forward/rollback SQL。
+- 线上服务器不是 Git 仓库，不得在线上 `git pull`。
+- V2.8.4 后 `activity_qr` 支持多版本；迁移和回滚必须特别核对 `code` 唯一、`registrationId + version` 唯一、`registrationId` 单列非唯一。
+- 真实微信支付、真实退款、订阅消息、支付账本未进入 V2.8，不得在描述或验收中误写为已完成。

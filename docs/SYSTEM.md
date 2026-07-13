@@ -317,3 +317,12 @@ returnUrl
 10分钟有效
 
 一次消费
+
+## V2.8-Final 系统事实
+
+- 小程序登录态继续使用现有 `Authorization` 与 `X-User-Id` 机制；敏感接口必须从登录态确定当前用户。
+- `identityType = 工作人员` 是小程序工作人员工具和扫码核销权限来源；普通用户资料接口禁止修改该字段。
+- 公开 `POST /activity/:id/checkin` 已禁用；Admin 手机核销保留；工作人员核销走 `/staff/checkin/scan`。
+- 核销对象是 `ActivityRegistration`，最终状态仍是一条报名最多一次最终签到。
+- QR 生成、替换、撤销和核销逻辑收口在 `ActivityFlowService`。
+- V2.8 未接入真实微信支付、真实退款、微信订阅消息或完整操作审计日志。

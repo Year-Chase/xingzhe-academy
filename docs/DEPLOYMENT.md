@@ -402,3 +402,12 @@ health检查
 ↓
 
 体验版上传
+
+## V2.8-Final 部署与回滚确认
+
+- 生产后端路径：`/srv/xingzhe/backend`，仅同步 `backend/dist`，不得覆盖 `.env`、`node_modules`、`uploads`。
+- 生产 Admin 路径：`/var/www/xingzhe-admin`，部署前备份整个静态目录。
+- PM2 服务名：`xingzhe-api`，部署后执行 `pm2 restart xingzhe-api` 并检查 `pm2 status`、`https://api.tenselog.cn/health` 和 PM2 错误日志。
+- 线上服务器不是 Git 仓库，禁止在线上 `git pull`。
+- 生产数据库为 MySQL，`DB_SYNCHRONIZE=false`；任何迁移前必须先备份数据库并只执行经过核对的 SQL。
+- V2.8.4 已将 `activity_qr` 改为多版本结构；一旦产生多版本 QR，不能直接恢复 `registrationId` 单列唯一约束。

@@ -549,3 +549,15 @@ users/me/registrations
 openid
 
 禁止无权限返回。
+
+## V2.8-Final API 事实
+
+- 活动配置继续使用 `activity.requiredUserInfoFields` 表示报名补充字段：未勾选不收集，勾选即必填。
+- `GET /users/me/registration-profile` 返回当前登录用户常用报名资料，不接受 `userId` query 读取他人资料。
+- `GET /activity/:id/qr` 以登录态识别当前用户，不再信任前端传入 `userId`。
+- 公开 `POST /activity/:id/checkin` 已禁用，线上返回 404。
+- 工作人员小程序接口：
+  - `GET /staff/checkin/activities`
+  - `POST /staff/checkin/scan`
+- 工作人员权限由用户 `identityType = 工作人员` 判断；普通用户接口不能修改 `identityType`，Admin CRM 类型接口仍可修改。
+- Admin 订单详情接口 `GET /admin/orders/:id` 返回订单、活动摘要、用户摘要、金额、后付款、退款、发票和真实字段时间线，敏感信息默认脱敏。
