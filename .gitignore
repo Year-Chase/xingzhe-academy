@@ -32,3 +32,6 @@ backend/uploads/
 *.pem
 *.crt
 *.key
+
+# Release artifacts
+.release/
