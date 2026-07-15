@@ -1,7 +1,7 @@
 import { View, Text, ScrollView } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro, { usePullDownRefresh } from '@tarojs/taro'
-import { getUserId } from '../../../utils/user'
+import { isLoggedIn, userAuthHeader } from '../../../utils/user'
 
 import { API_BASE_URL as API } from '../../../config/api'
 
@@ -47,9 +47,13 @@ export default function ActivityList() {
   // Check which activities current user has CHECKED_IN
   useEffect(() => {
     if (items.length === 0) return
+    if (!isLoggedIn()) {
+      setCheckedInIds(new Set())
+      return
+    }
     Promise.all(
       items.map((a) =>
-        Taro.request({ url: `${API}/activity/${a.id}/status?userId=${getUserId()}` }).catch(() => ({ data: { status: '' } }))
+        Taro.request({ url: `${API}/activity/${a.id}/status`, header: userAuthHeader() }).catch(() => ({ data: { status: '' } }))
           .then((r) => ({ id: a.id, status: (r.data as any)?.status }))
           .catch(() => ({ id: a.id, status: '' }))
       )

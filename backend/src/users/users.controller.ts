@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Param, ParseIntPipe, Patch, Post, Put, Query, UnauthorizedException, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, ParseIntPipe, Patch, Post, Put, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { diskStorage } from 'multer'
 import { extname } from 'path'
 import { UsersService } from './users.service'
 import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
+import { MiniappAuthGuard, MiniappRequestUser } from '../auth/miniapp-auth.guard'
+import { CurrentMiniappUser } from '../auth/current-miniapp-user.decorator'
 
 @Controller('users')
 export class UsersController {
@@ -14,33 +16,38 @@ export class UsersController {
     return this.usersService.wechatLogin(body)
   }
 
+  @Get('me/profile')
+  @UseGuards(MiniappAuthGuard)
+  async getMyProfile(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getPrivateProfile(user.userId)
+  }
+
+  @Patch('me/profile')
+  @UseGuards(MiniappAuthGuard)
+  async updateMyProfile(@CurrentMiniappUser() user: MiniappRequestUser, @Body() body: any) {
+    return this.usersService.updateProfile(user.userId, body)
+  }
+
   @Get(':id/profile')
-  async getProfile(
-    @Param('id') id: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    if (headerUserId || authorization) {
-      const uid = this.resolveAuthenticatedUserId(undefined, headerUserId, authorization)
-      if (uid !== id) throw new UnauthorizedException('不能读取其他用户资料')
-      return this.usersService.getPrivateProfile(id)
-    }
-    return this.usersService.getProfile(id)
+  @UseGuards(MiniappAuthGuard)
+  async getProfile(@Param('id') id: string, @CurrentMiniappUser() user: MiniappRequestUser) {
+    this.assertSelf(id, user.userId)
+    return this.usersService.getPrivateProfile(id)
   }
 
   @Patch(':id/profile')
+  @UseGuards(MiniappAuthGuard)
   async updateProfile(
     @Param('id') id: string,
     @Body() body: any,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
+    @CurrentMiniappUser() user: MiniappRequestUser,
   ) {
-    const uid = this.resolveAuthenticatedUserId(undefined, headerUserId, authorization)
-    if (uid !== id) throw new ForbiddenException('不能修改其他用户资料')
+    this.assertSelf(id, user.userId)
     return this.usersService.updateProfile(id, body)
   }
 
-  @Post(':id/avatar')
+  @Post('me/avatar')
+  @UseGuards(MiniappAuthGuard)
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (_req, _file, cb) => {
@@ -62,113 +69,124 @@ export class UsersController {
       }
     },
   }))
-  async uploadAvatar(@Param('id') id: string, @UploadedFile() file: any) {
-    if (!id) throw new BadRequestException('userId is required')
+  async uploadMyAvatar(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException('No file uploaded')
     return { url: toPublicUploadUrl('avatars', file.filename) }
   }
 
+  @Post(':id/avatar')
+  @UseGuards(MiniappAuthGuard)
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: (_req, _file, cb) => {
+        const dir = ensureUploadSubDir('avatars')
+        cb(null, dir)
+      },
+      filename: (_req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e9)
+        const fallbackExt = file.mimetype === 'image/png' ? '.png' : file.mimetype === 'image/webp' ? '.webp' : '.jpg'
+        cb(null, unique + (extname(file.originalname || '') || fallbackExt))
+      },
+    }),
+    limits: { fileSize: 3 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.match(/^image\/(jpeg|png|webp)$/)) {
+        cb(new BadRequestException('Only jpg/jpeg/png/webp allowed'), false)
+      } else {
+        cb(null, true)
+      }
+    },
+  }))
+  async uploadAvatar(@Param('id') id: string, @UploadedFile() file: any, @CurrentMiniappUser() user: MiniappRequestUser) {
+    if (!id) throw new BadRequestException('userId is required')
+    this.assertSelf(id, user.userId)
+    if (!file) throw new BadRequestException('No file uploaded')
+    return { url: toPublicUploadUrl('avatars', file.filename) }
+  }
+
+  @Get('me/journey')
+  @UseGuards(MiniappAuthGuard)
+  async getMyJourney(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getJourney(user.userId)
+  }
+
   @Get(':id/journey')
-  async getJourney(@Param('id') id: string) {
+  @UseGuards(MiniappAuthGuard)
+  async getJourney(@Param('id') id: string, @CurrentMiniappUser() user: MiniappRequestUser) {
+    this.assertSelf(id, user.userId)
     return this.usersService.getJourney(id)
   }
 
   @Get('me/orders')
-  async getMyOrders(
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.getMyOrders(uid)
+  @UseGuards(MiniappAuthGuard)
+  async getMyOrders(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getMyOrders(user.userId)
   }
 
   @Get('me/registrations')
-  async getMyRegistrations(
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.getMyRegistrations(uid)
+  @UseGuards(MiniappAuthGuard)
+  async getMyRegistrations(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getMyRegistrations(user.userId)
   }
 
   @Get('me/registration-profile')
-  async getRegistrationProfile(
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const uid = this.resolveAuthenticatedUserId(userId, headerUserId, authorization)
-    return this.usersService.getRegistrationProfile(uid)
+  @UseGuards(MiniappAuthGuard)
+  async getRegistrationProfile(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getRegistrationProfile(user.userId)
   }
 
   @Get('me/invoice-profile')
-  async getInvoiceProfile(
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.getInvoiceProfile(uid)
+  @UseGuards(MiniappAuthGuard)
+  async getInvoiceProfile(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getInvoiceProfile(user.userId)
   }
 
   @Put('me/invoice-profile')
+  @UseGuards(MiniappAuthGuard)
   async updateInvoiceProfile(
     @Body() body: any,
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
+    @CurrentMiniappUser() user: MiniappRequestUser,
   ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.saveInvoiceProfile(uid, body)
+    return this.usersService.saveInvoiceProfile(user.userId, body)
   }
 
   @Get('me/invoice-orders')
-  async getInvoiceOrders(
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.getInvoiceOrders(uid)
+  @UseGuards(MiniappAuthGuard)
+  async getInvoiceOrders(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getInvoiceOrders(user.userId)
   }
 
   @Get('me/invoice-requests')
-  async getInvoiceRequests(
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
-  ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.getInvoiceRequests(uid)
+  @UseGuards(MiniappAuthGuard)
+  async getInvoiceRequests(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getInvoiceRequests(user.userId)
+  }
+
+  @Get('me/invoices')
+  @UseGuards(MiniappAuthGuard)
+  async getInvoicesAlias(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getInvoiceRequests(user.userId)
   }
 
   @Post('me/invoice-requests')
+  @UseGuards(MiniappAuthGuard)
   async createInvoiceRequest(
     @Body('orderId', ParseIntPipe) orderId: number,
-    @Query('userId') userId: string,
-    @Headers('x-user-id') headerUserId: string,
-    @Headers('authorization') authorization: string,
+    @CurrentMiniappUser() user: MiniappRequestUser,
   ) {
-    const uid = this.resolveCurrentUserId(userId, headerUserId, authorization)
-    return this.usersService.createInvoiceRequest(uid, orderId)
+    return this.usersService.createInvoiceRequest(user.userId, orderId)
   }
 
-  private resolveCurrentUserId(queryUserId?: string, headerUserId?: string, authorization?: string): string {
-    const userId = headerUserId || queryUserId
-    if (!userId) throw new BadRequestException('userId is required')
-    if (!authorization?.startsWith('Bearer ')) throw new BadRequestException('请先完成登录')
-    return userId
+  @Post('me/invoices')
+  @UseGuards(MiniappAuthGuard)
+  async createInvoiceAlias(
+    @Body('orderId', ParseIntPipe) orderId: number,
+    @CurrentMiniappUser() user: MiniappRequestUser,
+  ) {
+    return this.usersService.createInvoiceRequest(user.userId, orderId)
   }
 
-  private resolveAuthenticatedUserId(queryUserId?: string, headerUserId?: string, authorization?: string): string {
-    const token = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : ''
-    const userId = (headerUserId || '').trim()
-    if (!token || !userId) throw new UnauthorizedException('请先完成登录')
-    if (!userId.startsWith('user_')) throw new UnauthorizedException('请先完成登录')
-    if (!token.startsWith('xztok_') || !token.endsWith(`_${userId.slice(0, 12)}`)) throw new UnauthorizedException('请先完成登录')
-    if (queryUserId && queryUserId !== userId) throw new UnauthorizedException('不能读取其他用户资料')
-    return userId
+  private assertSelf(pathUserId: string, tokenUserId: string) {
+    if (pathUserId !== tokenUserId) throw new ForbiddenException('不能访问其他用户数据')
   }
 }

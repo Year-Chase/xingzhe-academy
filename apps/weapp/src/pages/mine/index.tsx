@@ -76,15 +76,14 @@ export default function MinePage() {
   // ── Load profile ──
   const loadProfile = async () => {
     if (!isLoggedIn()) { setError('请先完成登录'); setLoading(false); return }
-    const uid = getUserId()
     setLoading(true); setError('')
     try {
       const [profileRes, postpayRes] = await Promise.all([
-        Taro.request({ url: `${API}/users/${uid}/profile` }),
-        Taro.request({ url: `${API}/orders/my-postpay?userId=${uid}` }).catch(() => ({ data: [] })),
+        Taro.request({ url: `${API}/users/me/profile`, header: userAuthHeader() }),
+        Taro.request({ url: `${API}/activity/my/postpay-orders`, header: userAuthHeader() }).catch(() => ({ data: [] })),
       ])
       const registrationsRes = await Taro.request({
-        url: `${API}/users/me/registrations?userId=${uid}`,
+        url: `${API}/users/me/registrations`,
         header: userAuthHeader(),
       }).catch(() => ({ data: { items: [], pendingCheckinCount: 0 } }))
       setProfile(profileRes.data as UserProfile)
@@ -109,10 +108,9 @@ export default function MinePage() {
   // ── Enter edit mode ──
   const startEdit = async () => {
     if (!profile) return
-    const uid = getUserId()
     try {
       const res = await Taro.request({
-        url: `${API}/users/${uid}/profile`,
+        url: `${API}/users/me/profile`,
         header: userAuthHeader(),
       })
       if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -185,7 +183,7 @@ export default function MinePage() {
       Taro.showToast({ title: '保存成功', icon: 'success' })
       setEditing(false)
       // Re-fetch
-      const res = await Taro.request({ url: `${API}/users/${uid}/profile` })
+      const res = await Taro.request({ url: `${API}/users/me/profile`, header: userAuthHeader() })
       const p = res.data as UserProfile
       setProfile(p)
       saveStoredProfile(p)

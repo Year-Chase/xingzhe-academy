@@ -13,6 +13,7 @@ import { CertificateTemplate } from '../certificate/entities/certificate-templat
 import { UserInvoiceProfile, UserInvoiceType } from './entities/user-invoice-profile.entity'
 import { UserRegistrationProfile } from './entities/user-registration-profile.entity'
 import { ContentSecurityService } from '../common/content-security.service'
+import { MiniappJwtService } from '../auth/miniapp-jwt.service'
 
 const MOCK_CODE_MAP: Record<string, string> = {
   'mock-code': 'mock_openid_default',
@@ -48,6 +49,7 @@ export class UsersService {
     @InjectRepository(CertificateTemplate)
     private readonly certTemplateRepo: Repository<CertificateTemplate>,
     private readonly contentSecurity: ContentSecurityService,
+    private readonly miniappJwt: MiniappJwtService,
   ) {}
 
   // ──── Openid resolution ────
@@ -81,9 +83,8 @@ export class UsersService {
     }
   }
 
-  // ──── Generate a simple session token ────
   private generateToken(userId: string): string {
-    return `xztok_${randomUUID().replace(/-/g, '')}_${userId.slice(0, 12)}`
+    return this.miniappJwt.issueToken(userId)
   }
 
   private maskPhone(phone?: string | null): string | null {

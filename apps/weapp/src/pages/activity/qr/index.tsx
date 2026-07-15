@@ -2,7 +2,7 @@ import { View, Text, Button, Image } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro'
 import { useState, useEffect, useCallback } from 'react'
 import qrcode from 'qrcode-generator'
-import { getUserId, userAuthHeader } from '../../../utils/user'
+import { userAuthHeader } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
@@ -82,12 +82,12 @@ export default function QRPage() {
         if (q.status === 'ACTIVE') { setQrStatus('ACTIVE') }
         else if (q.status === 'CHECKED_IN') { setQrStatus('CHECKED_IN') }
         else {
-          const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
+          const s = await Taro.request({ url: `${API}/activity/${id}/status`, header: userAuthHeader() })
           const st = (s.data as any)?.status
           setQrStatus(st === 'CHECKED_IN' ? 'CHECKED_IN' : 'EXPIRED')
         }
       } catch (qrError) {
-        const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
+        const s = await Taro.request({ url: `${API}/activity/${id}/status`, header: userAuthHeader() })
         const st = (s.data as any)?.status
         if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
         else if (d.endTime && new Date(d.endTime).getTime() < Date.now()) { setError('活动已结束'); setQrStatus('EXPIRED') }
@@ -96,7 +96,7 @@ export default function QRPage() {
       }
     } catch (e) {
       try {
-        const s = await Taro.request({ url: `${API}/activity/${id}/status?userId=${getUserId()}` })
+        const s = await Taro.request({ url: `${API}/activity/${id}/status`, header: userAuthHeader() })
         const st = (s.data as any)?.status
         if (st === 'CHECKED_IN') setQrStatus('CHECKED_IN')
         else if (st === 'EXPIRED') { setError('二维码已过期，请重新加载'); setQrStatus('EXPIRED') }

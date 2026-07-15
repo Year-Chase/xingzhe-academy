@@ -169,6 +169,8 @@ backend/src/auth/
 AdminAuthController（POST /admin/auth/login）
 AdminTokenService（HMAC-SHA256 自签名 token）
 JwtAuthGuard（守卫 /admin/* 路由）
+MiniappJwtService（小程序用户态 JWT 签发与验签）
+MiniappAuthGuard（守卫小程序私有路由，从 Bearer JWT 确定当前用户）
 AuthModule
 
 backend/src/config/
@@ -320,7 +322,9 @@ returnUrl
 
 ## V2.8-Final 系统事实
 
-- 小程序登录态继续使用现有 `Authorization` 与 `X-User-Id` 机制；敏感接口必须从登录态确定当前用户。
+- V2.9A-1B 后，小程序私有接口只使用 `Authorization: Bearer <miniapp JWT>`；后端验证签名、过期时间、`typ=miniapp` 和用户状态后写入 `request.user.userId`。
+- 旧 `xztok_` token 和不匹配的 `X-User-Id` / query.userId / body.userId 在受保护接口上必须被拒绝。
+- Admin 认证仍使用 Admin HMAC token + `JwtAuthGuard`，不得与小程序 JWT 混用。
 - `identityType = 工作人员` 是小程序工作人员工具和扫码核销权限来源；普通用户资料接口禁止修改该字段。
 - 公开 `POST /activity/:id/checkin` 已禁用；Admin 手机核销保留；工作人员核销走 `/staff/checkin/scan`。
 - 核销对象是 `ActivityRegistration`，最终状态仍是一条报名最多一次最终签到。

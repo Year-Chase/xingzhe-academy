@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect, useMemo } from 'react'
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
-import { getUserId, isLoggedIn } from '../../utils/user'
+import { isLoggedIn, userAuthHeader } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
 
@@ -45,10 +45,9 @@ export default function TrailPage() {
 
   const loadJourney = async () => {
     if (!isLoggedIn()) { setNeedLogin(true); setLoading(false); return }
-    const uid = getUserId()
     setLoading(true); setError(''); setNeedLogin(false)
     try {
-      const res = await Taro.request({ url: `${API}/users/${uid}/journey` })
+      const res = await Taro.request({ url: `${API}/users/me/journey`, header: userAuthHeader() })
       setData(res.data as JourneyData)
     } catch (e) { console.error('[trail]', e); setError('加载失败') }
     finally { setLoading(false) }

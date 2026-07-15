@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect, useMemo } from 'react'
 import Taro from '@tarojs/taro'
-import { getUserId, isLoggedIn } from '../../../utils/user'
+import { isLoggedIn, userAuthHeader } from '../../../utils/user'
 
 import { API_BASE_URL as API } from '../../../config/api'
 
@@ -28,10 +28,9 @@ export default function MemoriesPage() {
 
   const load = async () => {
     if (!isLoggedIn()) { setError('请先完成登录'); setLoading(false); return }
-    const uid = getUserId()
     setLoading(true); setError('')
     try {
-      const res = await Taro.request({ url: `${API}/users/${uid}/journey` })
+      const res = await Taro.request({ url: `${API}/users/me/journey`, header: userAuthHeader() })
       setData(((res.data as any)?.memories || []) as MemoryData[])
     } catch (e) { console.error('[trail-memories]', e); setError('加载失败') }
     finally { setLoading(false) }

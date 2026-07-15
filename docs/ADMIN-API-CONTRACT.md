@@ -179,19 +179,17 @@ POST /admin/activity//close
 GET /activity
 GET /activity/all?page=&limit=
 GET /activity/
-GET /activity//status?userId=
+GET /activity//status
 POST /activity//enroll-pay
 GET /activity//qr
-POST /activity//checkin
 GET /activity//participants
 
 V2.8.3 用户常用报名资料：
 
-GET /users/me/registration-profile?userId=
+GET /users/me/registration-profile
 
 Header:
-- Authorization: Bearer xztok_...
-- X-User-Id: user_xxx
+- Authorization: Bearer <miniapp JWT>
 
 返回：
 - userId
@@ -206,6 +204,7 @@ Header:
 规则：
 - 用于小程序报名补充信息自动带出
 - 不写入小程序 Storage
+- 后端从 miniapp JWT 确定当前用户，不接受 `userId` query/header/body 切换用户
 - 身份证号不得出现在 URL query 或日志中
 
 POST /activity//enroll-pay
@@ -514,7 +513,6 @@ POST /activity/:id/enroll-pay
 
 ```json
 {
-  "userId": "user_xxx",
   "registrationInfo": {
     "realName": "张三",
     "phone": "13800000000",
@@ -526,7 +524,7 @@ POST /activity/:id/enroll-pay
 }
 ```
 
-规则：idCardNo 不得出现在 URL query。禁止恢复 POST /activity/:id/register 和 POST /activity/:id/pay。
+规则：当前用户由 `Authorization: Bearer <miniapp JWT>` 确定；idCardNo 不得出现在 URL query。禁止恢复 POST /activity/:id/register 和 POST /activity/:id/pay。
 
 ### 13.4 CRM 类型管理
 
@@ -561,3 +559,13 @@ openid
   - `POST /staff/checkin/scan`
 - 工作人员权限由用户 `identityType = 工作人员` 判断；普通用户接口不能修改 `identityType`，Admin CRM 类型接口仍可修改。
 - Admin 订单详情接口 `GET /admin/orders/:id` 返回订单、活动摘要、用户摘要、金额、后付款、退款、发票和真实字段时间线，敏感信息默认脱敏。
+
+## V2.9A-1B 小程序用户态认证
+
+- `POST /users/wechat-login` 返回标准 Bearer JWT，payload 包含 `sub`、`typ=miniapp`、`ver=1`、`iat`、`exp`。
+- 小程序私有接口统一使用 `Authorization: Bearer <miniapp JWT>`。
+- 小程序端不再发送 `X-User-Id`，不再通过 query/body/path 中的 `userId` 作为身份来源。
+- 后端 MiniappAuthGuard 验证签名、过期时间、`typ=miniapp`、用户存在且状态为 ACTIVE，并将 `request.user.userId` 作为唯一身份来源。
+- 为短期兼容旧客户端，受保护接口如收到 `X-User-Id`、query.userId 或 body.userId，必须与 JWT `sub` 一致；不一致返回 403。
+- 旧 `xztok_` token 在受保护的小程序接口上必须被拒绝。
+- Admin `/admin/*` 仍使用既有 `JwtAuthGuard` 与 Admin HMAC token，不与小程序 JWT 混用。

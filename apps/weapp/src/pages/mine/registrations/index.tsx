@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { getUserId, isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
+import { isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
 
 import { API_BASE_URL as API } from '../../../config/api'
 
@@ -37,11 +37,10 @@ export default function RegistrationsPage() {
       navigateToLoginWithRedirect({ returnUrl: '/pages/mine/registrations/index', action: 'OPEN_REGISTRATION' })
       return
     }
-    const uid = getUserId()
     setLoading(true); setError('')
     try {
       const res = await Taro.request({
-        url: `${API}/users/me/registrations?userId=${uid}`,
+        url: `${API}/users/me/registrations`,
         header: userAuthHeader(),
       })
       setItems(((res.data as any)?.items || []) as RegistrationItem[])

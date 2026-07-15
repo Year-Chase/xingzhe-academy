@@ -1,7 +1,7 @@
 import { View, Text, ScrollView, Image } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro from '@tarojs/taro'
-import { getUserId, isLoggedIn } from '../../../utils/user'
+import { isLoggedIn, userAuthHeader } from '../../../utils/user'
 
 import { API_BASE_URL as API } from '../../../config/api'
 
@@ -25,7 +25,7 @@ export default function CertificatesPage() {
     if (!isLoggedIn()) { Taro.reLaunch({ url: '/pages/auth/login/index' }); return }
     setLoading(true); setError('')
     try {
-      const res = await Taro.request({ url: `${API}/users/${getUserId()}/journey` })
+      const res = await Taro.request({ url: `${API}/users/me/journey`, header: userAuthHeader() })
       const rawCerts = ((res.data as any)?.certificates || []) as CertItem[]
       // Sort by activity end time (issuedAt) desc — same rule as Trail page
       const getSortTime = (c: CertItem) => c.issuedAt || c.activityDate || ''

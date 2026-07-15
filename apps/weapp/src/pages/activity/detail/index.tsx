@@ -1,7 +1,7 @@
 import { View, Text, Button, ScrollView, Image, Swiper, SwiperItem } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro, { useDidShow, useRouter } from '@tarojs/taro'
-import { consumeLoginReturnAction, getUserId, isLoggedIn, navigateToLoginWithRedirect } from '../../../utils/user'
+import { consumeLoginReturnAction, getUserId, isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
@@ -123,13 +123,14 @@ export default function ActivityDetail() {
   const load = useCallback(async (activityId: number) => {
     setLoading(true); setError('')
     try {
-      const uid = getUserId()
+      const loggedIn = isLoggedIn()
+      const authHeader = userAuthHeader()
       const [d, s, p, profileRes, orderRes] = await Promise.all([
         Taro.request({ url: `${API}/activity/${activityId}` }),
-        Taro.request({ url: `${API}/activity/${activityId}/status?userId=${uid}` }),
-        Taro.request({ url: `${API}/activity/${activityId}/participants?userId=${uid}` }).catch(() => ({ data: [] })),
-        Taro.request({ url: `${API}/users/${uid}/profile` }).catch(() => ({ data: {} })),
-        Taro.request({ url: `${API}/activity/${activityId}/order-status?userId=${uid}` }).catch(() => ({ data: null })),
+        loggedIn ? Taro.request({ url: `${API}/activity/${activityId}/status`, header: authHeader }) : Promise.resolve({ data: { status: 'NOT_REGISTERED' } }),
+        Taro.request({ url: `${API}/activity/${activityId}/participants` }).catch(() => ({ data: [] })),
+        loggedIn ? Taro.request({ url: `${API}/users/me/profile`, header: authHeader }).catch(() => ({ data: {} })) : Promise.resolve({ data: {} }),
+        loggedIn ? Taro.request({ url: `${API}/activity/${activityId}/order-status`, header: authHeader }).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
       ])
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
@@ -183,11 +184,10 @@ export default function ActivityDetail() {
     setShowPayConfirm(false)
     if (acting) return; setActing(true)
     try {
-      const uid = getUserId()
       const res = await Taro.request({
         method: 'POST',
-        url: `${API}/activity/${id}/enroll-pay?userId=${uid}`,
-        header: { 'content-type': 'application/json' },
+        url: `${API}/activity/${id}/enroll-pay`,
+        header: { 'content-type': 'application/json', ...userAuthHeader() },
       })
       if ((res.data as any)?.status === 'PAID') {
         Taro.showToast({ title: '报名成功', icon: 'success' })
@@ -208,10 +208,10 @@ export default function ActivityDetail() {
     if (!orderInfo?.id || postpayActing) return
     setPostpayActing(true)
     try {
-      const uid = getUserId()
       const res = await Taro.request({
         method: 'POST',
-        url: `${API}/orders/${orderInfo.id}/postpay/mock-pay?userId=${uid}`,
+        url: `${API}/orders/${orderInfo.id}/postpay/mock-pay`,
+        header: userAuthHeader(),
       })
       if ((res.data as any)?.postpayStatus === 'PAID') {
         Taro.showToast({ title: '后付款已完成', icon: 'success' })

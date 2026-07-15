@@ -1,7 +1,7 @@
 import { View, Text, Input, Picker, Image } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { getRegistrationProfile, getUserId, isLoggedIn } from '../../../utils/user'
+import { getRegistrationProfile, isLoggedIn, userAuthHeader } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
 import { API_BASE_URL as API } from '../../../config/api'
@@ -113,8 +113,6 @@ export default function RegistrationInfoPage() {
       Taro.reLaunch({ url: '/pages/auth/login/index' })
       return
     }
-    const uid = getUserId()
-
     setSubmitting(true)
     try {
       const regInfo: any = {}
@@ -122,9 +120,9 @@ export default function RegistrationInfoPage() {
 
       const res = await Taro.request({
         method: 'POST',
-        url: `${API}/activity/${activityId}/enroll-pay?userId=${uid}`,
+        url: `${API}/activity/${activityId}/enroll-pay`,
         data: { registrationInfo: regInfo },
-        header: { 'content-type': 'application/json' },
+        header: { 'content-type': 'application/json', ...userAuthHeader() },
       })
 
       if ((res.data as any)?.status === 'PAID') {

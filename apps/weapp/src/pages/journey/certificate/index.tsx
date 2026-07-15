@@ -1,7 +1,7 @@
 import { View, Text, Image, Button } from '@tarojs/components'
 import { useState, useEffect } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { getUserId } from '../../../utils/user'
+import { isLoggedIn, userAuthHeader } from '../../../utils/user'
 
 import { API_BASE_URL as API } from '../../../config/api'
 
@@ -36,11 +36,10 @@ export default function CertificatePage() {
     const certId = p.certificateId as string
     if (!certId) { setError('参数异常'); setLoading(false); return }
 
-    const uid = getUserId()
-    if (!uid) { setError('未登录'); setLoading(false); return }
+    if (!isLoggedIn()) { setError('未登录'); setLoading(false); return }
 
     setLoading(true)
-    Taro.request({ url: `${API}/users/${uid}/journey` }).then(res => {
+    Taro.request({ url: `${API}/users/me/journey`, header: userAuthHeader() }).then(res => {
       const allCerts = ((res.data as any)?.certificates || []) as CertData[]
       const found = allCerts.find(c => c.certificateId === certId)
       if (found) setCert(found)

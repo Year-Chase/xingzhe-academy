@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
 import { API_BASE_URL as API } from '../../../config/api'
 import { formatBeijingDateTime } from '../../../utils/date'
-import { getUserId, isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
+import { isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
 
 const C = {
   bg: '#F7F6F2',
@@ -60,11 +60,10 @@ export default function OrdersPage() {
       navigateToLoginWithRedirect({ returnUrl: '/pages/mine/orders/index', action: 'OPEN_ORDER' })
       return
     }
-    const uid = getUserId()
     setLoading(true); setError('')
     try {
       const res = await Taro.request({
-        url: `${API}/users/me/orders?userId=${uid}`,
+        url: `${API}/users/me/orders`,
         header: userAuthHeader(),
       })
       setOrders(((res.data as any)?.items || []) as OrderItem[])
@@ -84,10 +83,10 @@ export default function OrdersPage() {
     if (actingKey) return
     setActingKey(`postpay-${order.orderId}`)
     try {
-      const uid = getUserId()
       const res = await Taro.request({
         method: 'POST',
-        url: `${API}/orders/${order.orderId}/postpay/mock-pay?userId=${uid}`,
+        url: `${API}/orders/${order.orderId}/postpay/mock-pay`,
+        header: userAuthHeader(),
       })
       if ((res.data as any)?.postpayStatus === 'PAID') {
         Taro.showToast({ title: '后付款已完成', icon: 'success' })
@@ -114,10 +113,9 @@ export default function OrdersPage() {
     }
     setActingKey(`invoice-${order.orderId}`)
     try {
-      const uid = getUserId()
       const res = await Taro.request({
         method: 'POST',
-        url: `${API}/users/me/invoice-requests?userId=${uid}`,
+        url: `${API}/users/me/invoice-requests`,
         data: { orderId: order.orderId },
         header: { 'content-type': 'application/json', ...userAuthHeader() },
       })

@@ -1,6 +1,8 @@
-import { Controller, Get, Headers, Post, Param, Query, Body, ParseIntPipe, UnauthorizedException } from '@nestjs/common' 
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
 import { ActivityService } from './activity.service' 
 import { ActivityFlowService } from './activity-flow.service' 
+import { MiniappAuthGuard, MiniappRequestUser } from '../auth/miniapp-auth.guard'
+import { CurrentMiniappUser } from '../auth/current-miniapp-user.decorator'
 
 @Controller() 
 export class ActivityController { 
@@ -126,73 +128,68 @@ export class ActivityController {
   }
   
   @Get('activity/:id/status') 
+  @UseGuards(MiniappAuthGuard)
   async getStatus( 
     @Param('id', ParseIntPipe) id: number, 
-    @Query('userId') userId: string, 
+    @CurrentMiniappUser() user: MiniappRequestUser,
   ) { 
-    if (!userId) return { status: 'NOT_REGISTERED' } 
-    return this.flow.getUserStatus(userId, id) 
+    return this.flow.getUserStatus(user.userId, id)
   } 
     @Get('activity/:id/qr') 
+    @UseGuards(MiniappAuthGuard)
     async getQR( 
       @Param('id', ParseIntPipe) id: number, 
-      @Headers('x-user-id') headerUserId: string,
-      @Headers('authorization') authorization: string,
+      @CurrentMiniappUser() user: MiniappRequestUser,
     ) { 
-      const userId = this.resolveAuthenticatedUserId(headerUserId, authorization)
-      return this.flow.getQRCodeForUser(userId, id)
+      return this.flow.getQRCodeForUser(user.userId, id)
     } 
         
         @Post('activity/:id/enroll-pay')
+        @UseGuards(MiniappAuthGuard)
         async enrollPay(
           @Param('id', ParseIntPipe) id: number,
-          @Query('userId') userId: string,
+          @CurrentMiniappUser() user: MiniappRequestUser,
           @Body() body: any,
         ) {
-          if (!userId) return { error: 'userId is required' }
-          return this.flow.enrollPay(userId, id, body?.registrationInfo || undefined)
+          return this.flow.enrollPay(user.userId, id, body?.registrationInfo || undefined)
         } 
         
         @Get('activity/:id/participants')
         async getParticipants(
           @Param('id', ParseIntPipe) id: number,
-          @Query('userId') userId: string,
         ) {
-          return this.flow.getParticipants(id, userId || '1')
+          return this.flow.getParticipants(id, '')
         }
 
         // ── V2.8-D: Postpay endpoints ──
 
         @Get('activity/:id/order-status')
+        @UseGuards(MiniappAuthGuard)
         async getOrderStatus(
           @Param('id', ParseIntPipe) id: number,
-          @Query('userId') userId: string,
+          @CurrentMiniappUser() user: MiniappRequestUser,
         ) {
-          if (!userId) return null
-          return this.flow.getOrderByActivityAndUser(id, userId)
+          return this.flow.getOrderByActivityAndUser(id, user.userId)
         }
 
         @Get('orders/my-postpay')
-        async getMyPostpayOrders(@Query('userId') userId: string) {
-          if (!userId) return []
-          return this.flow.getUserPostpayOrders(userId)
+        @UseGuards(MiniappAuthGuard)
+        async getMyPostpayOrders(@CurrentMiniappUser() user: MiniappRequestUser) {
+          return this.flow.getUserPostpayOrders(user.userId)
+        }
+
+        @Get('activity/my/postpay-orders')
+        @UseGuards(MiniappAuthGuard)
+        async getMyPostpayOrdersAlias(@CurrentMiniappUser() user: MiniappRequestUser) {
+          return this.flow.getUserPostpayOrders(user.userId)
         }
 
         @Post('orders/:orderId/postpay/mock-pay')
+        @UseGuards(MiniappAuthGuard)
         async mockPostpay(
           @Param('orderId', ParseIntPipe) orderId: number,
-          @Query('userId') userId: string,
+          @CurrentMiniappUser() user: MiniappRequestUser,
         ) {
-          if (!userId) return { error: 'userId is required' }
-          return this.flow.mockCompletePostpay(orderId, userId)
-        }
-
-        private resolveAuthenticatedUserId(headerUserId?: string, authorization?: string): string {
-          const token = authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length).trim() : ''
-          const userId = (headerUserId || '').trim()
-          if (!token || !userId) throw new UnauthorizedException('请先完成登录')
-          if (!userId.startsWith('user_')) throw new UnauthorizedException('请先完成登录')
-          if (!token.startsWith('xztok_') || !token.endsWith(`_${userId.slice(0, 12)}`)) throw new UnauthorizedException('请先完成登录')
-          return userId
+          return this.flow.mockCompletePostpay(orderId, user.userId)
         }
       }

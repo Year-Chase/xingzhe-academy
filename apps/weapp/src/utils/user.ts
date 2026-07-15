@@ -29,7 +29,12 @@ export function getStoredUserId(): string {
 }
 
 export function getStoredToken(): string {
-  return Taro.getStorageSync('xingzhe_auth_token') || ''
+  const token = Taro.getStorageSync('xingzhe_auth_token') || ''
+  if (typeof token === 'string' && token.startsWith('xztok_')) {
+    clearStoredLoginState()
+    return ''
+  }
+  return token
 }
 
 export function getStoredProfile(): any | null {
@@ -86,16 +91,20 @@ export function isLoggedIn(): boolean {
   return !!(uid && tok)
 }
 
-/**
- * Global logout: clear all login-related storage + navigate to login page.
- */
-export function logoutUser() {
+export function clearStoredLoginState() {
   Taro.removeStorageSync('xingzhe_user_id')
   Taro.removeStorageSync('xingzhe_auth_token')
   Taro.removeStorageSync(USER_PROFILE_STORAGE_KEY)
   Taro.removeStorageSync('xingzhe_reginfo_pending')
   Taro.removeStorageSync(LOGIN_REDIRECT_KEY)
   Taro.removeStorageSync(LOGIN_RETURN_ACTION_KEY)
+}
+
+/**
+ * Global logout: clear all login-related storage + navigate to login page.
+ */
+export function logoutUser() {
+  clearStoredLoginState()
   Taro.reLaunch({ url: '/pages/auth/login/index' })
 }
 
@@ -266,10 +275,8 @@ export async function loginWithPhone(input: {
 }
 
 export function userAuthHeader(): Record<string, string> {
-  const userId = getStoredUserId()
   const token = getStoredToken()
   return {
-    'X-User-Id': userId,
     Authorization: token ? `Bearer ${token}` : '',
   }
 }
@@ -279,7 +286,7 @@ export async function updateUserProfile(body: Record<string, any>) {
   if (!uid) throw new Error('请先完成登录')
   const res = await Taro.request({
     method: 'PATCH',
-    url: `${API}/users/${uid}/profile`,
+    url: `${API}/users/me/profile`,
     data: body,
     header: { 'content-type': 'application/json', ...userAuthHeader() },
   })
@@ -316,7 +323,7 @@ export async function uploadUserAvatar(filePath: string): Promise<string> {
   const uid = getStoredUserId()
   if (!uid) throw new Error('请先完成登录')
   const res = await Taro.uploadFile({
-    url: `${API}/users/${uid}/avatar`,
+    url: `${API}/users/me/avatar`,
     filePath,
     name: 'file',
     header: userAuthHeader(),

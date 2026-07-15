@@ -201,10 +201,18 @@ UPLOAD_DIR：上传文件保存目录（绝对路径）
 PUBLIC_UPLOAD_BASE_URL：上传文件公开访问前缀
 WECHAT_APPID / WECHAT_SECRET：微信小程序凭证
 WECHAT_LOGIN_MODE：mock / real
+MINIAPP_JWT_SECRET：小程序用户态 JWT 签名密钥，生产环境必填，至少 32 字符随机字符串，不得与 Admin token 密钥共用
+MINIAPP_JWT_EXPIRES_IN：小程序用户态 JWT 有效期，支持 s/m/h/d，例如 30d
 ENABLE_DEMO_SEED：演示数据开关（生产必须 false）
 ADMIN_USERNAME / ADMIN_PASSWORD：Admin 登录凭证
 ADMIN_TOKEN_SECRET：HMAC-SHA256 签名密钥（至少 64 字符）
 ADMIN_TOKEN_EXPIRES_SECONDS：token 过期秒数（默认 86400）
+
+小程序用户态认证：
+- `POST /users/wechat-login` 返回标准 Bearer JWT，payload 包含 `sub`、`typ=miniapp`、`ver=1`、`iat`、`exp`。
+- 小程序私有接口只发送 `Authorization: Bearer <token>`；不再发送 `X-User-Id`，也不在 query/body 中传 `userId` 作为身份来源。
+- 后端从 JWT 验签结果确定当前用户；旧 `xztok_` token 在受保护接口上必须被拒绝。
+- 生产环境缺失或弱 `MINIAPP_JWT_SECRET` 时，小程序登录和私有接口应失败，不允许使用开发默认密钥。
 
 本地：
 

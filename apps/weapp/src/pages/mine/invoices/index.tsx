@@ -2,7 +2,7 @@ import { View, Text, Input, Picker, ScrollView } from '@tarojs/components'
 import { useEffect, useState } from 'react'
 import Taro, { useDidShow, useRouter } from '@tarojs/taro'
 import { API_BASE_URL as API } from '../../../config/api'
-import { getStoredToken, getUserId, isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
+import { isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
 
 const C = {
   bg: '#F7F6F2',
@@ -49,10 +49,8 @@ export default function InvoicePage() {
   const [saving, setSaving] = useState(false)
 
   const auth = () => {
-    const uid = getUserId()
-    const token = getStoredToken()
-    if (!uid || !token) throw new Error('请先完成登录')
-    return { uid, header: userAuthHeader() }
+    if (!isLoggedIn()) throw new Error('请先完成登录')
+    return { header: userAuthHeader() }
   }
 
   const load = async () => {
@@ -62,8 +60,8 @@ export default function InvoicePage() {
     }
     setLoading(true)
     try {
-      const { uid, header } = auth()
-      const profileRes = await Taro.request({ url: `${API}/users/me/invoice-profile?userId=${uid}`, header }).catch(() => ({ data: null }))
+      const { header } = auth()
+      const profileRes = await Taro.request({ url: `${API}/users/me/invoice-profile`, header }).catch(() => ({ data: null }))
       const p = profileRes.data as any
       setProfile(p ? {
         invoiceType: p.invoiceType || 'PERSONAL',
@@ -98,10 +96,10 @@ export default function InvoicePage() {
     }
     setSaving(true)
     try {
-      const { uid, header } = auth()
+      const { header } = auth()
       const res = await Taro.request({
         method: 'PUT',
-        url: `${API}/users/me/invoice-profile?userId=${uid}`,
+        url: `${API}/users/me/invoice-profile`,
         data: profile,
         header: { 'content-type': 'application/json', ...header },
       })
