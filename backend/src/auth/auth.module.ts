@@ -1,5 +1,6 @@
 import { Module, Global } from '@nestjs/common'
 import { TypeOrmModule } from '@nestjs/typeorm'
+import { JwtModule } from '@nestjs/jwt'
 import { AdminTokenService } from './admin-token.service'
 import { AdminAuthController } from './admin-auth.controller'
 import { JwtAuthGuard } from './jwt-auth.guard'
@@ -9,7 +10,7 @@ import { User } from '../users/entities/user.entity'
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [TypeOrmModule.forFeature([User]), JwtModule.register({})],
   controllers: [AdminAuthController],
   providers: [AdminTokenService, JwtAuthGuard, MiniappJwtService, MiniappAuthGuard],
   exports: [AdminTokenService, JwtAuthGuard, MiniappJwtService, MiniappAuthGuard],

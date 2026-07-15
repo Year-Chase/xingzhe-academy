@@ -21,7 +21,7 @@ export class MiniappAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest()
     const authHeader = request.headers?.authorization || request.headers?.Authorization || ''
     if (!authHeader || !authHeader.startsWith('Bearer ')) throw new UnauthorizedException('请先完成登录')
-    const payload = this.jwt.verifyToken(authHeader.slice('Bearer '.length).trim())
+    const payload = await this.jwt.verifyToken(authHeader.slice('Bearer '.length).trim())
     const user = await this.userRepo.findOne({ where: { id: payload.sub } })
     if (!user || user.status !== 'ACTIVE') throw new UnauthorizedException('请先完成登录')
     this.assertLegacyUserHintsMatch(request, user.id)

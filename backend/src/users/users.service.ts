@@ -83,7 +83,7 @@ export class UsersService {
     }
   }
 
-  private generateToken(userId: string): string {
+  private generateToken(userId: string): Promise<string> {
     return this.miniappJwt.issueToken(userId)
   }
 
@@ -159,7 +159,7 @@ export class UsersService {
       await this.userRepo.save(user)
     }
 
-    const token = this.generateToken(user.id)
+    const token = await this.generateToken(user.id)
 
     return {
       userId: user.id,

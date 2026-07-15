@@ -212,7 +212,7 @@ ADMIN_TOKEN_EXPIRES_SECONDS：token 过期秒数（默认 86400）
 - `POST /users/wechat-login` 返回标准 Bearer JWT，payload 包含 `sub`、`typ=miniapp`、`ver=1`、`iat`、`exp`。
 - 小程序私有接口只发送 `Authorization: Bearer <token>`；不再发送 `X-User-Id`，也不在 query/body 中传 `userId` 作为身份来源。
 - 后端从 JWT 验签结果确定当前用户；旧 `xztok_` token 在受保护接口上必须被拒绝。
-- 生产环境缺失或弱 `MINIAPP_JWT_SECRET` 时，小程序登录和私有接口应失败，不允许使用开发默认密钥。
+- 生产环境缺失或弱 `MINIAPP_JWT_SECRET` 时，后端启动期应失败，不允许使用开发默认密钥。
 
 本地：
 

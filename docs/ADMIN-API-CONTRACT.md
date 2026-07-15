@@ -565,7 +565,7 @@ openid
 - `POST /users/wechat-login` 返回标准 Bearer JWT，payload 包含 `sub`、`typ=miniapp`、`ver=1`、`iat`、`exp`。
 - 小程序私有接口统一使用 `Authorization: Bearer <miniapp JWT>`。
 - 小程序端不再发送 `X-User-Id`，不再通过 query/body/path 中的 `userId` 作为身份来源。
-- 后端 MiniappAuthGuard 验证签名、过期时间、`typ=miniapp`、用户存在且状态为 ACTIVE，并将 `request.user.userId` 作为唯一身份来源。
+- 后端通过 `@nestjs/jwt` 验证签名、过期时间、`typ=miniapp`、用户存在且状态为 ACTIVE，并将 `request.user.userId` 作为唯一身份来源。
 - 为短期兼容旧客户端，受保护接口如收到 `X-User-Id`、query.userId 或 body.userId，必须与 JWT `sub` 一致；不一致返回 403。
 - 旧 `xztok_` token 在受保护的小程序接口上必须被拒绝。
 - Admin `/admin/*` 仍使用既有 `JwtAuthGuard` 与 Admin HMAC token，不与小程序 JWT 混用。
