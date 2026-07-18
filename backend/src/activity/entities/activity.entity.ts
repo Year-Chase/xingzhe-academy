@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from 'typeorm'
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany, ManyToOne, JoinColumn } from 'typeorm'
 import { ActivityRegistration } from './activity-registration.entity'
+import { ActivityCategory } from './activity-category.entity'
 
 @Entity('activity')
 export class Activity {
@@ -8,6 +9,9 @@ export class Activity {
 
   @Column({ type: 'varchar', length: 200 })
   title: string
+
+  @Column({ type: 'bigint', nullable: true })
+  categoryId: string | null
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   slogan: string
@@ -156,4 +160,8 @@ export class Activity {
 
   @OneToMany(() => ActivityRegistration, (reg) => reg.activity)
   registrations: ActivityRegistration[]
+
+  @ManyToOne(() => ActivityCategory, (category) => category.activities, { nullable: true })
+  @JoinColumn({ name: 'categoryId' })
+  category: ActivityCategory | null
 }

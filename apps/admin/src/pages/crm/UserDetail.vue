@@ -19,7 +19,9 @@ interface DetailData {
   registrations: any[]; orders: any[]; refunds: any[]; invoices: any[]
   certificates: any[]
   inviteRecords: any[]; activityInviteRecords: any[]
-  tags: { id: number; tag: string }[]; notes: { id: number; note: string; createdAt: string }[]
+  systemTags: { id: number; tag: string; name?: string; description?: string | null; ruleCode?: string | null; updatedAt?: string | null }[]
+  adminTags: { id: number; tag: string; name?: string; source?: string; updatedAt?: string | null }[]
+  notes: { id: number; note: string; createdAt: string }[]
 }
 
 const data = ref<DetailData | null>(null); const loading = ref(false)
@@ -198,9 +200,21 @@ onMounted(fetchDetail)
               </div>
             </div>
           </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 6px; max-width: 300px;">
-            <t-tag v-for="tag in data.tags" :key="tag.id" theme="primary" variant="light" closable @close="removeTag(tag.id)">{{ tag.tag }}</t-tag>
-            <span v-if="!data.tags.length" style="color: #8A9288; font-size: 13px;">-</span>
+          <div style="display: flex; flex-direction: column; gap: 8px; max-width: 320px;">
+            <div>
+              <div style="font-size: 12px; color: #8A9288; margin-bottom: 4px;">系统标签</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <t-tag v-for="tag in data.systemTags" :key="tag.id" theme="warning" variant="light">{{ tag.tag }}</t-tag>
+                <span v-if="!data.systemTags.length" style="color: #8A9288; font-size: 13px;">-</span>
+              </div>
+            </div>
+            <div>
+              <div style="font-size: 12px; color: #8A9288; margin-bottom: 4px;">管理标签</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <t-tag v-for="tag in data.adminTags" :key="tag.id" theme="primary" variant="light" closable @close="removeTag(tag.id)">{{ tag.tag }}</t-tag>
+                <span v-if="!data.adminTags.length" style="color: #8A9288; font-size: 13px;">-</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -233,12 +247,29 @@ onMounted(fetchDetail)
         </div>
       </div>
 
-      <!-- Tag Management -->
+      <!-- System Tags -->
       <div style="background: #FFFFFF; border-radius: 12px; border: 1px solid #EDE9DF; padding: 20px; margin-bottom: 16px;">
-        <h3 style="font-size: 16px; font-weight: 600; color: #18231E; margin: 0 0 12px 0;">标签管理</h3>
+        <h3 style="font-size: 16px; font-weight: 600; color: #18231E; margin: 0 0 12px 0;">系统标签</h3>
+        <div v-if="data.systemTags.length" style="display: flex; flex-direction: column; gap: 8px;">
+          <div v-for="tag in data.systemTags" :key="tag.id" style="display: grid; grid-template-columns: 120px 1fr 170px; gap: 12px; align-items: center; background: #FFF9EC; border-radius: 8px; padding: 10px 12px;">
+            <t-tag theme="warning" variant="light">{{ tag.tag }}</t-tag>
+            <div style="font-size: 13px; color: #5B625C;">{{ tag.description || '系统规则标签' }}</div>
+            <div style="font-size: 12px; color: #8A9288;">更新时间：{{ fmtFull(tag.updatedAt || null) }}</div>
+          </div>
+        </div>
+        <div v-else style="color: #8A9288; font-size: 13px;">暂无系统标签</div>
+      </div>
+
+      <!-- Admin Tags -->
+      <div style="background: #FFFFFF; border-radius: 12px; border: 1px solid #EDE9DF; padding: 20px; margin-bottom: 16px;">
+        <h3 style="font-size: 16px; font-weight: 600; color: #18231E; margin: 0 0 12px 0;">管理标签</h3>
+        <div v-if="data.adminTags.length" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+          <t-tag v-for="tag in data.adminTags" :key="tag.id" theme="primary" variant="light" closable @close="removeTag(tag.id)">{{ tag.tag }}</t-tag>
+        </div>
+        <div v-else style="color: #8A9288; font-size: 13px; margin-bottom: 12px;">暂无管理标签</div>
         <div style="display: flex; gap: 10px;">
-          <t-input v-model="newTag" placeholder="输入标签名（最多50字）" style="width: 240px;" maxlength="50" @enter="addTag" />
-          <t-button theme="primary" :loading="tagLoading" @click="addTag">添加标签</t-button>
+          <t-input v-model="newTag" placeholder="输入管理标签名（最多50字）" style="width: 240px;" maxlength="50" @enter="addTag" />
+          <t-button theme="primary" :loading="tagLoading" @click="addTag">添加管理标签</t-button>
         </div>
       </div>
 

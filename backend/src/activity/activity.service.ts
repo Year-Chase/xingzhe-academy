@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, OnModuleInit } from
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository, In } from 'typeorm'
 import { Activity } from './entities/activity.entity'
+import { ActivityCategory } from './entities/activity-category.entity'
 import { ActivityRegistration } from './entities/activity-registration.entity'
 
 @Injectable()
@@ -11,6 +12,8 @@ export class ActivityService implements OnModuleInit {
     private readonly activityRepo: Repository<Activity>,
     @InjectRepository(ActivityRegistration)
     private readonly regRepo: Repository<ActivityRegistration>,
+    @InjectRepository(ActivityCategory)
+    private readonly categoryRepo: Repository<ActivityCategory>,
   ) {}
 
   async onModuleInit() {
@@ -91,6 +94,7 @@ export class ActivityService implements OnModuleInit {
     const now = new Date()
     const items = await this.activityRepo
       .createQueryBuilder('a')
+      .leftJoinAndSelect('a.category', 'category')
       .where('a.status = :pub', { pub: 'PUBLISHED' })
       .getMany()
     return items.filter((a) => this.canDisplay(a, now))
@@ -100,6 +104,7 @@ export class ActivityService implements OnModuleInit {
   async getAll(page: number, limit: number, opts?: { ongoing?: boolean }): Promise<{ items: Activity[]; total: number }> {
     const now = new Date()
     const qb = this.activityRepo.createQueryBuilder('a')
+      .leftJoinAndSelect('a.category', 'category')
       .where('a.status = :pub', { pub: 'PUBLISHED' })
       .orderBy('a.createdAt', 'DESC')
     // V2.8-A: optional ongoing filter — backend pagination before frontend rendering
@@ -112,7 +117,7 @@ export class ActivityService implements OnModuleInit {
   }
 
   async getDetail(id: number): Promise<Activity> {
-    const a = await this.activityRepo.findOne({ where: { id } })
+    const a = await this.activityRepo.findOne({ where: { id }, relations: ['category'] })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
     return a
   }
@@ -141,7 +146,7 @@ export class ActivityService implements OnModuleInit {
   }
 
   async adminGetList(page: number, limit: number, status?: string, keyword?: string) {
-    const qb = this.activityRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC')
+    const qb = this.activityRepo.createQueryBuilder('a').leftJoinAndSelect('a.category', 'category').orderBy('a.createdAt', 'DESC')
     if (status) {
       qb.andWhere('a.status = :status', { status })
     }
@@ -153,6 +158,11 @@ export class ActivityService implements OnModuleInit {
     qb.skip((page - 1) * limit).take(limit)
     const [items, total] = await qb.getManyAndCount()
     return { items, total }
+  }
+
+  async getActiveCategories() {
+    const categories = await this.categoryRepo.find({ where: { status: 'ACTIVE' }, order: { sortOrder: 'ASC', updatedAt: 'DESC' } })
+    return categories.map((c) => ({ id: c.id, name: c.name, code: c.code }))
   }
 
   async adminCreate(dto: {
@@ -171,14 +181,17 @@ export class ActivityService implements OnModuleInit {
     coordinateType?: string; locationProvider?: string
     imageUrls?: string; contentBlocks?: string; pricingRules?: string
     postpayDate?: string
+    categoryId?: string | number | null
   }) {
     if (dto.slogan && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
     const st = new Date(dto.startTime), et = new Date(dto.endTime)
     const rs = new Date(dto.registrationStartTime), re = new Date(dto.registrationEndTime)
     if (et <= st) throw new BadRequestException('活动结束时间必须晚于活动开始时间')
     if (re <= rs) throw new BadRequestException('报名结束时间必须晚于报名开始时间')
+    const categoryId = await this.resolveCategoryIdForWrite(dto.categoryId)
     const a = this.activityRepo.create({
       title: dto.title,
+      categoryId,
       slogan: dto.slogan || '',
       province: dto.province || '',
       description: dto.description || '',
@@ -244,12 +257,14 @@ export class ActivityService implements OnModuleInit {
     coordinateType?: string; locationProvider?: string
     imageUrls?: string; contentBlocks?: string; pricingRules?: string
     postpayDate?: string
+    categoryId?: string | number | null
   }) {
     const a = await this.activityRepo.findOne({ where: { id } })
     if (!a) throw new NotFoundException(`Activity ${id} not found`)
     if (dto.slogan !== undefined && dto.slogan.length > 100) throw new BadRequestException('slogan must be <= 100 chars')
 
     if (dto.title !== undefined) a.title = dto.title
+    if (dto.categoryId !== undefined) a.categoryId = await this.resolveCategoryIdForWrite(dto.categoryId)
     if (dto.slogan !== undefined) a.slogan = dto.slogan
     if (dto.province !== undefined) a.province = dto.province
     if (dto.description !== undefined) a.description = dto.description
@@ -307,6 +322,15 @@ export class ActivityService implements OnModuleInit {
 
     await this.activityRepo.save(a)
     return { id, updated: true }
+  }
+
+  private async resolveCategoryIdForWrite(raw: string | number | null | undefined): Promise<string | null> {
+    if (raw === undefined) return null
+    if (raw === null || raw === '') return null
+    const category = await this.categoryRepo.findOne({ where: { id: String(raw) } as any })
+    if (!category) throw new BadRequestException('活动分类不存在')
+    if (category.status !== 'ACTIVE') throw new BadRequestException('停用分类不能用于新活动')
+    return String(category.id)
   }
 
   async adminPublish(id: number) {

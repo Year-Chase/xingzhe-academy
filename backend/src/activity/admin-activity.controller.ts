@@ -45,6 +45,8 @@ export class AdminActivityController {
     return {
       id: a.id,
       title: a.title,
+      categoryId: a.categoryId || null,
+      category: a.category ? { id: a.category.id, name: a.category.name, code: a.category.code } : null,
       slogan: a.slogan || '',
       province: a.province || '',
       description: a.description || '',
@@ -110,6 +112,12 @@ export class AdminActivityController {
       items.map(async (a) => this.toAdminItem(a, await this.flow.getRegisteredCount(a.id))),
     )
     return { items: enriched, total, page: p, limit: l }
+  }
+
+  // GET /admin/activity/categories — active categories for activity create/edit.
+  @Get('activity/categories')
+  async getActiveCategories() {
+    return this.activitySvc.getActiveCategories()
   }
 
   // GET /admin/activity/:id

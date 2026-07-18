@@ -28,6 +28,7 @@ export class ActivityController {
        enriched.push({
          id: a.id,
          title: a.title,
+         category: a.category ? { id: a.category.id, name: a.category.name } : null,
          description: a.description?.slice(0, 80) || '',
          location: a.location,
          startTime: a.startTime,
@@ -57,6 +58,7 @@ export class ActivityController {
       items.map(async (a) => ({
         id: a.id,
         title: a.title,
+        category: a.category ? { id: a.category.id, name: a.category.name } : null,
         description: a.description?.slice(0, 80) || '',
         location: a.location,
         startTime: a.startTime,
@@ -83,6 +85,7 @@ export class ActivityController {
     return {
       id: a.id,
       title: a.title,
+      category: a.category ? { id: a.category.id, name: a.category.name } : null,
       description: a.description,
       location: a.location,
       startTime: a.startTime,

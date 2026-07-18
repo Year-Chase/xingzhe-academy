@@ -207,6 +207,15 @@ ENABLE_DEMO_SEED：演示数据开关（生产必须 false）
 ADMIN_USERNAME / ADMIN_PASSWORD：Admin 登录凭证
 ADMIN_TOKEN_SECRET：HMAC-SHA256 签名密钥（至少 64 字符）
 ADMIN_TOKEN_EXPIRES_SECONDS：token 过期秒数（默认 86400）
+PAYMENT_PROVIDER：支付 Provider，默认 MOCK；真实微信支付阶段使用 WECHAT
+WECHAT_PAY_ENABLED：微信支付开关，默认 false；true 时启动期校验微信支付配置
+WECHAT_PAY_APP_ID：微信支付对应小程序 AppID
+WECHAT_PAY_MCH_ID：微信支付商户号
+WECHAT_PAY_CERT_SERIAL_NO：商户证书序列号
+WECHAT_PAY_PRIVATE_KEY_PATH：服务器本地商户私钥路径，不提交私钥文件
+WECHAT_PAY_API_V3_KEY：API v3 Key，仅后端环境变量保存，不下发前端
+WECHAT_PAY_NOTIFY_URL：支付回调地址
+WECHAT_PAY_REFUND_NOTIFY_URL：退款回调地址
 
 小程序用户态认证：
 - `POST /users/wechat-login` 返回标准 Bearer JWT，payload 包含 `sub`、`typ=miniapp`、`ver=1`、`iat`、`exp`。

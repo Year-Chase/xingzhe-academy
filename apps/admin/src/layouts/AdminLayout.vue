@@ -7,15 +7,19 @@ const route = useRoute()
 const collapsed = ref(false)
 
 const menuItems = [
-  { path: '/', name: 'Dashboard', label: '控制台' },
-  { path: '/activity', name: 'ActivityList', label: '活动管理' },
-  { path: '/orders', name: 'OrderList', label: '订单管理' },
-  { path: '/finance', name: 'FinanceSummary', label: '财务概览' },
-  { path: '/invoices', name: 'InvoiceList', label: '发票管理' },
-  { path: '/crm/users', name: 'UserList', label: '用户运营' },
-  { path: '/certificate-templates', name: 'CertificateTemplateList', label: '证书模板' },
-  { path: '/checkin', name: 'MobileCheckin', label: '手机核销' },
+  { path: '/', name: 'Dashboard', label: '控制台', icon: '📊' },
+  { path: '/activity', name: 'ActivityList', label: '活动管理', icon: '📅' },
+  { path: '/orders', name: 'OrderList', label: '订单管理', icon: '📋' },
+  { path: '/finance', name: 'FinanceSummary', label: '财务概览', icon: '💰' },
+  { path: '/invoices', name: 'InvoiceList', label: '发票管理', icon: '🧾' },
+  { path: '/crm/users', name: 'UserList', label: '用户运营', icon: '👥' },
+  { path: '/certificate-templates', name: 'CertificateTemplateList', label: '证书模板', icon: '🏅' },
+  { path: '/checkin', name: 'MobileCheckin', label: '手机核销', icon: '✅' },
 ]
+
+function handleMenuChange(path: string) {
+  if (path.startsWith('/')) router.push(path)
+}
 
 function logout() {
   localStorage.removeItem('admin_token')
@@ -40,7 +44,7 @@ function isActive(path: string) {
         :value="route.path"
         :collapsed="collapsed"
         style="background: transparent; border: none; margin-top: 8px;"
-        @change="(path: string) => router.push(path)"
+        @change="handleMenuChange"
       >
         <t-menu-item
           v-for="item in menuItems"
@@ -49,17 +53,18 @@ function isActive(path: string) {
           @click="router.push(item.path)"
         >
           <template #icon>
-            <span v-if="item.path === '/'">📊</span>
-            <span v-else-if="item.path === '/activity'">📅</span>
-            <span v-else-if="item.path === '/orders'">📋</span>
-            <span v-else-if="item.path === '/finance'">💰</span>
-            <span v-else-if="item.path === '/invoices'">🧾</span>
-            <span v-else-if="item.path === '/crm/users'">👥</span>
-            <span v-else-if="item.path === '/certificate-templates'">🏅</span>
-            <span v-else-if="item.path === '/checkin'">✅</span>
+            <span>{{ item.icon }}</span>
           </template>
           {{ item.label }}
         </t-menu-item>
+        <t-submenu value="system">
+          <template #icon><span>⚙️</span></template>
+          <template #title>系统管理</template>
+          <t-submenu value="dictionary">
+            <template #title>字典管理</template>
+            <t-menu-item value="/dictionary/activity-categories">活动分类</t-menu-item>
+          </t-submenu>
+        </t-submenu>
       </t-menu>
 
       <div style="position: absolute; bottom: 20px; left: 16px; right: 16px;">

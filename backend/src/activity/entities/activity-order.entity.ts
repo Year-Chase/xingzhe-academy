@@ -24,6 +24,7 @@ export class ActivityOrder {
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   refundedAmount: number
 
+  // Display cache only. The refund transaction table is the source of truth for real refunds.
   @Column({ type: 'int', default: 0 })
   refundCount: number
 
