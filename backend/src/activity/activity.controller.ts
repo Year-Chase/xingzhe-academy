@@ -1,14 +1,19 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Repository } from 'typeorm'
 import { ActivityService } from './activity.service' 
 import { ActivityFlowService } from './activity-flow.service' 
 import { MiniappAuthGuard, MiniappRequestUser } from '../auth/miniapp-auth.guard'
 import { CurrentMiniappUser } from '../auth/current-miniapp-user.decorator'
+import { OperationBanner } from './entities/operation-banner.entity'
 
 @Controller() 
 export class ActivityController { 
   constructor( 
     private readonly activitySvc: ActivityService, 
     private readonly flow: ActivityFlowService, 
+    @InjectRepository(OperationBanner)
+    private readonly bannerRepo: Repository<OperationBanner>,
   ) {} 
   
   @Get('health') 
@@ -49,11 +54,14 @@ export class ActivityController {
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('ongoing') ongoingRaw: string,
+    @Query('categoryId') categoryIdRaw: string,
   ) {
     const p = Math.max(1, parseInt(page) || 1)
     const l = Math.min(100, Math.max(1, parseInt(limit) || 50))
     const ongoing = ongoingRaw === 'true' || ongoingRaw === '1'
-    const { items, total } = await this.activitySvc.getAll(p, l, ongoing ? { ongoing: true } : undefined)
+    const categoryId = String(categoryIdRaw || '').trim()
+    const opts = { ...(ongoing ? { ongoing: true } : {}), ...(categoryId ? { categoryId } : {}) }
+    const { items, total } = await this.activitySvc.getAll(p, l, Object.keys(opts).length > 0 ? opts : undefined)
     const enriched = await Promise.all(
       items.map(async (a) => ({
         id: a.id,
@@ -75,6 +83,31 @@ export class ActivityController {
     )
     return { items: enriched, total, page: p, limit: l } 
   } 
+
+  @Get('activity/categories')
+  async getPublicCategories() {
+    return this.activitySvc.getPublicCategories()
+  }
+
+  @Get('banner/active')
+  async getActiveBanners() {
+    const now = new Date()
+    const banners = await this.bannerRepo.createQueryBuilder('b')
+      .where('b.status = :status', { status: 'ACTIVE' })
+      .andWhere('(b.startAt IS NULL OR b.startAt <= :now)', { now })
+      .andWhere('(b.endAt IS NULL OR b.endAt >= :now)', { now })
+      .orderBy('b.sortOrder', 'ASC')
+      .addOrderBy('b.updatedAt', 'DESC')
+      .getMany()
+    return banners.map((b) => ({
+      id: b.id,
+      imageUrl: b.imageUrl,
+      title: b.title,
+      description: b.description || '',
+      jumpType: b.jumpType,
+      jumpValue: b.jumpValue || '',
+    }))
+  }
   
   @Get('activity/:id')
   async getActivityDetail(@Param('id', ParseIntPipe) id: number) {

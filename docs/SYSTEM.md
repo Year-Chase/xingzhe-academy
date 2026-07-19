@@ -134,6 +134,8 @@ backend/src/activity/
 当前包含：
 
 Activity + ActivityService（活动管理）
+ActivityCategory（活动主题分类，供 Admin 分类管理、小程序主题展示和筛选）
+OperationBanner（首页运营 Banner，供 Admin 运营管理和小程序首页展示）
 ActivityRegistration（报名事实源）
 ActivityOrder（支付记录）
 ActivityQR（核销二维码）
@@ -144,6 +146,15 @@ UserRegistrationProfile（用户常用报名资料）
 ActivityFlowService（状态流转核心，enrollPay / refund / checkin / checkinForActivity / getOrders / financeSummary）
 AdminActivityController（/admin/activity/* + /admin/activity/:id/checkin）
 activity.controller.ts（小程序公开路由 /activity/*）
+AdminDictionaryController（/admin/dictionary/*，活动分类管理）
+AdminOperationController（/admin/operation/*，Banner 管理）
+
+V2.9F 首页运营：
+- `GET /banner/active` 返回当前启用且在展示时间窗内的 Banner。
+- `GET /activity/categories` 返回启用活动主题及活动数量。
+- `GET /activity/all` 支持 `categoryId` 筛选。
+- 小程序首页展示 Banner、热门主题、主题活动和全部活动入口。
+- `SERIES` 为未来 Activity Series 预留能力，当前 Admin 禁止配置。
 
 backend/src/users/
 

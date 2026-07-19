@@ -49,6 +49,7 @@ function safeFields(raw: any): string[] {
 
 interface ActivityData {
   id: number; title: string; description: string; location: string
+  category?: { id: string; name: string } | null
   locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
   startTime: string; endTime: string; capacity: number; registeredCount: number
   coverImage: string; status: string; effectivePrice: number; effectivePriceLabel: string
@@ -324,6 +325,11 @@ export default function ActivityDetail() {
 
       {/* 1. Title + status pill */}
       <View style={{ margin: '0 32rpx', padding: '32rpx 0 24rpx' }}>
+        {activity.category?.name ? (
+          <View style={{ alignSelf: 'flex-start', marginBottom: '14rpx', padding: '6rpx 16rpx', borderRadius: '999rpx', background: C.lightGreen, display: 'flex' }}>
+            <Text style={{ fontSize: '23rpx', color: C.green, fontWeight: '600' }}>{activity.category.name}</Text>
+          </View>
+        ) : null}
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
           <Text style={{ flex: 1, fontSize: '40rpx', fontWeight: '700', color: C.dark, lineHeight: '1.25' }}>{activity.title}</Text>
           <View style={{ flexShrink: 0, marginLeft: '16rpx', marginTop: '6rpx', padding: '6rpx 16rpx', borderRadius: '999rpx', background: C.lightGreen }}>

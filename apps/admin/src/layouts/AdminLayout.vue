@@ -57,6 +57,11 @@ function isActive(path: string) {
           </template>
           {{ item.label }}
         </t-menu-item>
+        <t-submenu value="operation">
+          <template #icon><span>📣</span></template>
+          <template #title>运营管理</template>
+          <t-menu-item value="/operation/banners">Banner管理</t-menu-item>
+        </t-submenu>
         <t-submenu value="system">
           <template #icon><span>⚙️</span></template>
           <template #title>系统管理</template>

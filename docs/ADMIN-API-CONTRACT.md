@@ -178,6 +178,9 @@ POST /admin/activity//close
 
 GET /activity
 GET /activity/all?page=&limit=
+GET /activity/all?page=&limit=&categoryId=
+GET /activity/categories
+GET /banner/active
 GET /activity/
 GET /activity//status
 POST /activity//enroll-pay
@@ -229,6 +232,53 @@ Request body 可带：
 - 报名成功后写 ActivityRegistrationInfo 快照
 - 报名成功后合并更新 UserRegistrationProfile
 - 未收集字段不清空常用报名资料历史值
+
+V2.9F 小程序运营接口：
+
+GET /banner/active
+
+返回当前启用且在展示时间窗内的首页 Banner：
+- id
+- imageUrl
+- title
+- description
+- jumpType：NONE / ACTIVITY / CATEGORY / SERIES
+- jumpValue
+
+规则：
+- 小程序只读公开。
+- 当前仅支持 NONE、ACTIVITY、CATEGORY 的实际跳转。
+- SERIES 为未来预留，Admin 当前不可配置。
+- 不返回密钥、用户信息、订单信息。
+
+GET /activity/categories
+
+返回启用活动主题：
+- id
+- name
+- code
+- description
+- icon（当前为空，预留）
+- count（该主题下已发布活动数量）
+
+GET /activity/all?page=&limit=&categoryId=
+
+规则：
+- `categoryId` 可选。
+- 传入后只返回该主题下的已发布活动。
+- 活动返回 `category: { id, name }`，前端不得自行拼接分类名称。
+
+Admin Banner 管理：
+
+GET /admin/operation/banners
+POST /admin/operation/banners
+PATCH /admin/operation/banners/:id
+DELETE /admin/operation/banners/:id
+
+规则：
+- 全部受 JwtAuthGuard 保护。
+- 支持 imageUrl, title, description, sortOrder, status, startAt, endAt, jumpType, jumpValue。
+- SERIES 当前返回 400，不允许配置。
 6. 报名管理 API
 
 GET /admin/activity//registrations?page=1&limit=50

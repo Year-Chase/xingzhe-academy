@@ -114,3 +114,22 @@ V2.8 已收口：
 - V3.0：正式提审、合规、监控、运营 SOP、增长体系。
 
 不回填到 V2.8：活动级工作人员权限、复杂 RBAC、签到大屏、证书重构、CRM 大改。
+
+## V2.9 运营能力路线
+
+已完成/进行中的 V2.9 能力：
+- V2.9B：支付交易与退款交易基础模型、PaymentProvider 架构、微信支付 Provider 基础设施。
+- V2.9C：活动分类 `activity_category`，用于 Admin 活动分类管理和小程序活动主题展示。
+- V2.9D：系统标签、管理标签与 CRM 聚合基础。
+- V2.9E：活动签到统计。
+- V2.9F：小程序首页运营位、Banner 管理、热门主题、主题筛选和活动主题展示。
+
+V2.9F 边界：
+- 不新增 `activity_series`。
+- 不重构 `activity_category`。
+- 不修改支付、订单、退款、签到状态机。
+
+Activity Series 预留：
+- 当某个活动主题演进为长期品牌/IP，且出现多城市、多周期、多年度运营需求时，再新增 `activity_series`。
+- 未来关系建议：Series 1:N Activity。
+- 当前 `activity_category` 继续表示活动主题分类，不承担品牌/IP 生命周期。

@@ -366,3 +366,26 @@ Deployment
 
 ### Not Included
 - 真实微信支付、真实原路退款、微信订阅消息、支付/退款账本、活动级工作人员权限。
+
+## V2.9F 小程序体验与运营位升级
+
+### Added
+- Admin 运营管理 / Banner管理。
+- `operation_banner` 首页运营位模型。
+- 小程序 `GET /banner/active` 首页 Banner。
+- 小程序 `GET /activity/categories` 活动主题列表。
+- 小程序首页热门主题、主题活动和 Banner 跳转。
+- 全部活动页主题筛选。
+- 活动卡片和活动详情展示活动主题。
+
+### Changed
+- 首页从固定图片/固定文案升级为后端运营位驱动。
+- `activity_category` 当前承担活动主题展示职责。
+
+### Migration
+- 新增 `operation_banner` 表。
+
+### Not Included
+- 不新增 `activity_series`。
+- 不修改支付、订单、退款、签到状态机。
+- 不接入真实微信支付。

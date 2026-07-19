@@ -20,6 +20,7 @@ import { UserProfile } from './activity/entities/user-profile.entity'
 import { UserInviteRecord } from './activity/entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './activity/entities/activity-invite-record.entity'
 import { ActivityRegistrationInfo } from './activity/entities/activity-registration-info.entity'
+import { OperationBanner } from './activity/entities/operation-banner.entity'
 import { User } from './users/entities/user.entity'
 import { UserInvoiceProfile } from './users/entities/user-invoice-profile.entity'
 import { UserRegistrationProfile } from './users/entities/user-registration-profile.entity'
@@ -32,7 +33,7 @@ import { PaymentModule } from './payment/payment.module'
 import { PaymentTransaction } from './payment/entities/payment-transaction.entity'
 import { RefundTransaction } from './payment/entities/refund-transaction.entity'
 
-const entities = [Activity, ActivityCategory, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, TagDefinition, UserTagRelation, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, CertificateTemplate, User, UserInvoiceProfile, UserRegistrationProfile, PaymentTransaction, RefundTransaction]
+const entities = [Activity, ActivityCategory, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, TagDefinition, UserTagRelation, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, OperationBanner, CertificateTemplate, User, UserInvoiceProfile, UserRegistrationProfile, PaymentTransaction, RefundTransaction]
 
 // Production uses MySQL from env vars; development uses local SQLite
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.DB_HOST

@@ -200,6 +200,14 @@ V3.0 部署目标：
 - 安全审计
 - 小程序正式提审
 
+V2.9F 迁移：
+- 新增 `operation_banner` 表，用于小程序首页 Banner 运营位。
+- MySQL 脚本：`backend/migrations/v2.9f-operation-banner.mysql.sql`
+- MySQL 回滚：`backend/migrations/v2.9f-operation-banner.mysql.rollback.sql`
+- SQLite 脚本：`backend/migrations/v2.9f-operation-banner.sqlite.sql`
+- SQLite 回滚：`backend/migrations/v2.9f-operation-banner.sqlite.rollback.sql`
+- 迁移不修改活动、订单、退款、签到、支付相关表。
+
 9. V2.7.3 运维固化
 
 待完成：

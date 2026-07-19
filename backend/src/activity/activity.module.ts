@@ -25,9 +25,11 @@ import { UserProfile } from './entities/user-profile.entity'
 import { UserInviteRecord } from './entities/user-invite-record.entity'
 import { ActivityInviteRecord } from './entities/activity-invite-record.entity'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
+import { OperationBanner } from './entities/operation-banner.entity'
 import { User } from '../users/entities/user.entity'
 import { UserRegistrationProfile } from '../users/entities/user-registration-profile.entity'
 import { AdminDictionaryController } from './admin-dictionary.controller'
+import { AdminOperationController } from './admin-operation.controller'
 import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
 
 @Module({
@@ -48,6 +50,7 @@ import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
       UserInviteRecord,
       ActivityInviteRecord,
       ActivityRegistrationInfo,
+      OperationBanner,
       User,
       UserRegistrationProfile,
     ]),
@@ -60,6 +63,7 @@ import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
     AdminInvoiceController,
     AdminCrmController,
     AdminDictionaryController,
+    AdminOperationController,
     StaffCheckinController,
   ],
   providers: [ActivityService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob],

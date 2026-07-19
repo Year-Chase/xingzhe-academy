@@ -101,7 +101,7 @@ export class ActivityService implements OnModuleInit {
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
   }
 
-  async getAll(page: number, limit: number, opts?: { ongoing?: boolean }): Promise<{ items: Activity[]; total: number }> {
+  async getAll(page: number, limit: number, opts?: { ongoing?: boolean; categoryId?: string }): Promise<{ items: Activity[]; total: number }> {
     const now = new Date()
     const qb = this.activityRepo.createQueryBuilder('a')
       .leftJoinAndSelect('a.category', 'category')
@@ -110,6 +110,9 @@ export class ActivityService implements OnModuleInit {
     // V2.8-A: optional ongoing filter — backend pagination before frontend rendering
     if (opts?.ongoing) {
       qb.andWhere('(a.endTime IS NULL OR a.endTime >= :now)', { now: now.toISOString() })
+    }
+    if (opts?.categoryId) {
+      qb.andWhere('a.categoryId = :categoryId', { categoryId: opts.categoryId })
     }
     qb.skip((page - 1) * limit).take(limit)
     const [items, total] = await qb.getManyAndCount()
@@ -163,6 +166,18 @@ export class ActivityService implements OnModuleInit {
   async getActiveCategories() {
     const categories = await this.categoryRepo.find({ where: { status: 'ACTIVE' }, order: { sortOrder: 'ASC', updatedAt: 'DESC' } })
     return categories.map((c) => ({ id: c.id, name: c.name, code: c.code }))
+  }
+
+  async getPublicCategories() {
+    const categories = await this.categoryRepo.find({ where: { status: 'ACTIVE' }, order: { sortOrder: 'ASC', updatedAt: 'DESC' } })
+    return Promise.all(categories.map(async (c) => ({
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      description: c.description || '',
+      icon: '',
+      count: await this.activityRepo.count({ where: { categoryId: c.id, status: 'PUBLISHED' } as any }),
+    })))
   }
 
   async adminCreate(dto: {
