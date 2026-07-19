@@ -1,12 +1,16 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common'
 import { ActivityFlowService } from './activity-flow.service'
+import { CheckinStatisticsService } from './checkin-statistics.service'
 import { MiniappAuthGuard, MiniappRequestUser } from '../auth/miniapp-auth.guard'
 import { CurrentMiniappUser } from '../auth/current-miniapp-user.decorator'
 
 @Controller('staff/checkin')
 @UseGuards(MiniappAuthGuard)
 export class StaffCheckinController {
-  constructor(private readonly flow: ActivityFlowService) {}
+  constructor(
+    private readonly flow: ActivityFlowService,
+    private readonly checkinStats: CheckinStatisticsService,
+  ) {}
 
   @Get('activities')
   getActivities(
@@ -21,5 +25,13 @@ export class StaffCheckinController {
     @Body() body: { activityId?: number; stage?: string; code?: string },
   ) {
     return this.flow.staffScanCheckin(user.userId, body)
+  }
+
+  @Get('statistics/:activityId')
+  getStatistics(
+    @CurrentMiniappUser() user: MiniappRequestUser,
+    @Param('activityId', ParseIntPipe) activityId: number,
+  ) {
+    return this.checkinStats.getStaffStatistics(user.userId, activityId)
   }
 }

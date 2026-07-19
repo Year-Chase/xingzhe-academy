@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { get, post, patch } from '@/api/client'
 import { assetUrl, API_BASE_URL } from '@/config/api'
+
+const router = useRouter()
 
 // ── V2.5B helpers ──
 const yuan = (n: number) => '¥' + (n || 0).toFixed(2)
@@ -178,6 +181,9 @@ const openDetail = async (row: ActivityItem) => {
   try { detailItem.value = await get<ActivityItem>('/admin/activity/' + row.id) } catch { detailItem.value = row }
   regInfoLoading.value = true; try { regInfoList.value = await get<any[]>('/admin/activity/' + row.id + '/registrations') } catch { regInfoList.value = [] }
   finally { regInfoLoading.value = false }
+}
+const openCheckinStatistics = (row: ActivityItem) => {
+  router.push(`/activity/${row.id}/checkin-statistics`)
 }
 
 // ── upload (reused for cover, imageUrls, memory, contentBlocks) ──
@@ -407,7 +413,7 @@ const columns = [
   { colKey: 'requiredUserInfoFields', title: '信息收集', width: 70, cell: (_h: any, { row }: any) => arrLabelCompat(safeArray(row.requiredUserInfoFields || null)) },
   { colKey: 'groupQrType', title: '活动群', width: 70, cell: (_h: any, { row }: any) => (row.groupQrType && row.groupQrType !== 'NONE' && row.groupQrImageUrl) ? '已配置' : '未配置' },
   { colKey: 'status', title: '状态', width: 70 },
-  { colKey: 'actions', title: '操作', width: 260, fixed: 'right' as const },
+  { colKey: 'actions', title: '操作', width: 310, fixed: 'right' as const },
 ]
 
 const fetchCertTemplates = async () => {
@@ -438,6 +444,7 @@ const fetchCertTemplates = async () => {
         <template #actions="{ row }">
           <t-space size="small">
             <t-button theme="default" variant="text" size="small" @click="openDetail(row)">详情</t-button>
+            <t-button theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="openCheckinStatistics(row)">签到统计</t-button>
             <t-button theme="default" variant="text" size="small" @click="openEdit(row)">编辑</t-button>
             <t-button theme="default" variant="text" size="small" @click="openMemory(row)">上传</t-button>
             <t-button v-if="row.status === 'DRAFT'" theme="default" variant="text" size="small" style="color: #2E7D5A;" @click="doPublish(row)">发布</t-button>

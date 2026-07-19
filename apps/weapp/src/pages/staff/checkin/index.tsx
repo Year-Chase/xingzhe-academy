@@ -32,6 +32,13 @@ type ScanResultState = {
   tone: 'success' | 'warning' | 'error' | 'neutral'
 }
 
+type StaffCheckinStats = {
+  validRegistrations: number
+  checkedInCount: number
+  uncheckedCount: number
+  checkinRate: number
+}
+
 const C = {
   bg: '#F7F6F2',
   white: '#FFFFFF',
@@ -75,6 +82,8 @@ export default function StaffCheckinPage() {
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [successCount, setSuccessCount] = useState(0)
+  const [activityStats, setActivityStats] = useState<StaffCheckinStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
   const [paused, setPaused] = useState(false)
   const [result, setResult] = useState<ScanResultState | null>(null)
   const scanningRef = useRef(false)
@@ -107,6 +116,7 @@ export default function StaffCheckinPage() {
       setActivities(list)
       setActivityIndex(0)
       setStage(list[0]?.paymentMode === 'PREPAY' ? 'PREPAY' : 'FULL')
+      if (list[0]?.id) loadActivityStats(list[0].id)
     } catch (e: any) {
       setResult({ code: 'LOAD_ERROR', title: e?.message || '活动加载失败', tone: 'error' })
     } finally {
@@ -117,6 +127,26 @@ export default function StaffCheckinPage() {
   useEffect(() => { loadActivities() }, [])
   useDidShow(() => { loadActivities() })
 
+  const loadActivityStats = async (activityId: number) => {
+    setStatsLoading(true)
+    try {
+      const res = await Taro.request({
+        url: `${API}/staff/checkin/statistics/${activityId}`,
+        header: userAuthHeader(),
+      })
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        handleForbidden()
+        return
+      }
+      if (res.statusCode < 200 || res.statusCode >= 300) throw new Error((res.data as any)?.message || '统计加载失败')
+      setActivityStats(res.data as StaffCheckinStats)
+    } catch (_e) {
+      setActivityStats(null)
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
   const onSelectActivity = (index: number) => {
     const activity = activities[index]
     setActivityIndex(index)
@@ -124,6 +154,8 @@ export default function StaffCheckinPage() {
     setPaused(false)
     setResult(null)
     setSuccessCount(0)
+    setActivityStats(null)
+    if (activity?.id) loadActivityStats(activity.id)
   }
 
   const buildResult = (data: any, fallbackCode = 'INVALID_QR'): ScanResultState => {
@@ -162,6 +194,7 @@ export default function StaffCheckinPage() {
 
   const startScan = async () => {
     if (scanningRef.current || !selectedActivity) return
+    const activity = selectedActivity
     setPaused(false)
     setScanning(true)
     scanningRef.current = true
@@ -178,6 +211,7 @@ export default function StaffCheckinPage() {
       setResult(next)
       if (next.code === 'CHECKIN_SUCCESS') {
         setSuccessCount(count => count + 1)
+        loadActivityStats(activity.id)
         if (mode === 'CONTINUOUS') {
           setTimeout(() => startScan(), 700)
         }
@@ -223,6 +257,23 @@ export default function StaffCheckinPage() {
           </View>
         ) : null}
       </View>
+
+      {selectedActivity ? (
+        <View style={card}>
+          <Text style={sectionTitle}>活动统计</Text>
+          {activityStats ? (
+            <View style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '12rpx' }}>
+              <Metric label='有效报名' value={String(activityStats.validRegistrations || 0)} />
+              <Metric label='已签到' value={String(activityStats.checkedInCount || 0)} />
+              <Metric label='未签到' value={String(activityStats.uncheckedCount || 0)} />
+              <Metric label='签到率' value={`${(Number(activityStats.checkinRate || 0) * 100).toFixed(1)}%`} />
+              <Metric label='本次成功' value={String(successCount)} />
+            </View>
+          ) : (
+            <Text style={{ display: 'block', fontSize: '24rpx', color: C.neutral }}>{statsLoading ? '统计加载中...' : '暂无统计数据'}</Text>
+          )}
+        </View>
+      ) : null}
 
       {selectedActivity && isPrepayActivity ? (
         <View style={card}>
@@ -285,6 +336,15 @@ function InfoLine({ label, value }: { label: string; value: string }) {
     <View style={{ marginTop: '10rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between' }}>
       <Text style={{ fontSize: '24rpx', color: C.neutral }}>{label}</Text>
       <Text style={{ fontSize: '24rpx', color: C.body, maxWidth: '460rpx', textAlign: 'right' }}>{value}</Text>
+    </View>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ width: 'calc(50% - 6rpx)', minHeight: '96rpx', borderRadius: '14rpx', background: C.lightGreen, padding: '14rpx', boxSizing: 'border-box' }}>
+      <Text style={{ display: 'block', fontSize: '22rpx', color: C.neutral }}>{label}</Text>
+      <Text style={{ display: 'block', marginTop: '6rpx', fontSize: '32rpx', fontWeight: '700', color: C.dark }}>{value}</Text>
     </View>
   )
 }

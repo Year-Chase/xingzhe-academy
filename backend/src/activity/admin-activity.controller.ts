@@ -7,6 +7,7 @@ import { extname } from 'path'
 import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
+import { CheckinStatisticsService } from './checkin-statistics.service'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
@@ -35,6 +36,7 @@ export class AdminActivityController {
   constructor(
     private readonly activitySvc: ActivityService,
     private readonly flow: ActivityFlowService,
+    private readonly checkinStats: CheckinStatisticsService,
     @InjectRepository(ActivityRegistrationInfo)
     private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
   ) {}
@@ -144,6 +146,25 @@ export class AdminActivityController {
       roomPreference: r.roomPreference || null,
       confirmedAt: r.confirmedAt,
     }))
+  }
+
+  // GET /admin/activity/:id/checkin-statistics — activity-level checkin aggregates.
+  @Get('activity/:id/checkin-statistics')
+  async getCheckinStatistics(@Param('id', ParseIntPipe) activityId: number) {
+    return this.checkinStats.getStatistics(activityId)
+  }
+
+  // GET /admin/activity/:id/checkin-records — paged checkin detail list.
+  @Get('activity/:id/checkin-records')
+  async getCheckinRecords(
+    @Param('id', ParseIntPipe) activityId: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('keyword') keyword?: string,
+    @Query('sort') sort?: string,
+  ) {
+    return this.checkinStats.getRecords(activityId, { page: Number(page || 1), limit: Number(limit || 20), status, keyword, sort })
   }
 
   // POST /admin/activity

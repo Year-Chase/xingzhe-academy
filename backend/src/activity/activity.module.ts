@@ -9,6 +9,7 @@ import { AdminCrmController } from './admin-crm.controller'
 import { StaffCheckinController } from './staff-checkin.controller'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
+import { CheckinStatisticsService } from './checkin-statistics.service'
 import { Activity } from './entities/activity.entity'
 import { ActivityCategory } from './entities/activity-category.entity'
 import { ActivityRegistration } from './entities/activity-registration.entity'
@@ -61,6 +62,6 @@ import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
     AdminDictionaryController,
     StaffCheckinController,
   ],
-  providers: [ActivityService, ActivityFlowService, SystemTagRefreshJob],
+  providers: [ActivityService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob],
 })
 export class ActivityModule {}

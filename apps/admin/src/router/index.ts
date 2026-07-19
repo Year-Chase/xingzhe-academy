@@ -15,6 +15,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'Dashboard', component: () => import('@/pages/Dashboard.vue') },
       { path: 'activity', name: 'ActivityList', component: () => import('@/pages/activity/ActivityList.vue') },
+      { path: 'activity/:id/checkin-statistics', name: 'ActivityCheckinStatistics', component: () => import('@/pages/activity/CheckinStatistics.vue') },
       { path: 'dictionary/activity-categories', name: 'ActivityCategoryList', component: () => import('@/pages/dictionary/ActivityCategoryList.vue') },
       { path: 'orders', name: 'OrderList', component: () => import('@/pages/order/OrderList.vue') },
       { path: 'finance', name: 'FinanceSummary', component: () => import('@/pages/finance/FinanceSummary.vue') },
