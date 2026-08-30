@@ -27,6 +27,7 @@ interface ActivityItem {
   coverImage?: string
   imageUrls?: any
   category?: { id: string; name: string } | null
+  series?: { id: string; name: string } | null
 }
 
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 36%, #9AB8A8 100%)'
@@ -206,7 +207,11 @@ export default function ActivityList() {
 
             <View style={{ flex: 1, minWidth: 0, paddingLeft: '22rpx', display: 'flex', flexDirection: 'column' }}>
               <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
-                {a.category?.name ? (
+                {a.series?.name ? (
+                  <View style={{ flexShrink: 0, padding: '3rpx 12rpx', background: '#EEF5EF', borderRadius: '999rpx', marginRight: '8rpx' }}>
+                    <Text style={{ fontSize: '20rpx', color: '#2E7D5A', fontWeight: '600' }}>{a.series.name}</Text>
+                  </View>
+                ) : a.category?.name ? (
                   <View style={{ flexShrink: 0, padding: '3rpx 12rpx', background: '#EEF5EF', borderRadius: '999rpx', marginRight: '8rpx' }}>
                     <Text style={{ fontSize: '20rpx', color: '#2E7D5A', fontWeight: '600' }}>{a.category.name}</Text>
                   </View>

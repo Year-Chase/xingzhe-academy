@@ -13,6 +13,8 @@ export default defineAppConfig({
     'pages/staff/checkin/index',
     'pages/auth/login/index',
     'pages/activity/detail/index',
+    'pages/activity/series/index',
+    'pages/activity/series/detail/index',
     'pages/activity/registration-info/index',
     'pages/activity/qr/index',
     'pages/activity/list/index',
@@ -23,9 +25,24 @@ export default defineAppConfig({
     backgroundColor: '#FFFFFF',
     borderStyle: 'white',
     list: [
-      { pagePath: 'pages/index/index', text: '首页' },
-      { pagePath: 'pages/trail/index', text: '行者之路' },
-      { pagePath: 'pages/mine/index', text: '我的' },
+      {
+        pagePath: 'pages/index/index',
+        text: '首页',
+        iconPath: 'assets/tabbar/home.png',
+        selectedIconPath: 'assets/tabbar/home-active.png',
+      },
+      {
+        pagePath: 'pages/trail/index',
+        text: '行者之路',
+        iconPath: 'assets/tabbar/route.png',
+        selectedIconPath: 'assets/tabbar/route-active.png',
+      },
+      {
+        pagePath: 'pages/mine/index',
+        text: '我的',
+        iconPath: 'assets/tabbar/user.png',
+        selectedIconPath: 'assets/tabbar/user-active.png',
+      },
     ],
   },
   window: {

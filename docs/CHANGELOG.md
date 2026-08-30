@@ -389,3 +389,32 @@ Deployment
 - 不新增 `activity_series`。
 - 不修改支付、订单、退款、签到状态机。
 - 不接入真实微信支付。
+
+## V2.9G Activity Series / Category / Activity 模型升级
+
+### Added
+- 新增 `activity_series` 活动系列模型，表示长期活动品牌/IP。
+- `activity.seriesId` nullable，用于关联 Activity Series；`seriesId = null` 表示独立活动。
+- Admin 活动管理新增“品牌管理”入口，支持新增、编辑、启用、停用。
+- Banner 正式支持 `SERIES` 跳转，jumpValue 保存 seriesId。
+- 小程序新增 Series 详情页，展示系列基础信息、当前有效活动和往期活动。
+- 小程序新增近期活动接口，首页展示动态 Activity 结果集。
+
+### Changed
+- Category 明确回归活动内容类型，用于全部活动筛选和运营统计。
+- 首页信息架构调整为 Banner、行者系列、近期活动、查看更多活动。
+- 首页不再展示 Category 筛选模块；全部活动页继续保留 Category 筛选。
+- 活动管理表单新增“活动归属”区域，Series 与 Category 为两个独立字段。
+- Activity 列表/详情接口返回 `series: { id, name } | null`。
+- 品牌编码由后端自动生成；品牌一句话介绍限制为 50 字。
+- 新增全部行者系列页 `/pages/activity/series/index`，首页 Series >= 5 时展示入口。
+
+### Migration
+- 新增 `activity_series` 表。
+- `activity` 新增 nullable `seriesId`，历史 Activity 默认 null。
+- 不修改 `categoryId`。
+
+### Not Included
+- 不新增“普通活动”Category。
+- 不新增近期活动实体或人工标签。
+- 不修改支付、订单、退款、鉴权、CRM、签到、证书状态机。

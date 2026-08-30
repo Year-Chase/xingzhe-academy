@@ -49,6 +49,8 @@ export class AdminActivityController {
       title: a.title,
       categoryId: a.categoryId || null,
       category: a.category ? { id: a.category.id, name: a.category.name, code: a.category.code } : null,
+      seriesId: a.seriesId || null,
+      series: a.series ? { id: a.series.id, name: a.series.name, code: a.series.code } : null,
       slogan: a.slogan || '',
       province: a.province || '',
       description: a.description || '',

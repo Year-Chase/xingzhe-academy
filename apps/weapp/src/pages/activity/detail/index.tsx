@@ -50,6 +50,7 @@ function safeFields(raw: any): string[] {
 interface ActivityData {
   id: number; title: string; description: string; location: string
   category?: { id: string; name: string } | null
+  series?: { id: string; name: string } | null
   locationName?: string; locationAddress?: string; locationLat?: number; locationLng?: number
   startTime: string; endTime: string; capacity: number; registeredCount: number
   coverImage: string; status: string; effectivePrice: number; effectivePriceLabel: string
@@ -293,6 +294,10 @@ export default function ActivityDetail() {
   const handleGoQR = () => { if (isFinished) { toastFinished(); return }; goQR() }
   const handleGroupQr = () => { if (isFinished) { toastFinished(); return }; setShowGroupQr(true) }
   const goOrders = () => Taro.navigateTo({ url: '/pages/mine/orders/index' })
+  const goSeries = () => {
+    if (!activity?.series?.id) return
+    Taro.navigateTo({ url: `/pages/activity/series/detail/index?id=${activity.series.id}` })
+  }
   const handleLocationTap = () => {
     if (canOpenActivityLocation(activity)) { openActivityLocation(activity); return }
     const text = (activity as any)?.locationAddress || (activity as any)?.locationName || activity?.location || ''
@@ -361,6 +366,13 @@ export default function ActivityDetail() {
 
       {/* 3. Info card */}
       <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)' }}>
+        {activity.series?.name ? (
+          <View onClick={goSeries} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
+            <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>属于系列</Text>
+            <Text style={{ flex: 1, fontSize: '26rpx', color: C.green, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.series.name}</Text>
+            <Text style={{ fontSize: '24rpx', color: C.secondary, marginLeft: '12rpx' }}>&gt;</Text>
+          </View>
+        ) : null}
         {(aAny.registrationStartTime || aAny.registrationEndTime) && (
           <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
             <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>报名时间</Text>

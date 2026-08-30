@@ -134,8 +134,9 @@ backend/src/activity/
 当前包含：
 
 Activity + ActivityService（活动管理）
-ActivityCategory（活动主题分类，供 Admin 分类管理、小程序主题展示和筛选）
-OperationBanner（首页运营 Banner，供 Admin 运营管理和小程序首页展示）
+ActivityCategory（活动内容类型分类，供 Admin 分类管理、全部活动筛选和运营统计）
+ActivitySeries（长期活动品牌/IP，供 Admin 品牌管理、小程序行者系列发现和 Banner 跳转）
+OperationBanner（首页运营 Banner，供 Admin Banner 管理和小程序首页展示）
 ActivityRegistration（报名事实源）
 ActivityOrder（支付记录）
 ActivityQR（核销二维码）
@@ -148,13 +149,18 @@ AdminActivityController（/admin/activity/* + /admin/activity/:id/checkin）
 activity.controller.ts（小程序公开路由 /activity/*）
 AdminDictionaryController（/admin/dictionary/*，活动分类管理）
 AdminOperationController（/admin/operation/*，Banner 管理）
+AdminActivitySeriesController（/admin/activity-series/*，品牌管理）
 
-V2.9F 首页运营：
+V2.9G 活动发现：
 - `GET /banner/active` 返回当前启用且在展示时间窗内的 Banner。
-- `GET /activity/categories` 返回启用活动主题及活动数量。
+- `GET /activity/recent` 返回近期活动：已发布、尚未结束，按活动开始时间升序，首页最多 5 条。
+- `GET /activity/series` 返回启用活动系列，按 `sortOrder` 排序。
+- `GET /activity/series/:id` 返回系列详情、当前有效活动和往期活动。
+- `GET /activity/categories` 返回启用活动分类及活动数量。
 - `GET /activity/all` 支持 `categoryId` 筛选。
-- 小程序首页展示 Banner、热门主题、主题活动和全部活动入口。
-- `SERIES` 为未来 Activity Series 预留能力，当前 Admin 禁止配置。
+- 小程序首页展示 Banner、行者系列、近期活动和“查看更多活动”入口；首页不展示 Category 筛选。
+- 行者系列 0 个隐藏、1 个单张较宽品牌卡、2-4 个横向展示、5 个及以上首页前 4 个并进入 `/pages/activity/series/index` 查看全部。
+- Banner 支持 NONE、ACTIVITY、CATEGORY、SERIES。
 
 backend/src/users/
 

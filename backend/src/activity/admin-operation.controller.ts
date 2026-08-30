@@ -4,6 +4,7 @@ import { Repository } from 'typeorm'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 import { Activity } from './entities/activity.entity'
 import { ActivityCategory } from './entities/activity-category.entity'
+import { ActivitySeries } from './entities/activity-series.entity'
 import { OperationBanner, OperationBannerJumpType } from './entities/operation-banner.entity'
 
 @Controller('admin/operation')
@@ -16,6 +17,8 @@ export class AdminOperationController {
     private readonly activityRepo: Repository<Activity>,
     @InjectRepository(ActivityCategory)
     private readonly categoryRepo: Repository<ActivityCategory>,
+    @InjectRepository(ActivitySeries)
+    private readonly seriesRepo: Repository<ActivitySeries>,
   ) {}
 
   @Get('banners')
@@ -68,7 +71,6 @@ export class AdminOperationController {
     if (creating || body?.jumpType !== undefined || body?.jumpValue !== undefined) {
       const jumpType = (body?.jumpType || 'NONE') as OperationBannerJumpType
       if (!['NONE', 'ACTIVITY', 'CATEGORY', 'SERIES'].includes(jumpType)) throw new BadRequestException('Banner跳转类型无效')
-      if (jumpType === 'SERIES') throw new BadRequestException('活动系列为预留能力，当前版本暂不可配置')
       const jumpValue = String(body?.jumpValue || '').trim()
       if (jumpType !== 'NONE' && !jumpValue) throw new BadRequestException('请填写跳转目标')
       if (jumpType === 'ACTIVITY') {
@@ -78,6 +80,10 @@ export class AdminOperationController {
       if (jumpType === 'CATEGORY') {
         const category = await this.categoryRepo.findOne({ where: { id: String(jumpValue) } as any })
         if (!category || category.status !== 'ACTIVE') throw new BadRequestException('跳转分类不存在或已停用')
+      }
+      if (jumpType === 'SERIES') {
+        const series = await this.seriesRepo.findOne({ where: { id: Number(jumpValue) } as any })
+        if (!series || series.status !== 'ACTIVE') throw new BadRequestException('跳转系列不存在或已停用')
       }
       next.jumpType = jumpType
       next.jumpValue = jumpType === 'NONE' ? null : jumpValue

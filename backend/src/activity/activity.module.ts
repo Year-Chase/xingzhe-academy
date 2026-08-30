@@ -12,6 +12,7 @@ import { ActivityFlowService } from './activity-flow.service'
 import { CheckinStatisticsService } from './checkin-statistics.service'
 import { Activity } from './entities/activity.entity'
 import { ActivityCategory } from './entities/activity-category.entity'
+import { ActivitySeries } from './entities/activity-series.entity'
 import { ActivityRegistration } from './entities/activity-registration.entity'
 import { ActivityOrder } from './entities/activity-order.entity'
 import { ActivityQR } from './entities/activity-qr.entity'
@@ -30,6 +31,7 @@ import { User } from '../users/entities/user.entity'
 import { UserRegistrationProfile } from '../users/entities/user-registration-profile.entity'
 import { AdminDictionaryController } from './admin-dictionary.controller'
 import { AdminOperationController } from './admin-operation.controller'
+import { AdminActivitySeriesController } from './admin-activity-series.controller'
 import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
 
 @Module({
@@ -37,6 +39,7 @@ import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
     TypeOrmModule.forFeature([
       Activity,
       ActivityCategory,
+      ActivitySeries,
       ActivityRegistration,
       ActivityOrder,
       ActivityQR,
@@ -64,6 +67,7 @@ import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
     AdminCrmController,
     AdminDictionaryController,
     AdminOperationController,
+    AdminActivitySeriesController,
     StaffCheckinController,
   ],
   providers: [ActivityService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob],

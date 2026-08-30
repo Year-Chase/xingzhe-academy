@@ -143,7 +143,10 @@ onMounted(fetchList)
 <template>
   <div>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-      <h2 style="font-size: 24px; font-weight: 700; color: #18231E; margin: 0;">活动分类</h2>
+      <div>
+        <h2 style="font-size: 24px; font-weight: 700; color: #18231E; margin: 0;">活动分类</h2>
+        <div style="font-size: 13px; color: #8A9288; margin-top: 6px;">活动分类用于描述活动的内容类型和运营统计维度，不代表活动品牌。长期活动品牌/IP请在“活动管理 → 品牌管理”中维护。</div>
+      </div>
       <t-button theme="primary" @click="openCreate">新建分类</t-button>
     </div>
 

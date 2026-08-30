@@ -329,51 +329,19 @@ export default function MinePage() {
 
       {/* Menu */}
       <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', border: `1rpx solid ${C.border}`, overflow: 'hidden' }}>
-        {/* 我的报名 */}
-        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
-          <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx' }}>
-            <Text style={{ fontSize: '28rpx', color: C.dark }}>我的报名</Text>
-            {pendingCheckinCount > 0 && (
-              <View style={menuBadge}>
-                <Text style={menuBadgeText}>{badgeText(pendingCheckinCount)}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
-        </View>
-        {/* 我的订单 */}
-        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/orders/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
-          <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx' }}>
-            <Text style={{ fontSize: '28rpx', color: C.dark }}>我的订单</Text>
-            {pendingPostpayCount > 0 && (
-              <View style={menuBadge}>
-                <Text style={menuBadgeText}>{badgeText(pendingPostpayCount)}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
-        </View>
-        {/* 我的证书 — navigate to cert list page */}
-        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
-          <Text style={{ fontSize: '28rpx', color: C.dark }}>我的证书</Text>
-          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
-        </View>
-        <View onClick={() => Taro.navigateTo({ url: '/pages/mine/invoices/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: `1rpx solid ${C.border}` }}>
-          <Text style={{ fontSize: '28rpx', color: C.dark }}>发票管理</Text>
-          <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
-        </View>
+        <MenuRow label='我的报名' border badge={pendingCheckinCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} />
+        <MenuRow label='我的订单' border badge={pendingPostpayCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/orders/index' })} />
+        <MenuRow label='我的证书' border onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} />
+        <MenuRow label='发票管理' border onClick={() => Taro.navigateTo({ url: '/pages/mine/invoices/index' })} />
         {isStaff && (
-          <View onClick={() => Taro.navigateTo({ url: '/pages/staff/index' })} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx' }}>
-            <Text style={{ fontSize: '28rpx', color: C.dark }}>工作人员工具</Text>
-            <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
-          </View>
+          <MenuRow label='工作人员工具' onClick={() => Taro.navigateTo({ url: '/pages/staff/index' })} />
         )}
 {/* 我的邀请 — temporarily hidden (V2.7.1) */}
       </View>
 
       <View style={{ marginTop: '32rpx', padding: '0 32rpx', textAlign: 'center' }}>
-        <View onClick={handleLogout} style={{ padding: '14rpx 0', borderRadius: '999rpx', border: `1rpx solid ${C.border}`, background: C.white }}>
-          <Text style={{ fontSize: '26rpx', color: '#B35B4B' }}>退出登录</Text>
+        <View onClick={handleLogout} style={{ height: '72rpx', borderRadius: '999rpx', border: '1rpx solid rgba(179,91,75,0.22)', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: '28rpx', color: '#B35B4B' }}>退出登录</Text>
         </View>
       </View>
 
@@ -387,21 +355,29 @@ export default function MinePage() {
 // ── Reusable components ──
 
 function Row({ label, value, last }: { label: string; value: string | null; last?: boolean }) {
+  const filled = !!value
   return (
-    <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '16rpx 0', borderBottom: last ? 'none' : `1rpx solid ${C.border}` }}>
-      <Text style={{ fontSize: '28rpx', color: C.neutral }}>{label}</Text>
-      <Text style={{ fontSize: '28rpx', color: value ? C.dark : C.secondary, maxWidth: '360rpx', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+    <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: '72rpx', padding: '10rpx 0', borderBottom: last ? 'none' : `1rpx solid ${C.border}` }}>
+      <Text style={profileLabel}>{label}</Text>
+      <Text style={{ ...profileValue, color: filled ? C.dark : C.secondary, fontWeight: filled ? '500' : '400' }}>
         {value || '未填写'}
       </Text>
     </View>
   )
 }
 
-function MenuRow({ label, border }: { label: string; border?: boolean }) {
+function MenuRow({ label, border, badge = 0, onClick }: { label: string; border?: boolean; badge?: number; onClick?: () => void }) {
   return (
-    <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '28rpx 32rpx', borderBottom: border ? `1rpx solid ${C.border}` : 'none' }}>
-      <Text style={{ fontSize: '28rpx', color: C.dark }}>{label}</Text>
-      <Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+    <View onClick={onClick} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: '88rpx', padding: '0 32rpx', borderBottom: border ? `1rpx solid ${C.border}` : 'none' }}>
+      <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx', minWidth: 0 }}>
+        <Text style={menuLabel}>{label}</Text>
+        {badge > 0 && (
+          <View style={menuBadge}>
+            <Text style={menuBadgeText}>{badgeText(badge)}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={menuArrow}>&gt;</Text>
     </View>
   )
 }
@@ -414,6 +390,10 @@ const avatarBox: React.CSSProperties = { width: '120rpx', height: '120rpx', bord
 
 const menuBadge: React.CSSProperties = { minWidth: '34rpx', height: '32rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid rgba(63,107,79,0.14)`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8rpx' }
 const menuBadgeText: React.CSSProperties = { fontSize: '20rpx', color: C.green, fontWeight: '600' }
+const menuLabel: React.CSSProperties = { fontSize: '28rpx', color: C.dark, fontWeight: '500', lineHeight: '1.35' }
+const menuArrow: React.CSSProperties = { fontSize: '24rpx', color: C.secondary, marginLeft: '20rpx' }
+const profileLabel: React.CSSProperties = { fontSize: '28rpx', color: C.neutral, flexShrink: 0, lineHeight: '1.35' }
+const profileValue: React.CSSProperties = { fontSize: '28rpx', maxWidth: '388rpx', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }
 
 const row: React.CSSProperties = { display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '24rpx 0', borderBottom: `1rpx solid ${C.border}` }
 

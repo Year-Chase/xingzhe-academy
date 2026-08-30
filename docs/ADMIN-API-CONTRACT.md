@@ -233,7 +233,7 @@ Request body 可带：
 - 报名成功后合并更新 UserRegistrationProfile
 - 未收集字段不清空常用报名资料历史值
 
-V2.9F 小程序运营接口：
+V2.9G 小程序运营接口：
 
 GET /banner/active
 
@@ -247,26 +247,74 @@ GET /banner/active
 
 规则：
 - 小程序只读公开。
-- 当前仅支持 NONE、ACTIVITY、CATEGORY 的实际跳转。
-- SERIES 为未来预留，Admin 当前不可配置。
+- 支持 NONE、ACTIVITY、CATEGORY、SERIES 的实际跳转。
+- jumpValue 全部保存 ID：ACTIVITY 为 activityId，CATEGORY 为 categoryId，SERIES 为 seriesId。
 - 不返回密钥、用户信息、订单信息。
+
+GET /activity/recent?limit=5
+
+返回近期活动：
+- 已发布
+- 尚未结束
+- 按活动开始时间升序
+- 默认最多 5 条
+- 返回 `category: { id, name } | null` 和 `series: { id, name } | null`
+
+GET /activity/series
+
+返回启用活动系列：
+- id
+- name
+- code
+- coverImage
+- shortDescription
+- sortOrder
+
+GET /activity/series/:id
+
+返回活动系列详情：
+- id
+- name
+- code
+- coverImage
+- shortDescription
+- description
+- status
+- activeActivities
+- pastActivities
+
+活动列表项返回 `series: { id, name } | null`，前端不得根据 seriesId 自行拼装系列名。
 
 GET /activity/categories
 
-返回启用活动主题：
+返回启用活动分类：
 - id
 - name
 - code
 - description
 - icon（当前为空，预留）
-- count（该主题下已发布活动数量）
+- count（该分类下已发布活动数量）
 
 GET /activity/all?page=&limit=&categoryId=
 
 规则：
 - `categoryId` 可选。
-- 传入后只返回该主题下的已发布活动。
-- 活动返回 `category: { id, name }`，前端不得自行拼接分类名称。
+- 传入后只返回该分类下的已发布活动。
+- 活动返回 `category: { id, name }` 和 `series: { id, name } | null`，前端不得自行拼接分类或系列名称。
+
+Admin 活动系列管理：
+
+GET /admin/activity-series
+GET /admin/activity-series/active
+POST /admin/activity-series
+PATCH /admin/activity-series/:id
+
+规则：
+- 全部受 JwtAuthGuard 保护。
+- Series 表示长期活动品牌/IP，不是活动分类。
+- 支持 name, code, coverImage, shortDescription, description, sortOrder, status。
+- code 唯一。
+- active 接口只返回 ACTIVE Series，供活动创建/编辑和 Banner SERIES 选择。
 
 Admin Banner 管理：
 
@@ -278,7 +326,7 @@ DELETE /admin/operation/banners/:id
 规则：
 - 全部受 JwtAuthGuard 保护。
 - 支持 imageUrl, title, description, sortOrder, status, startAt, endAt, jumpType, jumpValue。
-- SERIES 当前返回 400，不允许配置。
+- SERIES 正式开放，jumpValue 必须选择 ACTIVE Series 的 ID。
 6. 报名管理 API
 
 GET /admin/activity//registrations?page=1&limit=50

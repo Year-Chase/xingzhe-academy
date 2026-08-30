@@ -28,6 +28,7 @@ const formLoading = ref(false)
 const uploadLoading = ref(false)
 const activities = ref<any[]>([])
 const categories = ref<any[]>([])
+const seriesList = ref<any[]>([])
 
 const form = reactive({
   imageUrl: '',
@@ -49,8 +50,8 @@ const statusOptions = [
 const jumpTypeOptions = [
   { label: '无跳转', value: 'NONE' },
   { label: '活动详情', value: 'ACTIVITY' },
-  { label: '活动主题', value: 'CATEGORY' },
-  { label: '活动系列（预留）', value: 'SERIES', disabled: true },
+  { label: '活动分类', value: 'CATEGORY' },
+  { label: '品牌', value: 'SERIES' },
 ]
 
 const fmt = (s: string | null) => {
@@ -78,9 +79,13 @@ const jumpLabel = (row: BannerItem) => {
   }
   if (row.jumpType === 'CATEGORY') {
     const item = categories.value.find((c: any) => String(c.id) === String(row.jumpValue))
-    return item ? `主题：${item.name}` : `主题：${row.jumpValue || '-'}`
+    return item ? `分类：${item.name}` : `分类：${row.jumpValue || '-'}`
   }
-  return '活动系列（预留）'
+  if (row.jumpType === 'SERIES') {
+    const item = seriesList.value.find((s: any) => String(s.id) === String(row.jumpValue))
+    return item ? `系列：${item.name}` : `系列：${row.jumpValue || '-'}`
+  }
+  return '-'
 }
 
 const fetchList = async () => {
@@ -92,15 +97,18 @@ const fetchList = async () => {
 
 const fetchOptions = async () => {
   try {
-    const [activityPage, categoryList] = await Promise.all([
+    const [activityPage, categoryList, activeSeries] = await Promise.all([
       get<any>('/admin/activity', { page: 1, limit: 100 }),
       get<any[]>('/admin/activity/categories'),
+      get<any[]>('/admin/activity-series/active'),
     ])
     activities.value = Array.isArray(activityPage?.items) ? activityPage.items : []
     categories.value = Array.isArray(categoryList) ? categoryList : []
+    seriesList.value = Array.isArray(activeSeries) ? activeSeries : []
   } catch (_e) {
     activities.value = []
     categories.value = []
+    seriesList.value = []
   }
 }
 
@@ -146,7 +154,6 @@ const submitForm = async () => {
   if (!imageUrl) { formError.value = '请上传或填写Banner图片'; return }
   if (!title) { formError.value = 'Banner标题不能为空'; return }
   if (form.jumpType !== 'NONE' && !String(form.jumpValue || '').trim()) { formError.value = '请选择跳转目标'; return }
-  if (form.jumpType === 'SERIES') { formError.value = '活动系列为预留能力，当前版本暂不可配置'; return }
   const body = {
     imageUrl,
     title,
@@ -233,7 +240,7 @@ onMounted(() => { fetchOptions(); fetchList() })
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
       <div>
         <h2 style="font-size: 24px; font-weight: 700; color: #18231E; margin: 0;">Banner管理</h2>
-        <div style="font-size: 13px; color: #8A9288; margin-top: 6px;">用于小程序首页运营位。活动系列为未来预留能力，当前不可配置。</div>
+        <div style="font-size: 13px; color: #8A9288; margin-top: 6px;">用于小程序首页运营位，可跳转活动详情、活动分类或品牌。</div>
       </div>
       <t-button theme="primary" @click="openCreate">新建Banner</t-button>
     </div>
@@ -268,6 +275,7 @@ onMounted(() => { fetchOptions(); fetchList() })
               <input type="file" accept="image/jpeg,image/png,image/webp" style="display:none;" @change="uploadImage" />
             </label>
           </div>
+          <div style="font-size: 12px; color: #8A9288; margin-top: 6px;">建议比例：2.2:1；推荐尺寸：1500 × 680 px 或更高。重要人物/文字尽量放在中心区域。</div>
           <img v-if="form.imageUrl" :src="assetUrl(form.imageUrl)" style="width: 100%; height: 160px; object-fit: cover; border-radius: 8px; border: 1px solid #EDE9DF; margin-top: 8px;" />
         </div>
         <div><label style="color: #8A9288; font-size: 13px;">标题 *</label><t-input v-model="form.title" maxlength="100" /></div>
@@ -282,7 +290,8 @@ onMounted(() => { fetchOptions(); fetchList() })
         </div>
         <div><label style="color: #8A9288; font-size: 13px;">跳转类型</label><t-select v-model="form.jumpType" :options="jumpTypeOptions" style="width: 100%;" @change="form.jumpValue = ''" /></div>
         <div v-if="form.jumpType === 'ACTIVITY'"><label style="color: #8A9288; font-size: 13px;">跳转活动</label><t-select v-model="form.jumpValue" :options="activities.map((a: any) => ({ label: a.title, value: String(a.id) }))" filterable style="width: 100%;" /></div>
-        <div v-if="form.jumpType === 'CATEGORY'"><label style="color: #8A9288; font-size: 13px;">跳转主题</label><t-select v-model="form.jumpValue" :options="categories.map((c: any) => ({ label: c.name, value: String(c.id) }))" style="width: 100%;" /></div>
+        <div v-if="form.jumpType === 'CATEGORY'"><label style="color: #8A9288; font-size: 13px;">跳转分类</label><t-select v-model="form.jumpValue" :options="categories.map((c: any) => ({ label: c.name, value: String(c.id) }))" style="width: 100%;" /></div>
+        <div v-if="form.jumpType === 'SERIES'"><label style="color: #8A9288; font-size: 13px;">跳转品牌</label><t-select v-model="form.jumpValue" :options="seriesList.map((s: any) => ({ label: s.name, value: String(s.id) }))" style="width: 100%;" /></div>
         <div v-if="formError" style="color: #B35B4B; font-size: 13px;">{{ formError }}</div>
         <div style="display: flex; gap: 12px; margin-top: 8px;">
           <t-button style="flex: 1;" @click="drawerVisible = false">取消</t-button>

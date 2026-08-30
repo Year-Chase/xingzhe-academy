@@ -8,7 +8,6 @@ const collapsed = ref(false)
 
 const menuItems = [
   { path: '/', name: 'Dashboard', label: '控制台', icon: '📊' },
-  { path: '/activity', name: 'ActivityList', label: '活动管理', icon: '📅' },
   { path: '/orders', name: 'OrderList', label: '订单管理', icon: '📋' },
   { path: '/finance', name: 'FinanceSummary', label: '财务概览', icon: '💰' },
   { path: '/invoices', name: 'InvoiceList', label: '发票管理', icon: '🧾' },
@@ -57,18 +56,13 @@ function isActive(path: string) {
           </template>
           {{ item.label }}
         </t-menu-item>
-        <t-submenu value="operation">
-          <template #icon><span>📣</span></template>
-          <template #title>运营管理</template>
-          <t-menu-item value="/operation/banners">Banner管理</t-menu-item>
-        </t-submenu>
-        <t-submenu value="system">
-          <template #icon><span>⚙️</span></template>
-          <template #title>系统管理</template>
-          <t-submenu value="dictionary">
-            <template #title>字典管理</template>
-            <t-menu-item value="/dictionary/activity-categories">活动分类</t-menu-item>
-          </t-submenu>
+        <t-submenu value="activity-management">
+          <template #icon><span>📅</span></template>
+          <template #title>活动管理</template>
+          <t-menu-item value="/activity">活动列表</t-menu-item>
+          <t-menu-item value="/activity/brands">品牌管理</t-menu-item>
+          <t-menu-item value="/activity/categories">活动分类</t-menu-item>
+          <t-menu-item value="/activity/banners">Banner管理</t-menu-item>
         </t-submenu>
       </t-menu>
 

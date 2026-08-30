@@ -16,7 +16,7 @@
 
 ### 2. 数据事实源原则
 
-- Activity：活动事实源
+- Activity：用户实际报名和参加的一场具体活动
 - ActivityRegistration：报名事实源
 - ActivityOrder：支付记录
 - ActivityRefund：退款事实源
@@ -25,7 +25,8 @@
 - User：真实用户主表
 - ActivityRegistrationInfo：报名信息快照
 - UserRegistrationProfile：用户常用报名资料
-- ActivityCategory：活动主题分类
+- ActivityCategory：活动内容类型分类
+- ActivitySeries：长期活动品牌/IP
 - OperationBanner：小程序首页运营 Banner
 - UserTag：CRM 标签
 - UserNote：CRM 备注
@@ -47,7 +48,9 @@ V2.5 完整字段（以代码为准）：
 
 **基础信息**：id, title, slogan, province, description, location, city, coverImage
 
-**活动主题分类（V2.9C/F）**：categoryId，关联 ActivityCategory；历史活动允许为空；小程序展示 `category.name`
+**活动系列（V2.9G）**：seriesId，关联 ActivitySeries；可为空。`seriesId = null` 表示独立活动，“普通活动”不是 Category。
+
+**活动分类（V2.9C/G）**：categoryId，关联 ActivityCategory；历史活动允许为空；小程序全部活动页展示 `category.name` 并用于筛选。
 
 **时间**：startTime, endTime, registrationStartTime, registrationEndTime
 
@@ -171,9 +174,11 @@ V2.5C 规则：GET /activity/:id 直接返回 groupQrImageUrl，小程序活动�
 
 **UserRegistrationProfile**：id, userId (unique), realName, phone, idCardNo, departureCity, transportPreference, roomPreference, createdAt, updatedAt
 
-**ActivityCategory**：id, name, code(unique), description, sortOrder, status(ACTIVE/INACTIVE), createdAt, updatedAt。当前表示活动主题分类，用于活动筛选、首页展示和运营统计，不表示长期活动品牌/IP。
+**ActivityCategory**：id, name, code(unique), description, sortOrder, status(ACTIVE/INACTIVE), createdAt, updatedAt。当前表示活动内容类型，用于全部活动筛选和运营统计，不表示长期活动品牌/IP。
 
-**OperationBanner**：id, imageUrl, title, description, sortOrder, status(ACTIVE/INACTIVE), startAt, endAt, jumpType(NONE/ACTIVITY/CATEGORY/SERIES), jumpValue, createdAt, updatedAt。`SERIES` 仅为未来预留，当前 Admin 禁止配置。
+**ActivitySeries**：id, name, code(unique), coverImage, shortDescription, description, sortOrder, status(ACTIVE/INACTIVE), createdAt, updatedAt。表示长期活动品牌/IP，例如暖聚、X50。Series 可跨城市、跨期、跨年度，一个 Series 下可以有多个 Activity。
+
+**OperationBanner**：id, imageUrl, title, description, sortOrder, status(ACTIVE/INACTIVE), startAt, endAt, jumpType(NONE/ACTIVITY/CATEGORY/SERIES), jumpValue, createdAt, updatedAt。Banner 是首页营销入口，不是 Category、Series 或 Activity 本身。
 
 **UserInviteRecord**：id, inviterUserId, inviteeUserId, createdAt
 
@@ -210,7 +215,8 @@ amount=0 的订单（0 元活动报名产生）：
 ### 10. 关键实体关联
 
 Activity ← Registration（N:1，报名事实源）
-ActivityCategory ← Activity（1:N，活动主题分类）
+ActivitySeries ← Activity（1:N，长期活动品牌/IP）
+ActivityCategory ← Activity（1:N，活动内容类型分类）
 Registration ← Order（1:1，支付记录）
 Registration ← QR（1:1，核销二维码）
 Order ← Refund（1:N，退款记录）
@@ -220,22 +226,20 @@ User ← Registration（1:N）
 User ← Order（1:N）
 User ← UserRegistrationProfile（1:1，常用报名资料）
 CertificateTemplate ← Activity（N:1，活动关联证书模板）
-OperationBanner 为首页运营位，不直接成为活动事实源；Banner 可跳转活动或活动主题。
+OperationBanner 为首页运营位，不直接成为活动事实源；Banner 可跳转活动、活动分类或活动系列，jumpValue 保存对应 ID。
 
-### 10.1 Activity Series 预留
+### 10.1 Activity Series
 
-当前不新增 `activity_series`。
+当前已实现 `activity_series`。
 
-未来触发条件：
-- 单一活动主题需要多城市、多周期、多年度运营；
-- 需要品牌/IP 级封面、描述、排序、状态和独立运营页；
-- 需要 Series 维度统计或长期用户沉淀。
+定义：
+- Series = 长期品牌/IP。
+- Category = 活动内容类型。
+- Activity = 具体场次。
+- Recent Activities = 动态 Activity 结果集，不落库。
+- Independent Activity = `seriesId = null`。
 
-未来建议模型：
-- activity_series(id, name, code, description, coverImage, status, sortOrder, createdAt, updatedAt)
-- series 1:N activity
-
-当前版本继续使用 `activity_category` 承担主题展示职责。
+禁止把“普通活动”新增为 Category。
 
 ### 11. 身份证号保护规则
 

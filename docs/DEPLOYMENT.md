@@ -208,6 +208,17 @@ V2.9F 迁移：
 - SQLite 回滚：`backend/migrations/v2.9f-operation-banner.sqlite.rollback.sql`
 - 迁移不修改活动、订单、退款、签到、支付相关表。
 
+V2.9G 迁移：
+- 新增 `activity_series` 表，用于长期活动品牌/IP。
+- `activity` 新增 nullable `seriesId`；历史活动默认 `seriesId = null`，表示独立活动。
+- 不修改 `categoryId`，活动分类继续用于内容类型筛选和运营统计。
+- MySQL 脚本：`backend/migrations/v2.9g-activity-series.mysql.sql`
+- MySQL 回滚：`backend/migrations/v2.9g-activity-series.mysql.rollback.sql`
+- SQLite 脚本：`backend/migrations/v2.9g-activity-series.sqlite.sql`
+- SQLite 回滚：`backend/migrations/v2.9g-activity-series.sqlite.rollback.sql`
+- 生产执行前必须先备份 MySQL；如需回滚，先停止写入，再执行 rollback 脚本并重启服务。
+- 迁移不修改订单、支付、退款、鉴权、CRM、签到、证书状态机。
+
 9. V2.7.3 运维固化
 
 待完成：

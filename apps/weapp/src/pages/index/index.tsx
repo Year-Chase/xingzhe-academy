@@ -5,15 +5,6 @@ import { ensureUserId } from '../../utils/user'
 
 import { API_BASE_URL as API } from '../../config/api'
 
-interface ActivityCategory {
-  id: string
-  name: string
-  code: string
-  description: string
-  icon: string
-  count: number
-}
-
 interface ActivityCard {
   id: number
   title: string
@@ -28,6 +19,16 @@ interface ActivityCard {
   status: string
   price?: number
   category?: { id: string; name: string } | null
+  series?: { id: string; name: string } | null
+}
+
+interface ActivitySeries {
+  id: string
+  name: string
+  code: string
+  coverImage: string
+  shortDescription: string
+  sortOrder: number
 }
 
 interface BannerItem {
@@ -39,7 +40,9 @@ interface BannerItem {
   jumpValue: string
 }
 
-const PAGE_SIZE = 8
+const RECENT_LIMIT = 5
+const BANNER_HEIGHT = '312rpx'
+const HOME_SERIES_LIMIT = 4
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
 
 function imgUrl(cover: string | undefined): string {
@@ -74,36 +77,38 @@ function activityCover(a: ActivityCard) {
 
 function ActivityCardView({ activity, onClick }: { activity: ActivityCard; onClick: () => void }) {
   const cover = activityCover(activity)
+  const meta = [activity.startTime ? fmtDate(activity.startTime) : '', activity.location || ''].filter(Boolean).join('  ')
   return (
     <View onClick={onClick}
-      style={{ margin: '0 32rpx 24rpx', background: '#FFFFFF', borderRadius: '20rpx', overflow: 'hidden', border: '1rpx solid #EDE9DF', boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.06)' }}
+      style={{ margin: '0 32rpx 18rpx', background: '#FFFFFF', borderRadius: '18rpx', overflow: 'hidden', border: '1rpx solid #EDE9DF', display: 'flex', flexDirection: 'row', minHeight: '172rpx' }}
     >
-      <View style={{ width: '100%', height: '380rpx', background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <View style={{ width: '172rpx', height: '172rpx', flexShrink: 0, background: PLACEHOLDER_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         {cover ? (
           <ImgWithFallback src={cover} style={{ width: '100%', height: '100%' }} />
         ) : (
-          <Text style={{ fontSize: '48rpx', color: 'rgba(24,35,30,0.12)' }}>行者学社</Text>
+          <Text style={{ fontSize: '28rpx', color: 'rgba(24,35,30,0.12)' }}>行者</Text>
         )}
       </View>
-      <View style={{ padding: '24rpx 28rpx' }}>
-        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx' }}>
-          {activity.category?.name ? (
+      <View style={{ flex: 1, minWidth: 0, padding: '18rpx 22rpx', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10rpx' }}>
+          {activity.series?.name ? (
+            <View style={{ flexShrink: 0, padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EEF5EF' }}>
+              <Text style={{ fontSize: '21rpx', color: '#2E7D5A', fontWeight: '600' }}>{activity.series.name}</Text>
+            </View>
+          ) : activity.category?.name ? (
             <View style={{ flexShrink: 0, padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EEF5EF' }}>
               <Text style={{ fontSize: '21rpx', color: '#2E7D5A', fontWeight: '600' }}>{activity.category.name}</Text>
             </View>
           ) : null}
-          <Text style={{ flex: 1, minWidth: 0, fontSize: '30rpx', fontWeight: '700', color: '#18231E', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</Text>
+          <Text style={{ flex: 1, minWidth: 0, fontSize: '29rpx', fontWeight: '700', color: '#18231E', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</Text>
         </View>
         {activity.description ? (
-          <Text style={{ fontSize: '24rpx', color: '#3A403B', lineHeight: '1.5', marginTop: '10rpx', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{activity.description}</Text>
+          <Text style={{ fontSize: '23rpx', color: '#3A403B', lineHeight: '1.45', marginTop: '8rpx', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>{activity.description}</Text>
         ) : null}
-        <View style={{ marginTop: '16rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <View style={{ marginTop: '12rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            {activity.startTime ? (
-              <Text style={{ fontSize: '24rpx', color: '#666666', lineHeight: '1.4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtDate(activity.startTime)}</Text>
-            ) : null}
-            {activity.location ? (
-              <Text style={{ fontSize: '23rpx', color: '#8A9288', lineHeight: '1.4', marginTop: '4rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.location}</Text>
+            {meta ? (
+              <Text style={{ fontSize: '24rpx', color: '#666666', lineHeight: '1.4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</Text>
             ) : null}
           </View>
         </View>
@@ -114,21 +119,17 @@ function ActivityCardView({ activity, onClick }: { activity: ActivityCard; onCli
 
 export default function Index() {
   const [activities, setActivities] = useState<ActivityCard[]>([])
-  const [categories, setCategories] = useState<ActivityCategory[]>([])
+  const [seriesList, setSeriesList] = useState<ActivitySeries[]>([])
   const [banners, setBanners] = useState<BannerItem[]>([])
-  const [selectedCategoryId, setSelectedCategoryId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
 
-  const fetchCategories = useCallback(async () => {
+  const fetchSeries = useCallback(async () => {
     try {
-      const res = await Taro.request({ url: `${API}/activity/categories`, timeout: 15000 })
-      setCategories(Array.isArray(res.data) ? res.data as ActivityCategory[] : [])
+      const res = await Taro.request({ url: `${API}/activity/series`, timeout: 15000 })
+      setSeriesList(Array.isArray(res.data) ? res.data as ActivitySeries[] : [])
     } catch {
-      setCategories([])
+      setSeriesList([])
     }
   }, [])
 
@@ -141,20 +142,17 @@ export default function Index() {
     }
   }, [])
 
-  const fetchPage = useCallback(async (p: number, append: boolean, categoryId = selectedCategoryId) => {
-    if (append) setLoadingMore(true); else setLoading(true)
+  const fetchRecent = useCallback(async () => {
+    setLoading(true)
     setError('')
     try {
-      const categoryQuery = categoryId ? `&categoryId=${encodeURIComponent(categoryId)}` : ''
-      const res = await Taro.request({ url: `${API}/activity/all?page=${p}&limit=${PAGE_SIZE}&ongoing=true${categoryQuery}`, timeout: 15000 })
+      const res = await Taro.request({ url: `${API}/activity/recent?limit=${RECENT_LIMIT}`, timeout: 15000 })
       const data = res.data as any
       let list: ActivityCard[] = []
       if (Array.isArray(data)) list = data
       else if (data && Array.isArray(data.items)) list = data.items
       else if (data && data.data && Array.isArray(data.data.items)) list = data.data.items
-      if (append) setActivities((prev) => [...prev, ...list])
-      else setActivities(list)
-      setHasMore(list.length === PAGE_SIZE)
+      setActivities(list.slice(0, RECENT_LIMIT))
     } catch (e: any) {
       const msg = e?.errMsg || e?.message || ''
       const isLocal = API.indexOf('127.0.0.1') !== -1 || API.indexOf('localhost') !== -1
@@ -164,21 +162,19 @@ export default function Index() {
         setError(msg || '加载失败')
       }
     }
-    finally { setLoadingMore(false); setLoading(false) }
-  }, [selectedCategoryId])
+    finally { setLoading(false) }
+  }, [])
 
   useEffect(() => {
     ensureUserId(false)
     fetchBanners()
-    fetchCategories()
-    fetchPage(1, false, '')
+    fetchSeries()
+    fetchRecent()
   }, [])
 
   usePullDownRefresh(() => {
-    setPage(1)
-    setHasMore(true)
     ensureUserId(false)
-    Promise.all([fetchBanners(), fetchCategories(), fetchPage(1, false)]).then(() => Taro.stopPullDownRefresh())
+    Promise.all([fetchBanners(), fetchSeries(), fetchRecent()]).then(() => Taro.stopPullDownRefresh())
   })
 
   useDidShow(() => {
@@ -196,35 +192,52 @@ export default function Index() {
       .catch(() => {})
   })
 
-  const loadMore = () => {
-    if (loadingMore || !hasMore) return
-    const next = page + 1
-    setPage(next)
-    fetchPage(next, true)
-  }
-
-  const changeCategory = (id: string) => {
-    setSelectedCategoryId(id)
-    setPage(1)
-    setHasMore(true)
-    fetchPage(1, false, id)
-  }
-
   const goDetail = (id: number) => { Taro.navigateTo({ url: `/pages/activity/detail/index?id=${id}` }) }
   const goAll = (categoryId?: string) => {
     const suffix = categoryId ? `?categoryId=${encodeURIComponent(categoryId)}` : ''
     Taro.navigateTo({ url: `/pages/activity/list/index${suffix}` })
   }
+  const goSeries = (id: string) => { Taro.navigateTo({ url: `/pages/activity/series/detail/index?id=${id}` }) }
+  const goSeriesIndex = () => { Taro.navigateTo({ url: '/pages/activity/series/index' }) }
   const onBannerTap = (banner: BannerItem) => {
     if (banner.jumpType === 'ACTIVITY' && banner.jumpValue) {
       Taro.navigateTo({ url: `/pages/activity/detail/index?id=${banner.jumpValue}` })
     } else if (banner.jumpType === 'CATEGORY' && banner.jumpValue) {
       goAll(banner.jumpValue)
+    } else if (banner.jumpType === 'SERIES' && banner.jumpValue) {
+      goSeries(banner.jumpValue)
     }
   }
 
+  const renderSeriesCard = (s: ActivitySeries) => {
+    const wide = seriesList.length === 1
+    return (
+      <View key={s.id} onClick={() => goSeries(s.id)}
+        style={{
+          flexShrink: 0,
+          width: wide ? '686rpx' : '320rpx',
+          borderRadius: '22rpx',
+          background: '#FFFFFF',
+          border: '1rpx solid #EDE9DF',
+          overflow: 'hidden',
+          boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)',
+        }}
+      >
+        <View style={{ height: wide ? '514rpx' : '240rpx', background: PLACEHOLDER_BG, overflow: 'hidden' }}>
+          <ImgWithFallback src={imgUrl(s.coverImage)} style={{ width: '100%', height: '100%' }} />
+        </View>
+        <View style={{ padding: '20rpx 22rpx' }}>
+          <Text style={{ fontSize: '30rpx', color: '#18231E', fontWeight: '700', lineHeight: '1.3', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</Text>
+          {s.shortDescription ? (
+            <Text style={{ fontSize: '23rpx', color: '#8A9288', lineHeight: '1.45', marginTop: '8rpx', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.shortDescription}</Text>
+          ) : null}
+        </View>
+      </View>
+    )
+  }
+
   const fallbackBanner = (
-    <View style={{ margin: '0 32rpx 36rpx', height: '260rpx', borderRadius: '20rpx', overflow: 'hidden', background: '#EEF5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ margin: '24rpx 32rpx 34rpx', height: BANNER_HEIGHT, borderRadius: '28rpx', overflow: 'hidden', background: '#EEF5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ textAlign: 'center' }}>
         <Text style={{ fontSize: '34rpx', fontWeight: '700', color: '#18231E', display: 'block', lineHeight: '1.35' }}>在城市边界</Text>
         <Text style={{ fontSize: '34rpx', fontWeight: '700', color: '#18231E', display: 'block', lineHeight: '1.35' }}>找到你的山野</Text>
@@ -234,19 +247,14 @@ export default function Index() {
   )
 
   return (
-    <ScrollView scrollY style={{ height: '100vh', background: '#F7F6F2' }} onScrollToLower={loadMore}>
-      <View style={{ padding: '36rpx 32rpx 28rpx' }}>
-        <Text style={{ fontSize: '44rpx', fontWeight: '700', color: '#18231E', display: 'block', lineHeight: '1.25' }}>行者学社</Text>
-        <Text style={{ fontSize: '26rpx', color: '#666666', fontWeight: '400', display: 'block', marginTop: '8rpx' }}>把身体从屏幕里带出来</Text>
-      </View>
-
+    <ScrollView scrollY style={{ height: '100vh', background: '#F7F6F2' }}>
       {banners.length > 0 ? (
-        <Swiper indicatorDots autoplay circular style={{ height: '260rpx', margin: '0 32rpx 36rpx', borderRadius: '20rpx', overflow: 'hidden' }}>
+        <Swiper indicatorDots autoplay circular style={{ height: BANNER_HEIGHT, margin: '24rpx 32rpx 34rpx', borderRadius: '28rpx', overflow: 'hidden' }}>
           {banners.map((b) => (
             <SwiperItem key={b.id}>
-              <View onClick={() => onBannerTap(b)} style={{ height: '260rpx', borderRadius: '20rpx', overflow: 'hidden', position: 'relative', background: '#DCE6E2' }}>
+              <View onClick={() => onBannerTap(b)} style={{ height: BANNER_HEIGHT, borderRadius: '28rpx', overflow: 'hidden', position: 'relative', background: '#DCE6E2' }}>
                 <ImgWithFallback src={imgUrl(b.imageUrl)} style={{ width: '100%', height: '100%' }} />
-                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '44rpx 28rpx 24rpx', background: 'linear-gradient(0deg, rgba(24,35,30,0.72), rgba(24,35,30,0))' }}>
+                <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '64rpx 30rpx 28rpx', background: 'linear-gradient(0deg, rgba(24,35,30,0.76), rgba(24,35,30,0))' }}>
                   <Text style={{ color: '#FFFFFF', fontSize: '32rpx', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>{b.title}</Text>
                   {b.description ? <Text style={{ color: 'rgba(255,255,255,0.86)', fontSize: '23rpx', display: 'block', marginTop: '6rpx', lineHeight: '1.4' }}>{b.description}</Text> : null}
                 </View>
@@ -256,25 +264,23 @@ export default function Index() {
         </Swiper>
       ) : fallbackBanner}
 
-      <View style={{ padding: '0 32rpx 18rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: '32rpx', fontWeight: '700', color: '#18231E' }}>主题活动</Text>
-        <Text onClick={() => goAll(selectedCategoryId || undefined)} style={{ fontSize: '24rpx', color: '#2E7D5A' }}>查看更多</Text>
-      </View>
+      {seriesList.length > 0 ? (
+        <>
+          <View style={{ padding: '0 32rpx 18rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: '32rpx', fontWeight: '700', color: '#18231E' }}>行者系列</Text>
+            {seriesList.length >= 5 ? <Text onClick={goSeriesIndex} style={{ fontSize: '24rpx', color: '#2E7D5A' }}>查看全部系列 →</Text> : null}
+          </View>
+          <ScrollView scrollX={seriesList.length > 1} style={{ whiteSpace: 'nowrap', width: '100%', marginBottom: '32rpx' }}>
+            <View style={{ display: 'flex', flexDirection: 'row', gap: '16rpx', padding: '0 32rpx' }}>
+              {seriesList.slice(0, HOME_SERIES_LIMIT).map(renderSeriesCard)}
+            </View>
+          </ScrollView>
+        </>
+      ) : null}
 
-      <ScrollView scrollX style={{ whiteSpace: 'nowrap', width: '100%', marginBottom: '22rpx' }}>
-        <View style={{ display: 'flex', flexDirection: 'row', gap: '12rpx', padding: '0 32rpx' }}>
-          {[{ id: '', name: '全部' } as any, ...categories].map((c) => {
-            const active = selectedCategoryId === String(c.id || '')
-            return (
-              <View key={c.id || 'all'} onClick={() => changeCategory(String(c.id || ''))}
-                style={{ flexShrink: 0, padding: '12rpx 24rpx', borderRadius: '999rpx', background: active ? '#2E7D5A' : '#FFFFFF', border: active ? '1rpx solid #2E7D5A' : '1rpx solid #EDE9DF' }}
-              >
-                <Text style={{ fontSize: '24rpx', color: active ? '#FFFFFF' : '#3A403B', fontWeight: active ? '700' : '500' }}>{c.name}</Text>
-              </View>
-            )
-          })}
-        </View>
-      </ScrollView>
+      <View style={{ padding: '0 32rpx 18rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ fontSize: '32rpx', fontWeight: '700', color: '#18231E' }}>近期活动</Text>
+      </View>
 
       {loading && (<View style={{ padding: '80rpx 32rpx', textAlign: 'center' }}><Text style={{ color: '#8A9288', fontSize: '28rpx' }}>加载中...</Text></View>)}
       {error && !loading && (
@@ -282,19 +288,15 @@ export default function Index() {
           <Text style={{ fontSize: '26rpx', color: '#B35B4B', display: 'block', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}>{error}</Text>
         </View>
       )}
-      {!loading && !error && activities.length === 0 && (
-        <View style={{ padding: '86rpx 32rpx', textAlign: 'center' }}>
-          <Text style={{ fontSize: '30rpx', color: '#666666', display: 'block' }}>没有活动</Text>
-          <Text style={{ fontSize: '26rpx', color: '#8A9288', display: 'block', marginTop: '8rpx' }}>换个主题看看，或等待新活动上线</Text>
-        </View>
-      )}
-
-      {activities.map((a) => (
+      {activities.slice(0, RECENT_LIMIT).map((a) => (
         <ActivityCardView key={a.id} activity={a} onClick={() => goDetail(a.id)} />
       ))}
 
-      {loadingMore && <View style={{ padding: '40rpx', textAlign: 'center' }}><Text style={{ color: '#8A9288', fontSize: '26rpx' }}>加载更多...</Text></View>}
-      {!hasMore && activities.length > 0 && <View style={{ padding: '40rpx', textAlign: 'center' }}><Text style={{ color: '#A6AAA2', fontSize: '24rpx' }}>— 已展示全部活动 —</Text></View>}
+      <View style={{ padding: '16rpx 32rpx 40rpx' }}>
+        <View onClick={() => goAll()} style={{ height: '92rpx', borderRadius: '24rpx', background: '#FFFFFF', border: '1rpx solid #E1DED5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: '28rpx', color: '#2E7D5A', fontWeight: '600' }}>查看更多活动 →</Text>
+        </View>
+      </View>
 
       <View style={{ height: '56rpx' }} />
     </ScrollView>

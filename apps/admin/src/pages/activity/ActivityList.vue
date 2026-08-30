@@ -81,6 +81,7 @@ const FIELD_LABELS: Record<string, string> = {
 interface ActivityItem {
   id: number; title: string; slogan: string; province?: string; description: string; location: string; city: string
   categoryId?: string | null; category?: { id: string; name: string; code?: string } | null
+  seriesId?: string | null; series?: { id: string; name: string; code?: string } | null
   startTime: string; endTime: string; registrationStartTime: string; registrationEndTime: string
   capacity: number; registeredCount: number; status: string; coverImage: string
   price: number; memberPrice: number; lifetimeMemberPrice: number; paymentMode: string
@@ -93,6 +94,7 @@ interface ActivityItem {
 interface PageData { items: ActivityItem[]; total: number; page: number; limit: number }
 interface FormData {
   title: string; slogan: string; province: string; description: string; location: string; city: string
+  seriesId: string
   categoryId: string
   startTime: string; endTime: string; registrationStartTime: string; registrationEndTime: string
   capacity: number; coverImage: string; price: number; memberPrice: number; lifetimeMemberPrice: number; paymentMode: string
@@ -121,7 +123,7 @@ const uploadLoading = ref(false); const blockUploadingIdx = ref(-1); const cover
 const origStart = ref(''); const origEnd = ref(''); const origRegStart = ref(''); const origRegEnd = ref('')
 const form = reactive<FormData>({
   title: '', slogan: '', province: '', description: '', location: '', city: '',
-  categoryId: '',
+  seriesId: '', categoryId: '',
   startTime: '', endTime: '', registrationStartTime: '', registrationEndTime: '',
   capacity: 30, coverImage: '', price: 0, memberPrice: 0, lifetimeMemberPrice: 0, paymentMode: 'FULL',
   prepayAmount: 0, remainingAmount: 0, remainingPayDate: '',
@@ -141,6 +143,7 @@ const memoryImages = ref<any[]>([]); const memoryText = ref(''); const memoryUpl
 const memoryLoading = ref(false); const memoryError = ref('')
 const certTemplates = ref<any[]>([]); const certTemplatesLoading = ref(false)
 const activityCategories = ref<any[]>([])
+const activitySeries = ref<any[]>([])
 const statusOptions = [
   { label: '全部', value: '' }, { label: '未发布', value: 'DRAFT' },
   { label: '已发布', value: 'PUBLISHED' }, { label: '已下架', value: 'CLOSED' },
@@ -171,6 +174,10 @@ const fetchList = async () => {
 const fetchActivityCategories = async () => {
   try { activityCategories.value = await get<any[]>('/admin/activity/categories') }
   catch (_e) { activityCategories.value = [] }
+}
+const fetchActivitySeries = async () => {
+  try { activitySeries.value = await get<any[]>('/admin/activity-series/active') }
+  catch (_e) { activitySeries.value = [] }
 }
 const onPageChange = (p: { current: number; pageSize: number }) => { page.value = p.current; limit.value = p.pageSize; fetchList() }
 const onSearch = () => { page.value = 1; fetchList() }
@@ -234,6 +241,7 @@ const handleMemoryUpload = async (e: Event) => {
 // ── create / edit ──
 const resetForm = () => {
   form.title = ''; form.slogan = ''; form.province = ''; form.description = ''; form.location = ''; form.city = ''
+  form.seriesId = ''
   form.categoryId = ''
   form.startTime = ''; form.endTime = ''; form.registrationStartTime = ''; form.registrationEndTime = ''
   form.capacity = 30; form.coverImage = ''; form.price = 0; form.memberPrice = 0; form.lifetimeMemberPrice = 0; form.paymentMode = 'FULL'
@@ -258,6 +266,7 @@ const openEdit = async (row: ActivityItem) => {
   } catch (_e) { /* fallback to list row */ }
   formMode.value = 'edit'; formId.value = row.id
   form.title = detail.title; form.slogan = detail.slogan || ''; form.province = detail.province || ''; form.description = detail.description || ''; form.location = detail.location || ''
+  form.seriesId = String(detail.series?.id || detail.seriesId || '')
   form.categoryId = String(detail.category?.id || detail.categoryId || '')
   form.city = detail.city || ''; form.capacity = detail.capacity
   form.price = detail.price ?? 0; form.memberPrice = detail.memberPrice ?? 0; form.lifetimeMemberPrice = detail.lifetimeMemberPrice ?? 0
@@ -295,6 +304,7 @@ const openEdit = async (row: ActivityItem) => {
 }
 const submitForm = async () => {
   if (!form.title || !form.startTime || !form.endTime || !form.registrationStartTime || !form.registrationEndTime || !form.capacity || Number(form.capacity) <= 0) { formError.value = '标题、活动开始/结束时间、报名开始/结束时间、人数（>0）为必填项'; return }
+  if (formMode.value === 'create' && !form.categoryId) { formError.value = '新建活动请先选择活动分类；临时无法判断时可选择“其他”'; return }
   if (!form.province?.trim() || !form.city?.trim()) { formError.value = '请填写活动省份和城市'; return }
   if (new Date(form.endTime) <= new Date(form.startTime)) { formError.value = '活动结束时间必须晚于活动开始时间'; return }
   if (new Date(form.registrationEndTime) <= new Date(form.registrationStartTime)) { formError.value = '报名结束时间必须晚于报名开始时间'; return }
@@ -327,6 +337,7 @@ const submitForm = async () => {
   const lifetimeRule = form.pricingRules.find((r: any) => r.userType === '终身会员') || {}
   const body: any = {
     title: form.title, slogan: form.slogan || undefined, province: syncProvince || undefined,
+    seriesId: form.seriesId || null,
     categoryId: form.categoryId || null,
     description: form.description, location: syncLocation, city: syncCity || undefined,
     capacity: Number(form.capacity), coverImage: form.coverImage || undefined,
@@ -400,6 +411,7 @@ const removeMemoryImage = (idx: number) => { memoryImages.value.splice(idx, 1) }
 const columns = [
   { colKey: 'id', title: 'ID', width: 55 },
   { colKey: 'title', title: '标题', width: 130, ellipsis: true },
+  { colKey: 'series', title: '系列', width: 90, cell: (_h: any, { row }: any) => row.series?.name || '-' },
   { colKey: 'category', title: '分类', width: 90, cell: (_h: any, { row }: any) => row.category?.name || '-' },
   { colKey: 'slogan', title: 'Slogan', width: 110, ellipsis: true, cell: (_h: any, { row }: any) => row.slogan || '-' },
   { colKey: 'province', title: '省份', width: 60, cell: (_h: any, { row }: any) => row.province || '-' },
@@ -423,7 +435,7 @@ const fetchCertTemplates = async () => {
   finally { certTemplatesLoading.value = false }
 }
 
-  onMounted(() => { fetchList(); fetchCertTemplates(); fetchActivityCategories() })
+  onMounted(() => { fetchList(); fetchCertTemplates(); fetchActivityCategories(); fetchActivitySeries() })
 </script>
 
 <template>
@@ -460,6 +472,7 @@ const fetchCertTemplates = async () => {
     <t-drawer v-model:visible="detailVisible" header="活动详情" size="560px" :footer="false">
       <div v-if="detailItem" style="display: flex; flex-direction: column; gap: 12px; font-size: 14px;">
         <div><label style="color: #8A9288;">活动名称</label><div style="color: #18231E; font-weight: 600; margin-top: 4px;">{{ detailItem.title }}</div></div>
+        <div><label style="color: #8A9288;">所属品牌</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.series?.name || '-' }}</div></div>
         <div><label style="color: #8A9288;">活动分类</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.category?.name || '-' }}</div></div>
         <div v-if="detailItem.slogan"><label style="color: #8A9288;">Slogan</label><div style="color: #3F6B4F; margin-top: 4px;">{{ detailItem.slogan }}</div></div>
         <div><label style="color: #8A9288;">省份/城市</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.province || '-' }} {{ detailItem.city || '-' }}</div></div>
@@ -515,8 +528,18 @@ const fetchCertTemplates = async () => {
       <div style="display: flex; flex-direction: column; gap: 16px; padding-bottom: 16px;">
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px;">基础信息</div>
         <div><label style="color: #8A9288; font-size: 13px;">活动标题 *</label><t-input v-model="form.title" placeholder="例如：晨跑打卡" /></div>
-        <div><label style="color: #8A9288; font-size: 13px;">活动分类</label><t-select v-model="form.categoryId" :options="activityCategories.map((c: any) => ({ label: c.name, value: String(c.id) }))" placeholder="选择活动分类" clearable style="width: 100%;" /></div>
         <div><label style="color: #8A9288; font-size: 13px;">Slogan</label><t-input v-model="form.slogan" placeholder="少于100字" maxlength="100" /></div>
+        <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动归属</div>
+        <div>
+          <label style="color: #8A9288; font-size: 13px;">所属品牌（选填）</label>
+          <t-select v-model="form.seriesId" :options="activitySeries.map((s: any) => ({ label: s.name, value: String(s.id) }))" placeholder="选择品牌" clearable style="width: 100%;" />
+          <div style="font-size: 12px; color: #8A9288; margin-top: 4px;">用于归属长期活动品牌/IP，例如暖聚、X50；临时独立活动可以不选择。</div>
+        </div>
+        <div>
+          <label style="color: #8A9288; font-size: 13px;">活动分类</label>
+          <t-select v-model="form.categoryId" :options="activityCategories.map((c: any) => ({ label: c.name, value: String(c.id) }))" placeholder="选择活动分类" clearable style="width: 100%;" />
+          <div style="font-size: 12px; color: #8A9288; margin-top: 4px;">用于活动筛选和运营统计，例如社群相聚、户外行走、学习共创。</div>
+        </div>
         <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">省份</label><t-input v-model="form.province" placeholder="手动填写，如 重庆市 / 四川省" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">城市</label><t-input v-model="form.city" placeholder="手动填写，如 重庆 / 成都" /></div></div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动地点与坐标</div>
         <div><label style="color: #8A9288; font-size: 13px;">地点名称 *</label><t-input v-model="form.locationName" placeholder="例如：奥林匹克森林公园南门" /></div>
@@ -525,7 +548,7 @@ const fetchCertTemplates = async () => {
         <div><label style="color: #8A9288; font-size: 13px;">活动描述</label><t-textarea v-model="form.description" placeholder="活动详细描述" :autosize="{ minRows: 2, maxRows: 4 }" /></div>
         <!-- V2.8-C: Unified activity images (first one = coverImage) -->
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动图片</div>
-        <div style="font-size: 12px; color: #7A8178;">第一张将作为列表封面。最多 6 张。点击图片可删除。</div>
+        <div style="font-size: 12px; color: #7A8178;">第一张将作为列表封面。建议比例：16:9；推荐尺寸：1280 × 720 px 或更高。最多 6 张。点击图片可删除。</div>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
           <div v-for="(img, idx) in form.imageUrls" :key="idx" style="position: relative; width: 100px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid #EDE9DF; cursor: pointer;" @click="removeImageUrl(idx)">
             <img :src="assetUrl(img)" style="width:100%;height:100%;object-fit:cover;" />

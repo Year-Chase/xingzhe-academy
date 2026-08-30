@@ -4,7 +4,7 @@
 
 ### 1. 当前版本
 
-当前版本：V2.7.2 Online Test Release（线上测试稳定版）。
+当前版本：V2.9G Activity Series / Category / Activity 模型升级（开发完成待验收）。
 
 当前状态：
 - P1 小程序活动报名支付闭环 ✅
@@ -18,13 +18,14 @@
 - V2.7 线上部署（腾讯云 MySQL + Nginx + HTTPS + PM2）✅
 - V2.7.1 Admin 安全核销 + 手机核销 ✅
 - V2.7.2 Admin 体验优化 + 订单展示增强 ✅
-- V2.8 历史问题收口 + 产品体验增强，进行中
-- V2.9 真实交易闭环，未开始
+- V2.8 历史问题收口 + 产品体验增强 ✅
+- V2.9 活动运营、支付基础设施、CRM、签到统计、首页运营与活动系列能力，进行中
 - V3.0 正式商业化发布，未开始
 
 当前已经完成：
 - 线上环境已搭建（腾讯云 Ubuntu 24.04）
-- 小程序体验版 2.8.2 已上传并设为体验版
+- V2.8.5 已作为 V2.8 系列稳定基线发布到 GitHub
+- V2.9A-F 已完成并推送；V2.9G 当前为本地开发待验收
 
 ### 7. 推荐后续路线
 V2.8.3
@@ -123,13 +124,11 @@ V2.8 已收口：
 - V2.9D：系统标签、管理标签与 CRM 聚合基础。
 - V2.9E：活动签到统计。
 - V2.9F：小程序首页运营位、Banner 管理、热门主题、主题筛选和活动主题展示。
+- V2.9G：正式引入 Activity Series，区分长期品牌/IP、活动内容分类和具体活动；首页调整为 Banner、近期活动、行者系列、查看全部活动。
 
-V2.9F 边界：
-- 不新增 `activity_series`。
-- 不重构 `activity_category`。
+V2.9G 边界：
+- Series = 长期品牌/IP；Category = 活动内容类型；Activity = 具体场次。
+- Recent Activities 是动态 Activity 结果集，不新增 isRecent/recentTag。
+- `seriesId = null` 表示独立活动；“普通活动”不是 Category。
+- `activity_category` 继续用于全部活动筛选和运营统计，不承载品牌/IP 生命周期。
 - 不修改支付、订单、退款、签到状态机。
-
-Activity Series 预留：
-- 当某个活动主题演进为长期品牌/IP，且出现多城市、多周期、多年度运营需求时，再新增 `activity_series`。
-- 未来关系建议：Series 1:N Activity。
-- 当前 `activity_category` 继续表示活动主题分类，不承担品牌/IP 生命周期。

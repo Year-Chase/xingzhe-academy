@@ -34,6 +34,7 @@ export class ActivityController {
          id: a.id,
          title: a.title,
          category: a.category ? { id: a.category.id, name: a.category.name } : null,
+         series: a.series ? { id: a.series.id, name: a.series.name } : null,
          description: a.description?.slice(0, 80) || '',
          location: a.location,
          startTime: a.startTime,
@@ -67,6 +68,7 @@ export class ActivityController {
         id: a.id,
         title: a.title,
         category: a.category ? { id: a.category.id, name: a.category.name } : null,
+        series: a.series ? { id: a.series.id, name: a.series.name } : null,
         description: a.description?.slice(0, 80) || '',
         location: a.location,
         startTime: a.startTime,
@@ -87,6 +89,63 @@ export class ActivityController {
   @Get('activity/categories')
   async getPublicCategories() {
     return this.activitySvc.getPublicCategories()
+  }
+
+  @Get('activity/recent')
+  async getRecentActivities(@Query('limit') limitRaw: string) {
+    const limit = Math.max(1, Math.min(20, parseInt(limitRaw) || 5))
+    const items = await this.activitySvc.getRecent(limit)
+    return Promise.all(items.map(async (a) => ({
+      id: a.id,
+      title: a.title,
+      category: a.category ? { id: a.category.id, name: a.category.name } : null,
+      series: a.series ? { id: a.series.id, name: a.series.name } : null,
+      description: a.description?.slice(0, 80) || '',
+      location: a.location,
+      startTime: a.startTime,
+      endTime: a.endTime,
+      capacity: a.capacity,
+      status: a.status,
+      registeredCount: await this.flow.getRegisteredCount(a.id),
+      coverImage: a.coverImage || '',
+      imageUrls: a.imageUrls || null,
+      effectivePrice: a.price ?? 0,
+      effectivePriceLabel: '普通价',
+      postpayDate: a.postpayDate || null,
+    })))
+  }
+
+  @Get('activity/series')
+  async getActiveSeries() {
+    return this.activitySvc.getActiveSeries()
+  }
+
+  @Get('activity/series/:id')
+  async getSeriesDetail(@Param('id') id: string) {
+    const detail = await this.activitySvc.getSeriesDetail(id)
+    const mapActivity = async (a: any) => ({
+      id: a.id,
+      title: a.title,
+      category: a.category ? { id: a.category.id, name: a.category.name } : null,
+      series: a.series ? { id: a.series.id, name: a.series.name } : null,
+      description: a.description?.slice(0, 80) || '',
+      location: a.location,
+      startTime: a.startTime,
+      endTime: a.endTime,
+      capacity: a.capacity,
+      status: a.status,
+      registeredCount: await this.flow.getRegisteredCount(a.id),
+      coverImage: a.coverImage || '',
+      imageUrls: a.imageUrls || null,
+      effectivePrice: a.price ?? 0,
+      effectivePriceLabel: '普通价',
+      postpayDate: a.postpayDate || null,
+    })
+    return {
+      ...detail,
+      activeActivities: await Promise.all(detail.activeActivities.map(mapActivity)),
+      pastActivities: await Promise.all(detail.pastActivities.map(mapActivity)),
+    }
   }
 
   @Get('banner/active')
@@ -119,6 +178,7 @@ export class ActivityController {
       id: a.id,
       title: a.title,
       category: a.category ? { id: a.category.id, name: a.category.name } : null,
+      series: a.series ? { id: a.series.id, name: a.series.name } : null,
       description: a.description,
       location: a.location,
       startTime: a.startTime,
