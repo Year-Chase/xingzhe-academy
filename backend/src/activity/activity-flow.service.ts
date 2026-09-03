@@ -11,8 +11,20 @@ import { ActivityInvoice, InvoiceStatus } from './entities/activity-invoice.enti
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 import { User } from '../users/entities/user.entity'
 import { UserRegistrationProfile } from '../users/entities/user-registration-profile.entity'
+import { PaymentService } from '../payment/payment.service'
+import { MerchantOrderNoGenerator } from '../payment/merchant-order-no.generator'
+import { PaymentTransaction, PaymentProvider, PaymentTradeType } from '../payment/entities/payment-transaction.entity'
 
 type RegistrationInfoField = 'realName' | 'phone' | 'idCardNo' | 'departureCity' | 'transportPreference' | 'roomPreference'
+type PaymentSuccessInput = {
+  merchantOrderNo: string
+  providerTransactionNo?: string | null
+  amountCents: number
+  orderId: number | string
+  tradeType: PaymentTradeType
+  paymentProvider?: PaymentProvider
+  paidAt?: Date | null
+}
 
 const REGISTRATION_INFO_FIELDS: RegistrationInfoField[] = ['realName', 'phone', 'idCardNo', 'departureCity', 'transportPreference', 'roomPreference']
 const REGISTRATION_INFO_LABELS: Record<RegistrationInfoField, string> = {
@@ -58,6 +70,7 @@ type CheckinResult = {
 @Injectable()
 export class ActivityFlowService {
   private checkinQueue: Promise<void> = Promise.resolve()
+  private enrollmentQueue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly dataSource: DataSource,
@@ -79,6 +92,10 @@ export class ActivityFlowService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(UserRegistrationProfile)
     private readonly registrationProfileRepo: Repository<UserRegistrationProfile>,
+    @InjectRepository(PaymentTransaction)
+    private readonly paymentTxRepo: Repository<PaymentTransaction>,
+    private readonly paymentService: PaymentService,
+    private readonly merchantOrderNo: MerchantOrderNoGenerator,
   ) {}
 
   private money(value: unknown): number {
@@ -201,6 +218,16 @@ export class ActivityFlowService {
     return this.rotateRegistrationQR(registration, activity, 'POSTPAY', manager)
   }
 
+  private ensurePostpayPrecondition(order: ActivityOrder, registration: ActivityRegistration) {
+    if (order.payType !== 'PREPAY') return
+    if (!['PAID', 'PARTIAL_REFUND'].includes(order.status)) {
+      throw new BadRequestException('预付款未完成，不能完成后付款')
+    }
+    if (!['PAID', 'CHECKED_IN'].includes(registration.status)) {
+      throw new BadRequestException('报名资格未生效，不能完成后付款')
+    }
+  }
+
   private async revokeActiveQRs(registrationId: number, manager?: EntityManager) {
     const repo = manager ? manager.getRepository(ActivityQR) : this.qrRepo
     await repo.update({ registrationId, status: 'ACTIVE' as QRStatus }, { status: 'REVOKED', revokedAt: new Date() })
@@ -239,9 +266,177 @@ export class ActivityFlowService {
     return next
   }
 
+  private runEnrollmentTransaction<T>(work: (manager: EntityManager) => Promise<T>): Promise<T> {
+    const run = () => this.dataSource.transaction(work)
+    if (this.dataSource.options.type !== 'better-sqlite3' && this.dataSource.options.type !== 'sqlite') {
+      return run()
+    }
+    const next = this.enrollmentQueue.then(run, run)
+    this.enrollmentQueue = next.then(() => undefined, () => undefined)
+    return next
+  }
+
   private async successfulRefundTotal(orderId: number): Promise<number> {
     const refunds = await this.refundRepo.find({ where: { orderId, status: 'SUCCESS' } })
     return refunds.reduce((sum, refund) => sum + this.money(refund.amount), 0)
+  }
+
+  private paymentAmountCents(amount: number): number {
+    return this.paymentService.yuanToCents(amount)
+  }
+
+  private paymentProviderForMock(): PaymentProvider {
+    return 'MOCK'
+  }
+
+  private async findPaymentTransactionForOrder(
+    manager: EntityManager,
+    orderId: number,
+    tradeType: PaymentTradeType,
+  ): Promise<PaymentTransaction | null> {
+    return manager.getRepository(PaymentTransaction).findOne({
+      where: { orderId: String(orderId), tradeType } as any,
+      order: { id: 'DESC' as any },
+    })
+  }
+
+  private async ensurePaymentTransaction(
+    manager: EntityManager,
+    order: ActivityOrder,
+    registration: ActivityRegistration,
+    tradeType: PaymentTradeType,
+    amount: number,
+    paymentProvider: PaymentProvider,
+  ): Promise<PaymentTransaction> {
+    const repo = manager.getRepository(PaymentTransaction)
+    const existing = await this.findPaymentTransactionForOrder(manager, order.id, tradeType)
+    if (existing && existing.status !== 'FAILED' && existing.status !== 'CLOSED') return existing
+
+    const amountCents = this.paymentAmountCents(amount)
+    const tx = repo.create({
+      orderId: String(order.id),
+      registrationId: String(registration.id),
+      userId: registration.userId,
+      activityId: String(registration.activityId),
+      tradeType,
+      paymentProvider,
+      merchantOrderNo: this.merchantOrderNo.payment(tradeType),
+      providerTransactionNo: null,
+      amount,
+      amountCents,
+      status: 'INIT',
+      paidAt: null,
+      notifyAt: null,
+    })
+    return repo.save(tx)
+  }
+
+  private async markPaymentNotSuccessful(
+    tx: PaymentTransaction,
+    status: 'FAILED' | 'CLOSED',
+    manager?: EntityManager,
+  ) {
+    const repo = manager ? manager.getRepository(PaymentTransaction) : this.paymentTxRepo
+    if (tx.status === 'SUCCESS') throw new BadRequestException('已成功支付的交易不能标记失败或关闭')
+    tx.status = status
+    return repo.save(tx)
+  }
+
+  async applyPaymentSuccess(input: PaymentSuccessInput) {
+    return this.dataSource.transaction((manager) => this.applyPaymentSuccessInTransaction(manager, input))
+  }
+
+  private async applyPaymentSuccessInTransaction(manager: EntityManager, input: PaymentSuccessInput) {
+    const txRepo = manager.getRepository(PaymentTransaction)
+    const txQb = txRepo.createQueryBuilder('tx').where('tx.merchantOrderNo = :merchantOrderNo', { merchantOrderNo: input.merchantOrderNo })
+    const tx = await this.withWriteLock(txQb).getOne()
+    if (!tx) throw new NotFoundException(`PaymentTransaction ${input.merchantOrderNo} not found`)
+
+    if (tx.status === 'FAILED' || tx.status === 'CLOSED') {
+      throw new BadRequestException(`PaymentTransaction is ${tx.status}`)
+    }
+    if (String(tx.orderId) !== String(input.orderId)) throw new BadRequestException('PaymentTransaction order mismatch')
+    if (tx.tradeType !== input.tradeType) throw new BadRequestException('PaymentTransaction trade type mismatch')
+    if (tx.amountCents !== input.amountCents) throw new BadRequestException('Payment amount mismatch')
+    if (input.providerTransactionNo && tx.providerTransactionNo && tx.providerTransactionNo !== input.providerTransactionNo) {
+      throw new BadRequestException('Payment provider transaction mismatch')
+    }
+    if (input.providerTransactionNo && tx.providerTransactionNo !== input.providerTransactionNo) {
+      const existingProviderTx = await txRepo.findOne({ where: { providerTransactionNo: input.providerTransactionNo } as any })
+      const samePaymentFact = existingProviderTx
+        && existingProviderTx.merchantOrderNo === tx.merchantOrderNo
+        && String(existingProviderTx.orderId) === String(tx.orderId)
+        && existingProviderTx.tradeType === tx.tradeType
+      if (existingProviderTx && !samePaymentFact) {
+        throw new BadRequestException('Payment provider transaction already processed')
+      }
+    }
+
+    const orderRepo = manager.getRepository(ActivityOrder)
+    const regRepo = manager.getRepository(ActivityRegistration)
+    const activityRepo = manager.getRepository(Activity)
+
+    const orderQb = orderRepo.createQueryBuilder('order').where('order.id = :orderId', { orderId: Number(tx.orderId) })
+    const order = await this.withWriteLock(orderQb).getOne()
+    if (!order) throw new NotFoundException(`Order ${tx.orderId} not found`)
+    if (String(order.registrationId) !== String(tx.registrationId)) throw new BadRequestException('PaymentTransaction registration mismatch')
+    if (String(order.userId) !== String(tx.userId) || String(order.activityId) !== String(tx.activityId)) {
+      throw new BadRequestException('PaymentTransaction owner mismatch')
+    }
+
+    const regQb = regRepo.createQueryBuilder('reg').where('reg.id = :registrationId', { registrationId: Number(tx.registrationId) })
+    const registration = await this.withWriteLock(regQb).getOne()
+    if (!registration) throw new NotFoundException(`Registration ${tx.registrationId} not found`)
+    if (String(registration.userId) !== String(tx.userId) || String(registration.activityId) !== String(tx.activityId)) {
+      throw new BadRequestException('Registration owner mismatch')
+    }
+
+    const activity = await activityRepo.findOne({ where: { id: Number(tx.activityId) } })
+    if (!activity) throw new NotFoundException(`Activity ${tx.activityId} not found`)
+
+    const wasSuccess = tx.status === 'SUCCESS'
+    if (!wasSuccess) {
+      tx.status = 'SUCCESS'
+      tx.providerTransactionNo = input.providerTransactionNo || tx.providerTransactionNo || null
+      tx.paymentProvider = input.paymentProvider || tx.paymentProvider
+      tx.paidAt = input.paidAt || tx.paidAt || new Date()
+      tx.notifyAt = new Date()
+      await txRepo.save(tx)
+    }
+
+    if (input.tradeType === 'POSTPAY' && order.payType === 'PREPAY') {
+      this.ensurePostpayPrecondition(order, registration)
+      order.postpayStatus = 'PAID'
+      order.postpayPaidAt = tx.paidAt || new Date()
+      await orderRepo.save(order)
+      await this.ensurePostpayQR(order, manager)
+      return { status: 'SUCCESS', orderId: order.id, registrationId: registration.id, tradeType: input.tradeType, alreadyProcessed: wasSuccess }
+    }
+
+    if (input.tradeType === 'PREPAY') {
+      order.status = 'PAID'
+      order.paidAt = order.paidAt || tx.paidAt || new Date()
+      if (!order.postpayStatus || order.postpayStatus === 'NONE') {
+        order.postpayStatus = this.money(order.orderPostpayAmount) > 0 ? 'UNPAID' : 'NONE'
+      }
+    } else {
+      order.status = 'PAID'
+      order.paidAt = order.paidAt || tx.paidAt || new Date()
+      order.postpayStatus = order.postpayStatus || 'NONE'
+    }
+    await orderRepo.save(order)
+
+    if (registration.status !== 'CHECKED_IN') {
+      registration.status = 'PAID'
+      await regRepo.save(registration)
+    }
+
+    let qr = await this.activeQR(registration.id, manager)
+    if (!qr) {
+      qr = await this.createRegistrationQR(registration, activity, this.qrStageForOrder(activity, order), manager)
+    }
+
+    return { status: 'SUCCESS', orderId: order.id, registrationId: registration.id, tradeType: input.tradeType, code: qr?.code || null, alreadyProcessed: wasSuccess }
   }
 
   private async syncPendingInvoicesAfterRefund(order: ActivityOrder, refundedAmount: number) {
@@ -320,16 +515,22 @@ export class ActivityFlowService {
     return clean
   }
 
-  private async mergeUserRegistrationProfile(userId: string, fields: RegistrationInfoField[], info: Partial<Record<RegistrationInfoField, string>>) {
+  private async mergeUserRegistrationProfile(
+    userId: string,
+    fields: RegistrationInfoField[],
+    info: Partial<Record<RegistrationInfoField, string>>,
+    manager?: EntityManager,
+  ) {
     if (fields.length === 0) return
-    let profile = await this.registrationProfileRepo.findOne({ where: { userId } })
-    if (!profile) profile = this.registrationProfileRepo.create({ userId })
+    const repo = manager ? manager.getRepository(UserRegistrationProfile) : this.registrationProfileRepo
+    let profile = await repo.findOne({ where: { userId } })
+    if (!profile) profile = repo.create({ userId })
     for (const field of fields) {
       if (info[field] !== undefined) {
         ;(profile as any)[field] = info[field] || null
       }
     }
-    await this.registrationProfileRepo.save(profile)
+    await repo.save(profile)
   }
 
   // ──── register ────
@@ -352,12 +553,39 @@ export class ActivityFlowService {
 
   // ──── pay (legacy) ────
   async pay(userId: string, activityId: number) {
-    const reg = await this.findReg(userId, activityId)
-    if (reg.status !== 'REGISTERED') throw new BadRequestException(`Cannot pay: status is ${reg.status}, expected REGISTERED`)
-    reg.status = 'PAID'
-    await this.regRepo.save(reg)
-    await this.orderRepo.update({ registrationId: reg.id }, { status: 'PAID', paidAt: new Date() })
-    return { status: 'PAID', id: reg.id }
+    return this.runEnrollmentTransaction(async (manager) => {
+      const regRepo = manager.getRepository(ActivityRegistration)
+      const orderRepo = manager.getRepository(ActivityOrder)
+      const regQb = regRepo.createQueryBuilder('reg')
+        .where('reg.userId = :userId', { userId })
+        .andWhere('reg.activityId = :activityId', { activityId })
+      const reg = await this.withWriteLock(regQb).getOne()
+      if (!reg) throw new NotFoundException(`Registration not found`)
+      if (reg.status === 'PAID' || reg.status === 'CHECKED_IN') return { status: reg.status, id: reg.id }
+      if (reg.status !== 'REGISTERED') throw new BadRequestException(`Cannot pay: status is ${reg.status}, expected REGISTERED`)
+      const order = await orderRepo.findOne({ where: { registrationId: reg.id } })
+      if (!order) throw new NotFoundException(`Order for registration ${reg.id} not found`)
+      const tradeType: PaymentTradeType = order.payType === 'PREPAY' ? 'PREPAY' : String(order.payType) === 'POSTPAY' ? 'POSTPAY' : 'FULL'
+      const amount = this.money(order.amount)
+      const paymentTx = await this.ensurePaymentTransaction(manager, order, reg, tradeType, amount, this.paymentProviderForMock())
+      const providerResult = await this.paymentService.getProvider().createPayment({
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        amountCents: paymentTx.amountCents,
+        description: `legacy-pay-${activityId}`,
+      })
+      paymentTx.prepayId = providerResult.prepayId || paymentTx.prepayId || null
+      await manager.getRepository(PaymentTransaction).save(paymentTx)
+      await this.applyPaymentSuccessInTransaction(manager, {
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        providerTransactionNo: providerResult.providerTransactionNo || `mock_${paymentTx.merchantOrderNo}`,
+        amountCents: paymentTx.amountCents,
+        orderId: order.id,
+        tradeType,
+        paymentProvider: this.paymentProviderForMock(),
+        paidAt: new Date(),
+      })
+      return { status: 'PAID', id: reg.id }
+    })
   }
 
   // ──── generateQR ────
@@ -390,6 +618,37 @@ export class ActivityFlowService {
     }
     const qr = await this.generateQR(userId, activityId)
     return { ...qr, registrationStatus: reg.status, activity: { id: activityId, title: reg.activity?.title || '' } }
+  }
+
+  async getGroupQrForUser(userId: string, activityId: number) {
+    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
+    if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
+    if (!activity.groupQrType || activity.groupQrType === 'NONE' || !activity.groupQrImageUrl) {
+      throw new NotFoundException('活动群二维码不存在')
+    }
+
+    const registration = await this.regRepo.findOne({ where: { userId, activityId } })
+    if (!registration || !['PAID', 'CHECKED_IN'].includes(registration.status)) {
+      throw new ForbiddenException('报名成功后可查看活动群')
+    }
+
+    const order = await this.orderRepo.findOne({ where: { registrationId: registration.id } })
+    if (!order || !['PAID', 'PARTIAL_REFUND'].includes(order.status)) {
+      throw new ForbiddenException('报名成功后可查看活动群')
+    }
+
+    const refundedAmount = await this.successfulRefundTotal(order.id)
+    if (this.paidAmount(order) > 0 && refundedAmount >= this.paidAmount(order)) {
+      throw new ForbiddenException('订单已全额退款，不能查看活动群')
+    }
+
+    return {
+      hasGroupQr: true,
+      groupQrType: activity.groupQrType,
+      groupQrImageUrl: activity.groupQrImageUrl,
+      groupQrTitle: activity.groupQrTitle || '加入活动群',
+      groupQrDescription: activity.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
+    }
   }
 
   // ──── getQR ────
@@ -629,95 +888,124 @@ export class ActivityFlowService {
     realName?: string; phone?: string; idCardNo?: string
     departureCity?: string; transportPreference?: string; roomPreference?: string
   }) {
-    const activity = await this.activityRepo.findOne({ where: { id: activityId } })
-    if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
-    const now = new Date()
+    return this.runEnrollmentTransaction(async (manager) => {
+      const activityRepo = manager.getRepository(Activity)
+      const regRepo = manager.getRepository(ActivityRegistration)
+      const orderRepo = manager.getRepository(ActivityOrder)
+      const qrRepo = manager.getRepository(ActivityQR)
+      const userRepo = manager.getRepository(User)
+      const regInfoRepo = manager.getRepository(ActivityRegistrationInfo)
 
-    if (activity.status !== 'PUBLISHED') throw new BadRequestException('活动未发布，暂不可报名')
-    if (activity.endTime && now > new Date(activity.endTime)) throw new BadRequestException('活动已结束，不可报名')
-    if (activity.registrationStartTime && now < new Date(activity.registrationStartTime)) throw new BadRequestException('报名尚未开始')
-    if (activity.registrationEndTime && now > new Date(activity.registrationEndTime)) throw new BadRequestException('报名已结束')
+      const activityQb = activityRepo.createQueryBuilder('activity').where('activity.id = :activityId', { activityId })
+      const activity = await this.withWriteLock(activityQb).getOne()
+      if (!activity) throw new NotFoundException(`Activity ${activityId} not found`)
+      const now = new Date()
 
-    const paidCount = await this.regRepo.count({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
-    if (activity.capacity > 0 && paidCount >= activity.capacity) throw new BadRequestException('活动名额已满')
+      if (activity.status !== 'PUBLISHED') throw new BadRequestException('活动未发布，暂不可报名')
+      if (activity.endTime && now > new Date(activity.endTime)) throw new BadRequestException('活动已结束，不可报名')
+      if (activity.registrationStartTime && now < new Date(activity.registrationStartTime)) throw new BadRequestException('报名尚未开始')
+      if (activity.registrationEndTime && now > new Date(activity.registrationEndTime)) throw new BadRequestException('报名已结束')
 
-    // ── V2.8.3: Validate only the activity-configured standard fields ──
-    const requiredFields = this.parseRequiredUserInfoFields(activity.requiredUserInfoFields)
-    const cleanRegistrationInfo = this.sanitizeRegistrationInfo(requiredFields, registrationInfo as any)
-
-    const existing = await this.regRepo.findOne({ where: { userId, activityId } })
-    if (existing && (existing.status === 'PAID' || existing.status === 'CHECKED_IN')) {
-      const qr = await this.qrRepo.findOne({ where: { registrationId: existing.id, status: 'ACTIVE' as any } })
-      return { status: existing.status, id: existing.id, code: qr?.code || null }
-    }
-
-    let reg = existing
-    if (!reg) { reg = this.regRepo.create({ userId, activityId, status: 'PAID' }) }
-    else { reg.status = 'PAID' }
-    const saved = await this.regRepo.save(reg)
-
-    // ── V2.8-C: Compute price based on user identityType and activity pricingRules ──
-    const orderExists = await this.orderRepo.findOne({ where: { registrationId: saved.id } })
-    const user = await this.userRepo.findOne({ where: { id: userId as any } })
-    const userType = user?.identityType || '普通用户'
-    const { amount, snapshot } = this.resolvePrice(activity, userType)
-
-    const orderData: any = {
-      amount, status: 'PAID' as const, paidAt: new Date(),
-      payType: (activity.paymentMode as any) || 'FULL',
-      userTypeAtOrder: userType,
-      priceSource: snapshot.priceSource,
-      fullAmount: snapshot.fullAmount,
-      orderPrepayAmount: snapshot.orderPrepayAmount,
-      orderPostpayAmount: snapshot.orderPostpayAmount,
-      pricingSnapshot: snapshot.pricingSnapshot,
-      // V2.8-D: Initialize postpay status
-      postpayStatus: (activity.paymentMode === 'PREPAY' && snapshot.orderPostpayAmount > 0) ? 'UNPAID' : 'NONE',
-    }
-
-    if (!orderExists) {
-      await this.orderRepo.save(this.orderRepo.create({ userId, activityId, registrationId: saved.id, ...orderData }))
-    } else {
-      await this.orderRepo.update({ registrationId: saved.id }, orderData)
-    }
-
-    let qr = await this.activeQR(saved.id)
-    if (!qr) {
-      qr = await this.createRegistrationQR(saved, activity, this.qrStageForOrder(activity, { ...orderData, payType: orderData.payType } as ActivityOrder))
-    }
-
-    // ── V2.8.3: Save per-registration snapshot + merge reusable profile ──
-    if (requiredFields.length > 0) {
-      const existingInfo = await this.regInfoRepo.findOne({ where: { userId, activityId } })
-      if (existingInfo) {
-        existingInfo.registrationId = saved.id
-        existingInfo.realName = cleanRegistrationInfo.realName || null
-        existingInfo.phone = cleanRegistrationInfo.phone || null
-        existingInfo.idCardNo = cleanRegistrationInfo.idCardNo || null
-        existingInfo.departureCity = cleanRegistrationInfo.departureCity || null
-        existingInfo.transportPreference = cleanRegistrationInfo.transportPreference || null
-        existingInfo.roomPreference = cleanRegistrationInfo.roomPreference || null
-        existingInfo.confirmedAt = new Date()
-        await this.regInfoRepo.save(existingInfo)
-      } else {
-        await this.regInfoRepo.save(this.regInfoRepo.create({
-          id: `reginfo_${randomUUID()}`,
-          activityId,
-          registrationId: saved.id,
-          userId,
-          realName: cleanRegistrationInfo.realName || null,
-          phone: cleanRegistrationInfo.phone || null,
-          idCardNo: cleanRegistrationInfo.idCardNo || null,
-          departureCity: cleanRegistrationInfo.departureCity || null,
-          transportPreference: cleanRegistrationInfo.transportPreference || null,
-          roomPreference: cleanRegistrationInfo.roomPreference || null,
-          confirmedAt: new Date(),
-        }))
+      const regQb = regRepo.createQueryBuilder('reg')
+        .where('reg.userId = :userId', { userId })
+        .andWhere('reg.activityId = :activityId', { activityId })
+      const existing = await this.withWriteLock(regQb).getOne()
+      if (existing && (existing.status === 'PAID' || existing.status === 'CHECKED_IN')) {
+        const qr = await qrRepo.findOne({ where: { registrationId: existing.id, status: 'ACTIVE' as any } })
+        const order = await orderRepo.findOne({ where: { registrationId: existing.id } })
+        return { status: existing.status, id: existing.id, code: qr?.code || null, orderId: order?.id || null, amount: order ? this.money(order.amount) : 0 }
       }
-      await this.mergeUserRegistrationProfile(userId, requiredFields, cleanRegistrationInfo)
-    }
 
-    return { status: 'PAID', id: saved.id, code: qr.code, orderId: orderExists?.id || null, amount }
+      const paidCount = await regRepo.count({ where: { activityId, status: In(['PAID', 'CHECKED_IN']) } })
+      if (activity.capacity > 0 && paidCount >= activity.capacity) throw new BadRequestException('活动名额已满')
+
+      // ── V2.8.3: Validate only the activity-configured standard fields ──
+      const requiredFields = this.parseRequiredUserInfoFields(activity.requiredUserInfoFields)
+      const cleanRegistrationInfo = this.sanitizeRegistrationInfo(requiredFields, registrationInfo as any)
+
+      let reg = existing
+      if (!reg) { reg = regRepo.create({ userId, activityId, status: 'REGISTERED' }) }
+      const saved = await regRepo.save(reg)
+
+      // ── V2.8-C: Compute price based on user identityType and activity pricingRules ──
+      const orderExists = await orderRepo.findOne({ where: { registrationId: saved.id } })
+      const user = await userRepo.findOne({ where: { id: userId as any } })
+      const userType = user?.identityType || '普通用户'
+      const { amount, snapshot } = this.resolvePrice(activity, userType)
+
+      const orderData: any = {
+        amount, status: 'PENDING' as const, paidAt: null,
+        payType: (activity.paymentMode as any) || 'FULL',
+        userTypeAtOrder: userType,
+        priceSource: snapshot.priceSource,
+        fullAmount: snapshot.fullAmount,
+        orderPrepayAmount: snapshot.orderPrepayAmount,
+        orderPostpayAmount: snapshot.orderPostpayAmount,
+        pricingSnapshot: snapshot.pricingSnapshot,
+        // V2.8-D: Initialize postpay status
+        postpayStatus: (activity.paymentMode === 'PREPAY' && snapshot.orderPostpayAmount > 0) ? 'UNPAID' : 'NONE',
+      }
+
+      let order = orderExists
+      if (!order) {
+        order = await orderRepo.save(orderRepo.create({ userId, activityId, registrationId: saved.id, ...orderData } as any) as unknown as ActivityOrder)
+      } else {
+        await orderRepo.update({ registrationId: saved.id }, { ...orderData, status: order.status, paidAt: order.paidAt })
+        order = { ...order, ...orderData }
+      }
+
+      const tradeType: PaymentTradeType = activity.paymentMode === 'PREPAY' ? 'PREPAY' : activity.paymentMode === 'POSTPAY' ? 'POSTPAY' : 'FULL'
+      const paymentTx = await this.ensurePaymentTransaction(manager, order!, saved, tradeType, amount, this.paymentProviderForMock())
+      const providerResult = await this.paymentService.getProvider().createPayment({
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        amountCents: paymentTx.amountCents,
+        description: activity.title,
+      })
+      paymentTx.prepayId = providerResult.prepayId || paymentTx.prepayId || null
+      await manager.getRepository(PaymentTransaction).save(paymentTx)
+      const paymentResult = await this.applyPaymentSuccessInTransaction(manager, {
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        providerTransactionNo: providerResult.providerTransactionNo || `mock_${paymentTx.merchantOrderNo}`,
+        amountCents: paymentTx.amountCents,
+        orderId: order!.id,
+        tradeType,
+        paymentProvider: this.paymentProviderForMock(),
+        paidAt: new Date(),
+      })
+
+      // ── V2.8.3: Save per-registration snapshot + merge reusable profile ──
+      if (requiredFields.length > 0) {
+        const existingInfo = await regInfoRepo.findOne({ where: { userId, activityId } })
+        if (existingInfo) {
+          existingInfo.registrationId = saved.id
+          existingInfo.realName = cleanRegistrationInfo.realName || null
+          existingInfo.phone = cleanRegistrationInfo.phone || null
+          existingInfo.idCardNo = cleanRegistrationInfo.idCardNo || null
+          existingInfo.departureCity = cleanRegistrationInfo.departureCity || null
+          existingInfo.transportPreference = cleanRegistrationInfo.transportPreference || null
+          existingInfo.roomPreference = cleanRegistrationInfo.roomPreference || null
+          existingInfo.confirmedAt = new Date()
+          await regInfoRepo.save(existingInfo)
+        } else {
+          await regInfoRepo.save(regInfoRepo.create({
+            id: `reginfo_${randomUUID()}`,
+            activityId,
+            registrationId: saved.id,
+            userId,
+            realName: cleanRegistrationInfo.realName || null,
+            phone: cleanRegistrationInfo.phone || null,
+            idCardNo: cleanRegistrationInfo.idCardNo || null,
+            departureCity: cleanRegistrationInfo.departureCity || null,
+            transportPreference: cleanRegistrationInfo.transportPreference || null,
+            roomPreference: cleanRegistrationInfo.roomPreference || null,
+            confirmedAt: new Date(),
+          }))
+        }
+        await this.mergeUserRegistrationProfile(userId, requiredFields, cleanRegistrationInfo, manager)
+      }
+
+      return { status: 'PAID', id: saved.id, code: paymentResult.code || null, orderId: order!.id, amount }
+    })
   }
 
   // ──── V2.8-C: Resolve price from pricingRules or legacy fields ────
@@ -1220,24 +1508,54 @@ export class ActivityFlowService {
   }
 
   async mockCompletePostpay(orderId: number, userId: string) {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } })
-    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
-    if (order.userId !== userId) throw new BadRequestException('Order does not belong to this user')
-    if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
-    if (order.postpayStatus === 'PAID') throw new BadRequestException('后付款已完成')
-    if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除')
+    const result = await this.runEnrollmentTransaction(async (manager) => {
+      const orderRepo = manager.getRepository(ActivityOrder)
+      const regRepo = manager.getRepository(ActivityRegistration)
+      const orderQb = orderRepo.createQueryBuilder('order').where('order.id = :orderId', { orderId })
+      const order = await this.withWriteLock(orderQb).getOne()
+      if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+      if (order.userId !== userId) throw new BadRequestException('Order does not belong to this user')
+      if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
+      if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除')
+      if (order.postpayStatus === 'PAID') {
+        return {
+          id: order.id,
+          postpayStatus: order.postpayStatus,
+          postpayPaidAt: order.postpayPaidAt,
+          orderPostpayAmount: order.orderPostpayAmount,
+        }
+      }
+      const registration = await regRepo.findOne({ where: { id: order.registrationId } })
+      if (!registration) throw new NotFoundException(`Registration ${order.registrationId} not found`)
+      this.ensurePostpayPrecondition(order, registration)
+      const amount = this.money(order.orderPostpayAmount)
+      const paymentTx = await this.ensurePaymentTransaction(manager, order, registration, 'POSTPAY', amount, this.paymentProviderForMock())
+      const providerResult = await this.paymentService.getProvider().createPayment({
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        amountCents: paymentTx.amountCents,
+        description: `后付款-${order.activityId}`,
+      })
+      paymentTx.prepayId = providerResult.prepayId || paymentTx.prepayId || null
+      await manager.getRepository(PaymentTransaction).save(paymentTx)
+      await this.applyPaymentSuccessInTransaction(manager, {
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        providerTransactionNo: providerResult.providerTransactionNo || `mock_${paymentTx.merchantOrderNo}`,
+        amountCents: paymentTx.amountCents,
+        orderId: order.id,
+        tradeType: 'POSTPAY',
+        paymentProvider: this.paymentProviderForMock(),
+        paidAt: new Date(),
+      })
+      const updated = await orderRepo.findOne({ where: { id: orderId } })
+      return {
+        id: order.id,
+        postpayStatus: updated?.postpayStatus || 'PAID',
+        postpayPaidAt: updated?.postpayPaidAt || new Date(),
+        orderPostpayAmount: order.orderPostpayAmount,
+      }
+    })
 
-    order.postpayStatus = 'PAID'
-    order.postpayPaidAt = new Date()
-    await this.orderRepo.save(order)
-    await this.ensurePostpayQR(order)
-
-    return {
-      id: order.id,
-      postpayStatus: order.postpayStatus,
-      postpayPaidAt: order.postpayPaidAt,
-      orderPostpayAmount: order.orderPostpayAmount,
-    }
+    return result
   }
 
   async getOrderForUser(orderId: number, userId: string) {
@@ -1304,17 +1622,33 @@ export class ActivityFlowService {
   // ──── Admin: postpay operations ────
 
   async adminMarkPostpayPaid(orderId: number) {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } })
-    if (!order) throw new NotFoundException(`Order ${orderId} not found`)
-    if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
-    if (order.postpayStatus === 'PAID') throw new BadRequestException('后付款已完成')
-    if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除，如需标记已付请先撤销免除')
+    return this.runEnrollmentTransaction(async (manager) => {
+      const orderRepo = manager.getRepository(ActivityOrder)
+      const regRepo = manager.getRepository(ActivityRegistration)
+      const orderQb = orderRepo.createQueryBuilder('order').where('order.id = :orderId', { orderId })
+      const order = await this.withWriteLock(orderQb).getOne()
+      if (!order) throw new NotFoundException(`Order ${orderId} not found`)
+      if (order.payType !== 'PREPAY') throw new BadRequestException('Not a PREPAY order')
+      if (order.postpayStatus === 'PAID') return { id: order.id, postpayStatus: order.postpayStatus, postpayPaidAt: order.postpayPaidAt }
+      if (order.postpayStatus === 'WAIVED') throw new BadRequestException('后付款已免除，如需标记已付请先撤销免除')
 
-    order.postpayStatus = 'PAID'
-    order.postpayPaidAt = new Date()
-    await this.orderRepo.save(order)
-    await this.ensurePostpayQR(order)
-    return { id: order.id, postpayStatus: order.postpayStatus, postpayPaidAt: order.postpayPaidAt }
+      const registration = await regRepo.findOne({ where: { id: order.registrationId } })
+      if (!registration) throw new NotFoundException(`Registration ${order.registrationId} not found`)
+      this.ensurePostpayPrecondition(order, registration)
+      const amount = this.money(order.orderPostpayAmount)
+      const paymentTx = await this.ensurePaymentTransaction(manager, order, registration, 'POSTPAY', amount, 'OFFLINE')
+      await this.applyPaymentSuccessInTransaction(manager, {
+        merchantOrderNo: paymentTx.merchantOrderNo,
+        providerTransactionNo: paymentTx.providerTransactionNo,
+        amountCents: paymentTx.amountCents,
+        orderId: order.id,
+        tradeType: 'POSTPAY',
+        paymentProvider: 'OFFLINE',
+        paidAt: new Date(),
+      })
+      const updated = await orderRepo.findOne({ where: { id: orderId } })
+      return { id: order.id, postpayStatus: updated?.postpayStatus || 'PAID', postpayPaidAt: updated?.postpayPaidAt || new Date() }
+    })
   }
 
   async adminWaivePostpay(orderId: number, reason: string) {

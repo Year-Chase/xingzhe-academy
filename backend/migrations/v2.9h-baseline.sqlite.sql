@@ -2,6 +2,7 @@
 -- This file contains schema only; it does not seed business data.
 
 CREATE TABLE IF NOT EXISTS "activity_registration" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "userId" varchar(100) NOT NULL, "activityId" integer NOT NULL, "status" varchar(50) NOT NULL DEFAULT ('REGISTERED'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')), checkedInAt datetime NULL, checkedInByUserId varchar(50) NULL, checkinSource varchar(30) NULL, CONSTRAINT "FK_ac95c2995c601625a9ad09efcd1" FOREIGN KEY ("activityId") REFERENCES "activity" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_activity_registration_user_activity ON activity_registration (userId, activityId);
 CREATE TABLE IF NOT EXISTS "activity_refund" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "orderId" integer NOT NULL, "userId" varchar(100), "activityId" integer, "amount" decimal(10,2) NOT NULL DEFAULT (0), "reason" varchar(500), "status" varchar(20) NOT NULL DEFAULT ('SUCCESS'), "createdAt" datetime NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS "user_tag" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "userId" varchar(100) NOT NULL, "tag" varchar(50) NOT NULL, "createdAt" datetime NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS "user_note" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "userId" varchar(100) NOT NULL, "note" text NOT NULL, "createdAt" datetime NOT NULL DEFAULT (datetime('now')));
@@ -24,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_transaction_user ON payment_transaction (
 CREATE INDEX IF NOT EXISTS idx_payment_transaction_activity ON payment_transaction (activityId);
 CREATE INDEX IF NOT EXISTS idx_payment_transaction_status ON payment_transaction (status);
 CREATE INDEX IF NOT EXISTS idx_payment_transaction_trade_type ON payment_transaction (tradeType);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_transaction_order_trade_type ON payment_transaction (orderId, tradeType);
 CREATE TABLE IF NOT EXISTS refund_transaction (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, orderId integer NOT NULL, paymentTransactionId integer NOT NULL, activityRefundId integer, refundProvider varchar(30) NOT NULL DEFAULT ('WECHAT'), merchantRefundNo varchar(64) NOT NULL, providerRefundNo varchar(128), amount decimal(10,2) NOT NULL DEFAULT 0, amountCents integer NOT NULL, status varchar(30) NOT NULL DEFAULT ('INIT'), reason varchar(500), failureReason text, requestedAt datetime, successAt datetime, createdAt datetime NOT NULL DEFAULT (datetime('now')), updatedAt datetime NOT NULL DEFAULT (datetime('now')), CONSTRAINT uq_refund_transaction_merchant_refund_no UNIQUE (merchantRefundNo), CONSTRAINT uq_refund_transaction_provider_refund_no UNIQUE (providerRefundNo));
 CREATE INDEX IF NOT EXISTS idx_refund_transaction_order ON refund_transaction (orderId);
 CREATE INDEX IF NOT EXISTS idx_refund_transaction_payment ON refund_transaction (paymentTransactionId);

@@ -33,9 +33,11 @@ import { AdminDictionaryController } from './admin-dictionary.controller'
 import { AdminOperationController } from './admin-operation.controller'
 import { AdminActivitySeriesController } from './admin-activity-series.controller'
 import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
+import { PaymentModule } from '../payment/payment.module'
 
 @Module({
   imports: [
+    PaymentModule,
     TypeOrmModule.forFeature([
       Activity,
       ActivityCategory,

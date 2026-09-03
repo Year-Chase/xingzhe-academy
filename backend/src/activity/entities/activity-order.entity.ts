@@ -2,7 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToOne, Joi
 import { ActivityRegistration } from './activity-registration.entity'
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'PARTIAL_REFUND'
-export type PayType = 'FULL' | 'PREPAY'
+export type PayType = 'FULL' | 'PREPAY' | 'POSTPAY'
 
 @Entity('activity_order')
 export class ActivityOrder {

@@ -55,7 +55,7 @@ interface ActivityData {
   startTime: string; endTime: string; capacity: number; registeredCount: number
   coverImage: string; status: string; effectivePrice: number; effectivePriceLabel: string
   requiredUserInfoFields?: any; hasGroupQr?: boolean
-  groupQrType?: string; groupQrImageUrl?: string; groupQrTitle?: string; groupQrDescription?: string
+  groupQrType?: string; groupQrTitle?: string; groupQrDescription?: string
   registrationStartTime?: string; registrationEndTime?: string
   memoryImages?: any; memoryText?: string
   imageUrls?: any; contentBlocks?: any; pricingRules?: any
@@ -99,6 +99,9 @@ export default function ActivityDetail() {
   // V2.5C: group QR display
   const [showGroupQr, setShowGroupQr] = useState(false)
   const [groupQrFailed, setGroupQrFailed] = useState(false)
+  const [groupQr, setGroupQr] = useState<any>(null)
+  const [groupQrLoading, setGroupQrLoading] = useState(false)
+  const [pendingGroupQrOpen, setPendingGroupQrOpen] = useState(false)
   // V2.8-D: Postpay order info
   const [orderInfo, setOrderInfo] = useState<any>(null)
   const [postpayActing, setPostpayActing] = useState(false)
@@ -119,7 +122,7 @@ export default function ActivityDetail() {
   // V2.5C: check enrollSuccess to show group QR
   useEffect(() => {
     const p = router.params as any
-    if (p?.enrollSuccess === '1') setShowGroupQr(true)
+    if (p?.enrollSuccess === '1') setPendingGroupQrOpen(true)
   }, [router.params])
 
   const load = useCallback(async (activityId: number) => {
@@ -194,7 +197,7 @@ export default function ActivityDetail() {
       if ((res.data as any)?.status === 'PAID') {
         Taro.showToast({ title: '报名成功', icon: 'success' })
         Taro.setStorageSync('dirtyActivityId', id)
-        setShowGroupQr(true)
+        setPendingGroupQrOpen(true)
         await load(id)
       } else if ((res.data as any)?.message) {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
@@ -251,7 +254,7 @@ export default function ActivityDetail() {
   )
   const memoryText = typeof aAny.memoryText === 'string' ? aAny.memoryText.trim() : ''
   const hasMemory = isFinished && (memoryImagesArr.length > 0 || memoryText.length > 0)
-  const hasGroupQr = activity?.hasGroupQr && activity?.groupQrImageUrl
+  const hasGroupQr = !!activity?.hasGroupQr
   const isPaid = userStatus === 'PAID' || userStatus === 'CHECKED_IN'
 
   // V2.8-B: imageUrls and contentBlocks
@@ -292,7 +295,51 @@ export default function ActivityDetail() {
   // V2.5.1: toast helper for disabled actions
   const toastFinished = () => Taro.showToast({ title: '活动已结束', icon: 'none' })
   const handleGoQR = () => { if (isFinished) { toastFinished(); return }; goQR() }
-  const handleGroupQr = () => { if (isFinished) { toastFinished(); return }; setShowGroupQr(true) }
+  const handleGroupQr = async () => {
+    if (isFinished) { toastFinished(); return }
+    if (!activity?.hasGroupQr) { Taro.showToast({ title: '该活动暂未配置群二维码', icon: 'none' }); return }
+    if (!isLoggedIn()) {
+      navigateToLoginWithRedirect({
+        returnUrl: `/pages/activity/detail/index?id=${id}`,
+        action: 'VIEW_GROUP_QR',
+        activityId: id,
+        preferBack: true,
+      })
+      return
+    }
+    setGroupQrLoading(true)
+    setGroupQrFailed(false)
+    try {
+      const res = await Taro.request({ url: `${API}/activity/${id}/group-qr`, header: userAuthHeader() })
+      const statusCode = Number((res as any).statusCode || 200)
+      if (statusCode === 200) {
+        setGroupQr(res.data)
+        setShowGroupQr(true)
+      } else if (statusCode === 401) {
+        navigateToLoginWithRedirect({
+          returnUrl: `/pages/activity/detail/index?id=${id}`,
+          action: 'VIEW_GROUP_QR',
+          activityId: id,
+          preferBack: true,
+        })
+      } else if (statusCode === 403) {
+        Taro.showToast({ title: '当前报名状态暂不可查看活动群二维码', icon: 'none' })
+      } else if (statusCode === 404) {
+        Taro.showToast({ title: '该活动暂未配置群二维码', icon: 'none' })
+      } else {
+        Taro.showToast({ title: '活动群二维码暂不可用', icon: 'none' })
+      }
+    } catch (e) {
+      Taro.showToast({ title: '活动群二维码暂不可用', icon: 'none' })
+    } finally {
+      setGroupQrLoading(false)
+    }
+  }
+  useEffect(() => {
+    if (!pendingGroupQrOpen || loading || !activity || !isPaid) return
+    setPendingGroupQrOpen(false)
+    handleGroupQr()
+  }, [pendingGroupQrOpen, loading, activity, isPaid])
   const goOrders = () => Taro.navigateTo({ url: '/pages/mine/orders/index' })
   const goSeries = () => {
     if (!activity?.series?.id) return
@@ -483,7 +530,7 @@ export default function ActivityDetail() {
           </View>
           <Button onClick={handleGroupQr} disabled={isFinished}
             style={{ flexShrink: 0, marginLeft: '16rpx', height: '60rpx', borderRadius: '999rpx', background: isFinished ? C.disabledBg : C.lightGreen, border: `1rpx solid ${C.border}`, color: isFinished ? C.disabledText : C.green, fontSize: '26rpx', lineHeight: '60rpx', padding: '0 24rpx' }}
-          >查看</Button>
+          >{groupQrLoading ? '...' : '查看'}</Button>
         </View>
       )}
 
@@ -630,7 +677,7 @@ export default function ActivityDetail() {
             {hasGroupQr && (
               <Button onClick={handleGroupQr}
                 style={{ width: '100%', height: '72rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid ${C.border}`, color: C.green, fontSize: '28rpx', lineHeight: '72rpx', textAlign: 'center' }}
-              >加入活动群</Button>
+              >{groupQrLoading ? '加载中...' : '加入活动群'}</Button>
             )}
           </View>
         )}
@@ -647,7 +694,7 @@ export default function ActivityDetail() {
       </View>
 
       {/* V2.5C: Group QR popup modal */}
-      {showGroupQr && hasGroupQr && (
+      {showGroupQr && groupQr && (
         <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowGroupQr(false)}>
           <View style={{ width: '560rpx', background: C.white, borderRadius: '24rpx', padding: '36rpx 32rpx 28rpx', boxShadow: '0 16rpx 48rpx rgba(0,0,0,0.16)' }} onClick={(e) => e.stopPropagation()}>
             <View style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8rpx' }}>
@@ -655,11 +702,11 @@ export default function ActivityDetail() {
                 <Text style={{ fontSize: '30rpx', color: C.neutral }}>×</Text>
               </View>
             </View>
-            <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block' }}>{activity!.groupQrTitle || '加入活动群'}</Text>
-            <Text style={{ fontSize: '25rpx', color: C.neutral, textAlign: 'center', display: 'block', marginTop: '8rpx' }}>{activity!.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'}</Text>
+            <Text style={{ fontSize: '30rpx', fontWeight: '700', color: C.dark, textAlign: 'center', display: 'block' }}>{groupQr.groupQrTitle || '加入活动群'}</Text>
+            <Text style={{ fontSize: '25rpx', color: C.neutral, textAlign: 'center', display: 'block', marginTop: '8rpx' }}>{groupQr.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步'}</Text>
             <View style={{ textAlign: 'center', marginTop: '20rpx' }}>
               {!groupQrFailed ? (
-                <Image src={activity!.groupQrImageUrl!} mode='widthFix' style={{ width: '300rpx', borderRadius: '12rpx' }} onError={() => setGroupQrFailed(true)} />
+                <Image src={groupQr.groupQrImageUrl} mode='widthFix' style={{ width: '300rpx', borderRadius: '12rpx' }} onError={() => setGroupQrFailed(true)} />
               ) : (
                 <View style={{ padding: '32rpx', background: C.lightGreen, borderRadius: '12rpx' }}>
                   <Text style={{ fontSize: '26rpx', color: C.neutral }}>活动群二维码暂不可用，请联系活动组织者。</Text>

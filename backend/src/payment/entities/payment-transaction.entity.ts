@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm'
 
 export type PaymentTradeType = 'FULL' | 'PREPAY' | 'POSTPAY'
-export type PaymentProvider = 'WECHAT' | 'OFFLINE' | 'OTHER'
+export type PaymentProvider = 'WECHAT' | 'MOCK' | 'OFFLINE' | 'OTHER'
 export type PaymentTransactionStatus = 'INIT' | 'PREPAY_CREATED' | 'PAYING' | 'SUCCESS' | 'FAILED' | 'CLOSED'
 
 @Entity('payment_transaction')
@@ -10,6 +10,7 @@ export type PaymentTransactionStatus = 'INIT' | 'PREPAY_CREATED' | 'PAYING' | 'S
 @Index('idx_payment_transaction_activity', ['activityId'])
 @Index('idx_payment_transaction_status', ['status'])
 @Index('idx_payment_transaction_trade_type', ['tradeType'])
+@Index('uniq_payment_transaction_order_trade_type', ['orderId', 'tradeType'], { unique: true })
 export class PaymentTransaction {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string

@@ -160,7 +160,7 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
   }
 
   private canApplyIncrementally(version: string): boolean {
-    return ['v2.8.4b-checkin-core', 'v2.9f-operation-banner', 'v2.9g-activity-series'].includes(version)
+    return ['v2.8.4b-checkin-core', 'v2.9f-operation-banner', 'v2.9g-activity-series', 'v2.9i-registration-unique', 'v2.9j-payment-transaction-idempotency'].includes(version)
   }
 
   private async isMigrationAlreadyRepresented(version: string): Promise<boolean> {
@@ -175,6 +175,10 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
         return this.hasTable('operation_banner')
       case 'v2.9g-activity-series':
         return (await this.hasTable('activity_series')) && (await this.hasColumn('activity', 'seriesId'))
+      case 'v2.9i-registration-unique':
+        return this.hasIndex('activity_registration', 'uniq_activity_registration_user_activity')
+      case 'v2.9j-payment-transaction-idempotency':
+        return this.hasIndex('payment_transaction', 'uniq_payment_transaction_order_trade_type')
       default:
         return false
     }
@@ -201,5 +205,21 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
 
     const rows = await this.dataSource.query(`PRAGMA table_info(${table})`)
     return rows.some((row: any) => row.name === column)
+  }
+
+  private async hasIndex(table: string, index: string): Promise<boolean> {
+    if (this.dialect === 'mysql') {
+      const rows = await this.dataSource.query(
+        'SELECT index_name FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?',
+        [table, index],
+      )
+      return rows.length > 0
+    }
+
+    const rows = await this.dataSource.query(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name = ?",
+      [table, index],
+    )
+    return rows.length > 0
   }
 }

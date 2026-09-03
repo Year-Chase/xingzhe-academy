@@ -41,6 +41,8 @@ export default function QRPage() {
   const [activity, setActivity] = useState<any>(null)
   // V2.5C: group QR
   const [groupQr, setGroupQr] = useState<any>(null)
+  const [hasGroupQr, setHasGroupQr] = useState(false)
+  const [groupQrLoading, setGroupQrLoading] = useState(false)
   const [showGroupQr, setShowGroupQr] = useState(false)
 
   // V2.5.1: activity finished check
@@ -59,7 +61,7 @@ export default function QRPage() {
   }, [activityId])
 
   const load = useCallback(async (id: number) => {
-    setQrStatus('loading'); setError(''); setCode(''); setExpiresAt(''); setIsFinished(false)
+    setQrStatus('loading'); setError(''); setCode(''); setExpiresAt(''); setIsFinished(false); setHasGroupQr(false); setGroupQr(null)
     try {
       const detail = await Taro.request({ url: `${API}/activity/${id}` })
       const d = detail.data as any
@@ -70,10 +72,7 @@ export default function QRPage() {
       setActivity(d)
       // V2.5.1: check if finished
       if (d.endTime && new Date(d.endTime).getTime() < Date.now()) setIsFinished(true)
-      // V2.5C: capture group QR info
-      if (d.groupQrType && d.groupQrType !== 'NONE' && d.groupQrImageUrl) {
-        setGroupQr({ type: d.groupQrType, imageUrl: d.groupQrImageUrl, title: d.groupQrTitle || '加入活动群', desc: d.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步' })
-      }
+      setHasGroupQr(!!d.hasGroupQr)
       try {
         const qr = await Taro.request({ url: `${API}/activity/${id}/qr`, header: userAuthHeader() })
         const q = qr.data as any
@@ -104,6 +103,38 @@ export default function QRPage() {
       } catch (e2) { setError('加载失败'); setQrStatus('EXPIRED') }
     }
   }, [])
+
+  const handleGroupQr = async () => {
+    if (isFinished) return
+    if (!hasGroupQr) { Taro.showToast({ title: '该活动暂未配置群二维码', icon: 'none' }); return }
+    setGroupQrLoading(true)
+    try {
+      const res = await Taro.request({ url: `${API}/activity/${activityId}/group-qr`, header: userAuthHeader() })
+      const statusCode = Number((res as any).statusCode || 200)
+      if (statusCode === 200) {
+        const d = res.data as any
+        setGroupQr({
+          type: d.groupQrType,
+          imageUrl: d.groupQrImageUrl,
+          title: d.groupQrTitle || '加入活动群',
+          desc: d.groupQrDescription || '活动通知、集合安排和现场事项将在群内同步',
+        })
+        setShowGroupQr(true)
+      } else if (statusCode === 401) {
+        Taro.showToast({ title: '请先完成登录', icon: 'none' })
+      } else if (statusCode === 403) {
+        Taro.showToast({ title: '当前报名状态暂不可查看活动群二维码', icon: 'none' })
+      } else if (statusCode === 404) {
+        Taro.showToast({ title: '该活动暂未配置群二维码', icon: 'none' })
+      } else {
+        Taro.showToast({ title: '活动群二维码暂不可用', icon: 'none' })
+      }
+    } catch (e) {
+      Taro.showToast({ title: '活动群二维码暂不可用', icon: 'none' })
+    } finally {
+      setGroupQrLoading(false)
+    }
+  }
 
   // checkin is done by Admin via /admin/activity/:id/checkin — no user self-checkin
 
@@ -256,10 +287,10 @@ export default function QRPage() {
       {/* ── Actions ── */}
       <View style={{ padding: '40rpx 32rpx', textAlign: 'center' }}>
         {/* V2.5C: group QR entry — disabled if finished */}
-        {groupQr && (
-          <Button onClick={() => { if (!isFinished) setShowGroupQr(true) }}
+        {hasGroupQr && (
+          <Button onClick={handleGroupQr}
             style={{ marginTop: qrStatus === 'ACTIVE' ? '20rpx' : '0', width: '100%', height: '88rpx', borderRadius: '999rpx', background: isFinished ? C.disabledBg : C.lightGreen, border: `1rpx solid ${C.border}`, color: isFinished ? C.disabledText : C.green, fontSize: '28rpx', lineHeight: '88rpx' }}
-          >{isFinished ? '活动群入口已关闭' : '加入活动群'}</Button>
+          >{isFinished ? '活动群入口已关闭' : groupQrLoading ? '加载中...' : '加入活动群'}</Button>
         )}
         <Button onClick={() => Taro.navigateBack()}
           style={{ marginTop: '24rpx', width: '100%', height: '88rpx', borderRadius: '999rpx', background: C.white, border: '1rpx solid #EDE9DF', color: C.dark, fontSize: '30rpx', lineHeight: '88rpx' }}
