@@ -14,6 +14,7 @@ import { UserInvoiceProfile, UserInvoiceType } from './entities/user-invoice-pro
 import { UserRegistrationProfile } from './entities/user-registration-profile.entity'
 import { ContentSecurityService } from '../common/content-security.service'
 import { MiniappJwtService } from '../auth/miniapp-jwt.service'
+import { getWechatLoginMode } from '../config/runtime-config'
 
 const MOCK_CODE_MAP: Record<string, string> = {
   'mock-code': 'mock_openid_default',
@@ -21,9 +22,6 @@ const MOCK_CODE_MAP: Record<string, string> = {
   'mock-code-002': 'mock_openid_002',
   'mock-code-v24-smoke': 'mock_openid_v24_smoke',
 }
-
-// ── V2.6B: mock/real mode ──
-const LOGIN_MODE = process.env.WECHAT_LOGIN_MODE || 'mock'
 
 @Injectable()
 export class UsersService {
@@ -122,7 +120,7 @@ export class UsersService {
 
     let openid: string
 
-    if (LOGIN_MODE === 'real') {
+    if (getWechatLoginMode() === 'real') {
       openid = await this.resolveRealOpenid(code)
     } else {
       openid = this.resolveMockOpenid(code)

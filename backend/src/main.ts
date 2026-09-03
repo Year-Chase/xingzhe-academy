@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core'
 import { NestExpressApplication } from '@nestjs/platform-express'
 import { AppModule } from './app.module'
 import { getUploadRootDir } from './config/upload-path'
+import { getCorsOrigin } from './config/runtime-config'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 
@@ -10,10 +11,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule)
 
-  // CORS: configured via CORS_ORIGIN env, defaults to * in dev
-  const corsOrigin = process.env.CORS_ORIGIN || '*'
+  // CORS: production fails fast unless CORS_ORIGIN is explicit.
+  const corsOrigin = getCorsOrigin()
   app.enableCors({
-    origin: corsOrigin === '*' ? '*' : corsOrigin.split(',').map(s => s.trim()),
+    origin: corsOrigin,
     credentials: true,
   })
 

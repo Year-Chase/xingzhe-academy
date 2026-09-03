@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { TypeOrmModule } from '@nestjs/typeorm'
 import { loadEnv } from './config/env'
+import { SchemaMigrationService } from './migrations/schema-migration.service'
 
 // Ensure .env is loaded before ANY process.env reads below
 loadEnv()
@@ -38,8 +39,8 @@ const entities = [Activity, ActivityCategory, ActivitySeries, ActivityRegistrati
 
 // Production uses MySQL from env vars; development uses local SQLite
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.DB_HOST
-// DB_SYNCHRONIZE allows temporary table creation on first deployment (default false for safety)
-const dbSync = process.env.DB_SYNCHRONIZE === 'true'
+// synchronize is disabled in production. Local SQLite can opt in explicitly for legacy dev bootstrap only.
+const dbSync = !isProduction && process.env.DB_SYNCHRONIZE === 'true'
 const dbConfig: any = isProduction
   ? {
       type: 'mysql',
@@ -48,14 +49,14 @@ const dbConfig: any = isProduction
       username: process.env.DB_USERNAME || 'xingzhe',
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_DATABASE || 'xingzhe',
-      synchronize: dbSync,
+      synchronize: false,
       logging: false,
       charset: 'utf8mb4',
     }
   : {
       type: 'better-sqlite3',
-      database: 'data/xingzhe.db',
-      synchronize: true,
+      database: process.env.SQLITE_DB_PATH || 'data/xingzhe.db',
+      synchronize: dbSync,
       logging: false,
     }
 
@@ -68,5 +69,6 @@ const dbConfig: any = isProduction
     AuthModule,
     PaymentModule,
   ],
+  providers: [SchemaMigrationService],
 })
 export class AppModule {}
