@@ -1,7 +1,6 @@
 export default defineAppConfig({
   pages: [
     'pages/index/index',
-    'pages/trail/index',
     'pages/trail/memories/index',
     'pages/journey/certificate/index',
     'pages/mine/orders/index',
@@ -18,6 +17,8 @@ export default defineAppConfig({
     'pages/activity/registration-info/index',
     'pages/activity/qr/index',
     'pages/activity/list/index',
+    'pages/trail/index',
+    'pages/web-view/index',
   ],
   tabBar: {
     color: '#8A9288',
@@ -32,8 +33,8 @@ export default defineAppConfig({
         selectedIconPath: 'assets/tabbar/home-active.png',
       },
       {
-        pagePath: 'pages/trail/index',
-        text: '行者之路',
+        pagePath: 'pages/activity/list/index',
+        text: '活动',
         iconPath: 'assets/tabbar/route.png',
         selectedIconPath: 'assets/tabbar/route-active.png',
       },
@@ -47,7 +48,7 @@ export default defineAppConfig({
   },
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#F7F6F2',
+    navigationBarBackgroundColor: '#F7F8F5',
     navigationBarTitleText: '行者学社',
     navigationBarTextStyle: 'black',
   },

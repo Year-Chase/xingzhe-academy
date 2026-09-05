@@ -206,6 +206,7 @@ export class ActivityService implements OnModuleInit {
       code: s.code,
       coverImage: s.coverImage || '',
       shortDescription: s.shortDescription || '',
+      externalUrl: s.externalUrl || '',
       sortOrder: s.sortOrder,
     }))
   }
@@ -230,6 +231,7 @@ export class ActivityService implements OnModuleInit {
       coverImage: series.coverImage || '',
       shortDescription: series.shortDescription || '',
       description: series.description || '',
+      externalUrl: series.externalUrl || '',
       status: series.status,
       sortOrder: series.sortOrder,
       activeActivities: activities.filter((a) => !a.endTime || new Date(a.endTime) > now),

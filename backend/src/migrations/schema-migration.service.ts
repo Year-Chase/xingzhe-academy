@@ -160,7 +160,7 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
   }
 
   private canApplyIncrementally(version: string): boolean {
-    return ['v2.8.4b-checkin-core', 'v2.9f-operation-banner', 'v2.9g-activity-series', 'v2.9i-registration-unique', 'v2.9j-payment-transaction-idempotency'].includes(version)
+    return ['v2.8.4b-checkin-core', 'v2.9f-operation-banner', 'v2.9g-activity-series', 'v2.9i-registration-unique', 'v2.9j-payment-transaction-idempotency', 'v2.9k-activity-follow'].includes(version)
   }
 
   private async isMigrationAlreadyRepresented(version: string): Promise<boolean> {
@@ -179,6 +179,8 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
         return this.hasIndex('activity_registration', 'uniq_activity_registration_user_activity')
       case 'v2.9j-payment-transaction-idempotency':
         return this.hasIndex('payment_transaction', 'uniq_payment_transaction_order_trade_type')
+      case 'v2.9k-activity-follow':
+        return (await this.hasTable('activity_follow')) && (await this.hasColumn('activity_series', 'externalUrl'))
       default:
         return false
     }

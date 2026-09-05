@@ -25,6 +25,7 @@ export class AdminActivitySeriesController {
       coverImage: s.coverImage || '',
       shortDescription: s.shortDescription || '',
       description: s.description || '',
+      externalUrl: s.externalUrl || '',
       sortOrder: s.sortOrder,
       status: s.status,
       activityCount: await this.activityRepo.count({ where: { seriesId: s.id } as any }),
@@ -42,6 +43,7 @@ export class AdminActivitySeriesController {
       code: s.code,
       coverImage: s.coverImage || '',
       shortDescription: s.shortDescription || '',
+      externalUrl: s.externalUrl || '',
       sortOrder: s.sortOrder,
     }))
   }
@@ -92,6 +94,18 @@ export class AdminActivitySeriesController {
       next.shortDescription = shortDescription || null
     }
     if (body?.description !== undefined) next.description = String(body.description || '').trim() || null
+    if (body?.externalUrl !== undefined) {
+      const externalUrl = String(body.externalUrl || '').trim()
+      if (externalUrl.length > 500) throw new BadRequestException('品牌跳转链接最多500个字符')
+      if (externalUrl) {
+        try {
+          if (new URL(externalUrl).protocol !== 'https:') throw new Error('protocol')
+        } catch {
+          throw new BadRequestException('品牌跳转链接必须为 https 地址')
+        }
+      }
+      next.externalUrl = externalUrl || null
+    }
     if (body?.sortOrder !== undefined) next.sortOrder = Number(body.sortOrder || 0)
     if (body?.status !== undefined) next.status = body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE'
     return next

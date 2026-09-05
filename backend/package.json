@@ -4,10 +4,12 @@
   "private": true,
   "description": "行者 V3 后端服务",
   "scripts": {
-    "build": "nest build",
+    "build": "tsc -p tsconfig.build.json",
     "migrate:schema": "ts-node src/migrations/run-schema-migrations.ts",
+    "test:ui-polish": "ts-node scripts/v29-ui-final-polish-smoke.ts",
     "test:v29i": "ts-node scripts/v29i-registration-smoke.ts",
     "test:v29j": "ts-node scripts/v29j-payment-state-machine-smoke.ts",
+    "test:v29k": "ts-node scripts/v29k-activity-follow-smoke.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main"

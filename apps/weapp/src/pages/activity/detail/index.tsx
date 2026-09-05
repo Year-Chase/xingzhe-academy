@@ -72,9 +72,9 @@ interface Participant {
 type RegStatus = 'NOT_REGISTERED' | 'REGISTERED' | 'PAID' | 'CHECKED_IN' | 'EXPIRED'
 
 const C = {
-  bg: '#F7F6F2', white: '#FFFFFF', green: '#3F6B4F', dark: '#18231E',
-  body: '#3E463F', neutral: '#7A8178', secondary: '#A6AAA2',
-  lightGreen: '#EEF5EF', border: '#EDE9DF', disabledBg: '#E9EAE5', disabledText: '#8A9288',
+  bg: '#F7F8F5', white: '#FFFFFF', green: '#2E7D5A', dark: '#202923',
+  body: '#4B564F', neutral: '#747D77', secondary: '#A3AAA5',
+  lightGreen: '#EEF6F1', border: '#E6EAE6', disabledBg: '#E9EAE5', disabledText: '#8A9288',
 }
 
 const STATUS_LABEL: Record<RegStatus, string> = {
@@ -107,6 +107,9 @@ export default function ActivityDetail() {
   const [postpayActing, setPostpayActing] = useState(false)
   const [handledLoginAction, setHandledLoginAction] = useState(false)
   const [pendingLoginAction, setPendingLoginAction] = useState<any>(null)
+  const [isFollowed, setIsFollowed] = useState(false)
+  const [followActing, setFollowActing] = useState(false)
+  const [pendingFollow, setPendingFollow] = useState(false)
 
   useEffect(() => { const p = router.params as any; if (p.id) setId(Number(p.id)) }, [router.params])
   useEffect(() => { if (id === 0) return; load(id) }, [id])
@@ -117,6 +120,7 @@ export default function ActivityDetail() {
       setPendingLoginAction(action)
       setHandledLoginAction(false)
     }
+    if (action?.action === 'FOLLOW' && String(action.activityId || '') === String(id)) setPendingFollow(true)
     load(id)
   })
   // V2.5C: check enrollSuccess to show group QR
@@ -130,18 +134,20 @@ export default function ActivityDetail() {
     try {
       const loggedIn = isLoggedIn()
       const authHeader = userAuthHeader()
-      const [d, s, p, profileRes, orderRes] = await Promise.all([
+      const [d, s, p, profileRes, orderRes, followRes] = await Promise.all([
         Taro.request({ url: `${API}/activity/${activityId}` }),
         loggedIn ? Taro.request({ url: `${API}/activity/${activityId}/status`, header: authHeader }) : Promise.resolve({ data: { status: 'NOT_REGISTERED' } }),
         Taro.request({ url: `${API}/activity/${activityId}/participants` }).catch(() => ({ data: [] })),
         loggedIn ? Taro.request({ url: `${API}/users/me/profile`, header: authHeader }).catch(() => ({ data: {} })) : Promise.resolve({ data: {} }),
         loggedIn ? Taro.request({ url: `${API}/activity/${activityId}/order-status`, header: authHeader }).catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+        loggedIn ? Taro.request({ url: `${API}/activity/${activityId}/follow-status`, header: authHeader }).catch(() => ({ data: { isFollowed: false } })) : Promise.resolve({ data: { isFollowed: false } }),
       ])
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
       setParticipants((p.data as Participant[]) || [])
       setUserType((profileRes.data as any)?.identityType || '普通用户')
       setOrderInfo((orderRes.data as any) || null)
+      setIsFollowed(!!(followRes.data as any)?.isFollowed)
     } catch (e) { console.error('[activity-detail] load', e); setError('加载失败，请下拉重试') }
     finally { setLoading(false) }
   }, [])
@@ -184,6 +190,31 @@ export default function ActivityDetail() {
     }
     openEnrollmentStep()
   }
+
+  const handleFollow = async () => {
+    if (followActing || !id) return
+    if (!isLoggedIn()) {
+      navigateToLoginWithRedirect({ returnUrl: `/pages/activity/detail/index?id=${id}`, action: 'FOLLOW', activityId: id, preferBack: true })
+      return
+    }
+    const previous = isFollowed
+    setFollowActing(true)
+    setIsFollowed(!previous)
+    try {
+      const response = await Taro.request({ method: previous ? 'DELETE' : 'POST', url: `${API}/activity/${id}/follow`, header: userAuthHeader() })
+      if (Number(response.statusCode || 200) >= 400) throw new Error('follow failed')
+      Taro.showToast({ title: previous ? '已取消关注' : '已关注', icon: 'none' })
+    } catch {
+      setIsFollowed(previous)
+      Taro.showToast({ title: '操作失败，请重试', icon: 'none' })
+    } finally { setFollowActing(false) }
+  }
+
+  useEffect(() => {
+    if (!pendingFollow || loading || !isLoggedIn()) return
+    setPendingFollow(false)
+    handleFollow()
+  }, [pendingFollow, loading, id])
 
   const confirmPay = async () => {
     setShowPayConfirm(false)
@@ -234,14 +265,7 @@ export default function ActivityDetail() {
 
   const fmtDate = (d: string) => { if (!d) return ''; const dt = new Date(d); const w = ['日', '一', '二', '三', '四', '五', '六'][dt.getDay()]; return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}）` }
   const fmtTimeOnly = (s: string | null | undefined) => { if (!s) return ''; const d = new Date(s); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
-  const fmtTimeRange = (s: string | null | undefined, e: string | null | undefined) => {
-    const st = fmtDate(s || ''); const so = fmtTimeOnly(s)
-    if (!s) return '—'
-    if (!e) return `${st} ${so}`
-    const et = fmtDate(e); const eo = fmtTimeOnly(e)
-    if (st === et) return `${st} ${so} - ${eo}`
-    return `${st} ${so} - ${et} ${eo}`
-  }
+  const fmtTimePoint = (s: string | null | undefined) => s ? `${fmtDate(s)} ${fmtTimeOnly(s)}` : '—'
 
   const reg = activity?.registeredCount ?? 0
   const cap = activity?.capacity ?? 0
@@ -353,41 +377,27 @@ export default function ActivityDetail() {
       Taro.showToast({ title: '地点已复制', icon: 'success' })
     }
   }
-  const handleBack = () => {
-    const pages = Taro.getCurrentPages?.() || []
-    if (pages.length > 1) {
-      Taro.navigateBack()
-      return
-    }
-    Taro.navigateTo({ url: '/pages/activity/list/index' })
-  }
-
   if (loading) return <View style={{ padding: '120rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ color: C.secondary, fontSize: '28rpx' }}>加载中...</Text></View>
   if (error || !activity) return <View style={{ padding: '160rpx 32rpx', textAlign: 'center', minHeight: '100vh', background: C.bg }}><Text style={{ display: 'block', fontSize: '32rpx', color: C.body, marginBottom: '20rpx' }}>{error || '活动未找到'}</Text><Button onClick={() => load(id)} style={{ height: '88rpx', borderRadius: '999rpx', background: C.green, color: '#FFFFFF', fontSize: '30rpx', lineHeight: '88rpx', border: 'none', padding: '0 56rpx' }}>重试</Button></View>
 
   return (
-    <View style={{ minHeight: '100vh', background: C.bg, paddingBottom: '260rpx' }}>
-      <View style={{ height: '112rpx', padding: '48rpx 24rpx 0', display: 'flex', flexDirection: 'row', alignItems: 'center', background: C.bg }}>
-        <View onClick={handleBack} style={{ width: '64rpx', height: '64rpx', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: '40rpx', color: C.dark }}>&lt;</Text>
-        </View>
-        <Text style={{ flex: 1, textAlign: 'center', fontSize: '30rpx', fontWeight: '700', color: C.dark }}>活动详情</Text>
-        <View style={{ width: '64rpx', height: '64rpx' }} />
-      </View>
-
+    <View style={{ minHeight: '100vh', background: C.bg, paddingBottom: '260rpx', paddingTop: '8rpx' }}>
       {/* 1. Title + status pill */}
-      <View style={{ margin: '0 32rpx', padding: '32rpx 0 24rpx' }}>
-        {activity.category?.name ? (
-          <View style={{ alignSelf: 'flex-start', marginBottom: '14rpx', padding: '6rpx 16rpx', borderRadius: '999rpx', background: C.lightGreen, display: 'flex' }}>
-            <Text style={{ fontSize: '23rpx', color: C.green, fontWeight: '600' }}>{activity.category.name}</Text>
-          </View>
-        ) : null}
+      <View style={{ margin: '0 24rpx', padding: '24rpx 0' }}>
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
           <Text style={{ flex: 1, fontSize: '40rpx', fontWeight: '700', color: C.dark, lineHeight: '1.25' }}>{activity.title}</Text>
+          <View onClick={handleFollow} style={{ width: '54rpx', height: '54rpx', marginLeft: '12rpx', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: followActing ? 0.45 : 1 }}>
+            <Text style={{ fontSize: '38rpx', lineHeight: '1', color: isFollowed ? '#F4C542' : C.body }}>{isFollowed ? '★' : '☆'}</Text>
+          </View>
           <View style={{ flexShrink: 0, marginLeft: '16rpx', marginTop: '6rpx', padding: '6rpx 16rpx', borderRadius: '999rpx', background: C.lightGreen }}>
             <Text style={{ fontSize: '22rpx', color: C.green, fontWeight: '500' }}>{STATUS_LABEL[userStatus]}</Text>
           </View>
         </View>
+        {activity.category?.name ? (
+          <View style={{ alignSelf: 'flex-start', marginTop: '14rpx', height: '40rpx', padding: '0 14rpx', borderRadius: '999rpx', background: C.lightGreen, display: 'flex', alignItems: 'center' }}>
+            <Text style={{ fontSize: '22rpx', color: '#507962', fontWeight: '500' }}>{activity.category.name}</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* 2. Cover / Image Swiper */}
@@ -423,12 +433,18 @@ export default function ActivityDetail() {
         {(aAny.registrationStartTime || aAny.registrationEndTime) && (
           <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
             <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>报名时间</Text>
-            <Text style={{ flex: 1, fontSize: '26rpx', color: C.body, lineHeight: '1.5' }}>{fmtTimeRange(aAny.registrationStartTime, aAny.registrationEndTime)}</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <TimePoint label='开始' value={fmtTimePoint(aAny.registrationStartTime)} />
+              <TimePoint label='截止' value={fmtTimePoint(aAny.registrationEndTime)} last />
+            </View>
           </View>
         )}
         <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', paddingBottom: '18rpx', marginBottom: '18rpx', borderBottom: '1rpx solid #EDE9DF' }}>
           <Text style={{ width: '140rpx', flexShrink: 0, fontSize: '26rpx', color: C.neutral }}>活动时间</Text>
-          <Text style={{ flex: 1, fontSize: '26rpx', color: C.body, lineHeight: '1.5' }}>{fmtTimeRange(activity.startTime, activity.endTime)}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <TimePoint label='开始' value={fmtTimePoint(activity.startTime)} />
+            <TimePoint label='结束' value={fmtTimePoint(activity.endTime)} last />
+          </View>
         </View>
         {/* V2.6E: Location card — full row clickable, icon replaces '导航' text */}
         <View onClick={handleLocationTap}
@@ -719,6 +735,21 @@ export default function ActivityDetail() {
           </View>
         </View>
       )}
+    </View>
+  )
+}
+
+function TimePoint({ label, value, last }: { label: string; value: string; last?: boolean }) {
+  const match = value.match(/^(.*?)(\s+\d{2}:\d{2})$/)
+  const date = match?.[1] || value
+  const time = match?.[2]?.trim() || ''
+  return (
+    <View style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginBottom: last ? 0 : '8rpx', minWidth: 0 }}>
+      <Text style={{ width: '56rpx', flexShrink: 0, fontSize: '24rpx', color: C.secondary }}>{label}</Text>
+      <View style={{ flex: 1, minWidth: '260rpx', display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '10rpx' }}>
+        <Text style={{ fontSize: '26rpx', color: C.body, lineHeight: '1.4', whiteSpace: 'nowrap' }}>{date}</Text>
+        {time ? <Text style={{ fontSize: '26rpx', color: C.body, lineHeight: '1.4', whiteSpace: 'nowrap' }}>{time}</Text> : null}
+      </View>
     </View>
   )
 }

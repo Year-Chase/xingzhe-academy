@@ -42,7 +42,6 @@ interface BannerItem {
 
 const RECENT_LIMIT = 5
 const BANNER_HEIGHT = '312rpx'
-const HOME_SERIES_LIMIT = 4
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
 
 function imgUrl(cover: string | undefined): string {
@@ -193,37 +192,31 @@ export default function Index() {
   })
 
   const goDetail = (id: number) => { Taro.navigateTo({ url: `/pages/activity/detail/index?id=${id}` }) }
-  const goAll = (categoryId?: string) => {
-    const suffix = categoryId ? `?categoryId=${encodeURIComponent(categoryId)}` : ''
-    Taro.navigateTo({ url: `/pages/activity/list/index${suffix}` })
-  }
+  const goAll = () => Taro.switchTab({ url: '/pages/activity/list/index' })
   const goSeries = (id: string) => { Taro.navigateTo({ url: `/pages/activity/series/detail/index?id=${id}` }) }
-  const goSeriesIndex = () => { Taro.navigateTo({ url: '/pages/activity/series/index' }) }
   const onBannerTap = (banner: BannerItem) => {
     if (banner.jumpType === 'ACTIVITY' && banner.jumpValue) {
       Taro.navigateTo({ url: `/pages/activity/detail/index?id=${banner.jumpValue}` })
     } else if (banner.jumpType === 'CATEGORY' && banner.jumpValue) {
-      goAll(banner.jumpValue)
+      goAll()
     } else if (banner.jumpType === 'SERIES' && banner.jumpValue) {
       goSeries(banner.jumpValue)
     }
   }
 
   const renderSeriesCard = (s: ActivitySeries) => {
-    const wide = seriesList.length === 1
     return (
       <View key={s.id} onClick={() => goSeries(s.id)}
         style={{
-          flexShrink: 0,
-          width: wide ? '686rpx' : '320rpx',
+          width: 'calc(50% - 8rpx)',
           borderRadius: '22rpx',
           background: '#FFFFFF',
           border: '1rpx solid #EDE9DF',
           overflow: 'hidden',
-          boxShadow: '0 8rpx 24rpx rgba(24,35,30,0.05)',
+          boxSizing: 'border-box',
         }}
       >
-        <View style={{ height: wide ? '514rpx' : '240rpx', background: PLACEHOLDER_BG, overflow: 'hidden' }}>
+        <View style={{ aspectRatio: '4 / 3', background: PLACEHOLDER_BG, overflow: 'hidden' }}>
           <ImgWithFallback src={imgUrl(s.coverImage)} style={{ width: '100%', height: '100%' }} />
         </View>
         <View style={{ padding: '20rpx 22rpx' }}>
@@ -268,13 +261,10 @@ export default function Index() {
         <>
           <View style={{ padding: '0 32rpx 18rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: '32rpx', fontWeight: '700', color: '#18231E' }}>行者系列</Text>
-            {seriesList.length >= 5 ? <Text onClick={goSeriesIndex} style={{ fontSize: '24rpx', color: '#2E7D5A' }}>查看全部系列 →</Text> : null}
           </View>
-          <ScrollView scrollX={seriesList.length > 1} style={{ whiteSpace: 'nowrap', width: '100%', marginBottom: '32rpx' }}>
-            <View style={{ display: 'flex', flexDirection: 'row', gap: '16rpx', padding: '0 32rpx' }}>
-              {seriesList.slice(0, HOME_SERIES_LIMIT).map(renderSeriesCard)}
-            </View>
-          </ScrollView>
+          <View style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', rowGap: '20rpx', justifyContent: 'space-between', padding: '0 32rpx', marginBottom: '32rpx' }}>
+            {seriesList.map(renderSeriesCard)}
+          </View>
         </>
       ) : null}
 

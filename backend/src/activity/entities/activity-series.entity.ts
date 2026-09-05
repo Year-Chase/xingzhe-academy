@@ -23,6 +23,9 @@ export class ActivitySeries {
   @Column({ type: 'text', nullable: true })
   description: string | null
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  externalUrl: string | null
+
   @Column({ type: 'int', default: 0 })
   sortOrder: number
 

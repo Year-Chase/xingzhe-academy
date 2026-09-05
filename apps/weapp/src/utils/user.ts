@@ -6,9 +6,9 @@ const LOGIN_REDIRECT_KEY = 'xingzhe_login_redirect_state'
 const LOGIN_RETURN_ACTION_KEY = 'xingzhe_login_return_action'
 const USER_PROFILE_STORAGE_KEY = 'xingzhe_user_profile'
 const LOGIN_REDIRECT_TTL = 10 * 60 * 1000
-const TAB_BAR_PAGES = new Set(['/pages/index/index', '/pages/trail/index', '/pages/mine/index'])
+const TAB_BAR_PAGES = new Set(['/pages/index/index', '/pages/activity/list/index', '/pages/mine/index'])
 
-export type LoginRedirectAction = 'REGISTER' | 'OPEN_ORDER' | 'OPEN_REGISTRATION' | 'OPEN_INVOICE'
+export type LoginRedirectAction = 'REGISTER' | 'FOLLOW' | 'VIEW_GROUP_QR' | 'OPEN_ORDER' | 'OPEN_REGISTRATION' | 'OPEN_INVOICE'
 
 export type LoginRedirectState = {
   returnUrl: string

@@ -1,6 +1,6 @@
 export default definePageConfig({
-  navigationBarTitleText: '行者之路',
-  navigationBarBackgroundColor: '#F7F6F2',
+  navigationBarTitleText: '我的旅程',
+  navigationBarBackgroundColor: '#F7F8F5',
   navigationBarTextStyle: 'black',
   enablePullDownRefresh: true,
 })

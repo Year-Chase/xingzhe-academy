@@ -9,6 +9,7 @@ html, body {
   font-size: 14px;
   color: #18231E;
   background: #F7F6F2;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -23,4 +24,27 @@ a {
 .t-menu__item.t-is-active {
   color: #FFFFFF !important;
   background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.t-table {
+  color: #18231E;
+}
+
+.t-table th {
+  background: #FBFAF6 !important;
+  color: #5F675F !important;
+  font-weight: 600 !important;
+}
+
+.t-table td {
+  border-color: #EDE9DF !important;
+}
+
+.t-button {
+  border-radius: 6px;
+}
+
+.t-dialog__modal,
+.t-drawer {
+  border-radius: 8px;
 }

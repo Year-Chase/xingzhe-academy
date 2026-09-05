@@ -7,6 +7,7 @@ interface ActivityCard {
   id: number
   title: string
   description: string
+  externalUrl?: string
   location: string
   startTime: string
   endTime: string
@@ -29,15 +30,15 @@ interface SeriesDetail {
 }
 
 const C = {
-  bg: '#F7F6F2',
+  bg: '#F7F8F5',
   white: '#FFFFFF',
-  green: '#3F6B4F',
-  dark: '#18231E',
-  body: '#3E463F',
-  neutral: '#7A8178',
-  secondary: '#A6AAA2',
-  lightGreen: '#EEF5EF',
-  border: '#EDE9DF',
+  green: '#2E7D5A',
+  dark: '#202923',
+  body: '#4B564F',
+  neutral: '#747D77',
+  secondary: '#A3AAA5',
+  lightGreen: '#EEF6F1',
+  border: '#E6EAE6',
 }
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
 
@@ -61,6 +62,12 @@ function fmtDate(d: string) {
   return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
 }
 
+function activityStatus(activity: ActivityCard, past: boolean) {
+  if (past) return '已结束'
+  if (!activity.startTime) return '待定'
+  return new Date(activity.startTime).getTime() > Date.now() ? '即将开始' : '进行中'
+}
+
 function activityCover(a: ActivityCard) {
   try {
     const urls = JSON.parse((a as any).imageUrls || 'null')
@@ -74,20 +81,24 @@ function SeriesActivityCard({ activity, past = false }: { activity: ActivityCard
   const meta = [activity.startTime ? fmtDate(activity.startTime) : '', activity.location || ''].filter(Boolean).join('  ')
   return (
     <View onClick={() => Taro.navigateTo({ url: `/pages/activity/detail/index?id=${activity.id}` })}
-      style={{ marginBottom: '20rpx', background: C.white, borderRadius: '20rpx', overflow: 'hidden', border: `1rpx solid ${C.border}`, opacity: past ? 0.72 : 1 }}
+      style={{ marginBottom: '18rpx', background: C.white, borderRadius: '18rpx', overflow: 'hidden', border: `1rpx solid ${C.border}`, opacity: past ? 0.72 : 1, display: 'flex', flexDirection: 'row', padding: '16rpx', boxSizing: 'border-box' }}
     >
-      <View style={{ height: '300rpx', background: PLACEHOLDER_BG, overflow: 'hidden' }}>
+      <View style={{ width: '176rpx', height: '132rpx', flexShrink: 0, borderRadius: '14rpx', background: PLACEHOLDER_BG, overflow: 'hidden' }}>
         <ImgWithFallback src={cover} style={{ width: '100%', height: '100%' }} />
       </View>
-      <View style={{ padding: '22rpx 24rpx' }}>
-        {activity.category?.name ? (
-          <View style={{ alignSelf: 'flex-start', padding: '4rpx 14rpx', borderRadius: '999rpx', background: C.lightGreen, marginBottom: '10rpx' }}>
-            <Text style={{ fontSize: '21rpx', color: C.green, fontWeight: '600' }}>{activity.category.name}</Text>
+      <View style={{ flex: 1, minWidth: 0, paddingLeft: '18rpx', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <View>
+          <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8rpx', marginBottom: '8rpx' }}>
+            {activity.category?.name ? (
+              <View style={{ flexShrink: 0, padding: '3rpx 12rpx', borderRadius: '999rpx', background: C.lightGreen }}>
+                <Text style={{ fontSize: '20rpx', color: C.green, fontWeight: '600' }}>{activity.category.name}</Text>
+              </View>
+            ) : null}
+            <Text style={{ fontSize: '21rpx', color: past ? C.secondary : C.green }}>{activityStatus(activity, past)}</Text>
           </View>
-        ) : null}
-        <Text style={{ fontSize: '31rpx', fontWeight: '700', color: C.dark, lineHeight: '1.35', display: 'block' }}>{activity.title}</Text>
-        {activity.description ? <Text style={{ fontSize: '24rpx', color: C.body, lineHeight: '1.5', marginTop: '8rpx', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.description}</Text> : null}
-        {meta ? <Text style={{ fontSize: '23rpx', color: C.neutral, lineHeight: '1.4', marginTop: '14rpx', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</Text> : null}
+          <Text style={{ fontSize: '28rpx', fontWeight: '700', color: C.dark, lineHeight: '1.32', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</Text>
+        </View>
+        {meta ? <Text style={{ fontSize: '23rpx', color: C.neutral, lineHeight: '1.35', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</Text> : null}
       </View>
     </View>
   )
@@ -130,37 +141,37 @@ export default function ActivitySeriesDetail() {
 
   return (
     <ScrollView scrollY style={{ height: '100vh', background: C.bg }}>
-      <View style={{ paddingBottom: '80rpx' }}>
-        <View style={{ margin: '24rpx 32rpx 0', height: '380rpx', borderRadius: '24rpx', overflow: 'hidden', background: PLACEHOLDER_BG, position: 'relative' }}>
+      <View style={{ padding: '24rpx 0 80rpx' }}>
+        <View style={{ margin: '0 24rpx', aspectRatio: '4 / 3', borderRadius: '24rpx', overflow: 'hidden', background: PLACEHOLDER_BG, position: 'relative' }}>
           <ImgWithFallback src={imgUrl(detail.coverImage)} style={{ width: '100%', height: '100%' }} />
-          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '72rpx 30rpx 30rpx', background: 'linear-gradient(0deg, rgba(24,35,30,0.76), rgba(24,35,30,0))' }}>
-            <Text style={{ color: '#FFFFFF', fontSize: '42rpx', fontWeight: '700', display: 'block', lineHeight: '1.25' }}>{detail.name}</Text>
-            {detail.shortDescription ? <Text style={{ color: 'rgba(255,255,255,0.86)', fontSize: '25rpx', display: 'block', marginTop: '8rpx', lineHeight: '1.45' }}>{detail.shortDescription}</Text> : null}
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '84rpx 30rpx 28rpx', background: 'linear-gradient(0deg, rgba(0,0,0,0.55), rgba(0,0,0,0))' }}>
+            <Text style={{ color: '#FFFFFF', fontSize: '36rpx', fontWeight: '600', display: 'block', lineHeight: '1.25' }}>{detail.name}</Text>
+            {detail.shortDescription ? <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: '25rpx', display: 'block', marginTop: '8rpx', lineHeight: '1.45', maxHeight: '72rpx', overflow: 'hidden' }}>{detail.shortDescription}</Text> : null}
           </View>
         </View>
 
         {detail.description ? (
-          <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '20rpx', border: `1rpx solid ${C.border}`, padding: '26rpx 28rpx' }}>
+          <View style={{ margin: '24rpx 24rpx 0', background: C.white, borderRadius: '22rpx', border: `1rpx solid ${C.border}`, padding: '24rpx 28rpx' }}>
+            <Text style={{ fontSize: '30rpx', fontWeight: '600', color: C.dark, display: 'block', marginBottom: '14rpx' }}>品牌介绍</Text>
             <Text style={{ fontSize: '27rpx', color: C.body, lineHeight: '1.65', display: 'block' }}>{detail.description}</Text>
           </View>
         ) : null}
-
-        {detail.activeActivities.length > 0 ? (
-          <View style={{ margin: '32rpx 32rpx 0' }}>
-            <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '18rpx' }}>正在/即将发生</Text>
-            {detail.activeActivities.map((a) => <SeriesActivityCard key={a.id} activity={a} />)}
+        {detail.externalUrl ? (
+          <View onClick={() => Taro.navigateTo({ url: `/pages/web-view/index?url=${encodeURIComponent(detail.externalUrl || '')}` })} style={{ margin: '16rpx 24rpx 0', height: '78rpx', padding: '0 28rpx', background: C.white, borderRadius: '22rpx', border: `1rpx solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: '25rpx', color: C.green, fontWeight: '500' }}>访问品牌官网</Text><Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
           </View>
         ) : null}
 
-        {detail.pastActivities.length > 0 ? (
-          <View style={{ margin: '32rpx 32rpx 0' }}>
-            <Text style={{ fontSize: '32rpx', fontWeight: '700', color: C.dark, display: 'block', marginBottom: '18rpx' }}>往期活动</Text>
+        {(detail.activeActivities.length > 0 || detail.pastActivities.length > 0) ? (
+          <View style={{ margin: '32rpx 24rpx 0' }}>
+            <Text style={{ fontSize: '32rpx', fontWeight: '600', color: C.dark, display: 'block', marginBottom: '18rpx' }}>系列活动</Text>
+            {detail.activeActivities.map((a) => <SeriesActivityCard key={a.id} activity={a} />)}
             {detail.pastActivities.map((a) => <SeriesActivityCard key={a.id} activity={a} past />)}
           </View>
         ) : null}
 
         {detail.activeActivities.length === 0 && detail.pastActivities.length === 0 ? (
-          <View style={{ margin: '32rpx', padding: '56rpx 28rpx', background: C.white, borderRadius: '20rpx', border: `1rpx solid ${C.border}`, textAlign: 'center' }}>
+          <View style={{ margin: '32rpx 24rpx', padding: '56rpx 28rpx', background: C.white, borderRadius: '22rpx', border: `1rpx solid ${C.border}`, textAlign: 'center' }}>
             <Text style={{ fontSize: '28rpx', color: C.neutral }}>这个系列的活动正在准备中</Text>
           </View>
         ) : null}

@@ -7,15 +7,15 @@ import { API_BASE_URL as API } from '../../config/api'
 
 // ── UI-STANDARD colors ──
 const C = {
-  bg: '#F7F6F2',
+  bg: '#F7F8F5',
   white: '#FFFFFF',
-  green: '#3F6B4F',
-  dark: '#18231E',
-  body: '#3E463F',
-  neutral: '#7A8178',
-  secondary: '#A6AAA2',
-  lightGreen: '#EEF5EF',
-  border: '#EDE9DF',
+  green: '#2E7D5A',
+  dark: '#202923',
+  body: '#4B564F',
+  neutral: '#747D77',
+  secondary: '#A3AAA5',
+  lightGreen: '#EEF6F1',
+  border: '#E6EAE6',
 }
 
 interface UserProfile {
@@ -23,6 +23,12 @@ interface UserProfile {
   gender: string | null; phone?: string | null; phoneMasked?: string | null
   birthday: string | null; birthYearMonth: string | null; identityType: string | null
   intro: string | null
+}
+
+interface JourneySummary {
+  cityCount: number
+  certificateCount: number
+  companionCount: number
 }
 
 function formatBirthDate(profile: UserProfile | null): string {
@@ -49,7 +55,6 @@ function badgeText(count: number): string {
 }
 
 const GENDER_OPTIONS = ['unknown', '男', '女']
-const LABEL_GENDER: Record<string, string> = { unknown: '未设置', '男': '男', '女': '女' }
 const GENDER_LIST = ['未设置', '男', '女']
 
 const today = new Date().toISOString().slice(0, 10)
@@ -62,6 +67,7 @@ export default function MinePage() {
 
   const [pendingPostpayCount, setPendingPostpayCount] = useState(0)
   const [pendingCheckinCount, setPendingCheckinCount] = useState(0)
+  const [journeySummary, setJourneySummary] = useState<JourneySummary>({ cityCount: 0, certificateCount: 0, companionCount: 0 })
   const [editing, setEditing] = useState(false)
   const [editNickname, setEditNickname] = useState('')
   const [editPhone, setEditPhone] = useState('')
@@ -78,15 +84,19 @@ export default function MinePage() {
     if (!isLoggedIn()) { setError('请先完成登录'); setLoading(false); return }
     setLoading(true); setError('')
     try {
-      const [profileRes, postpayRes] = await Promise.all([
+      const [profileRes, postpayRes, journeyRes, journeyCitiesRes] = await Promise.all([
         Taro.request({ url: `${API}/users/me/profile`, header: userAuthHeader() }),
         Taro.request({ url: `${API}/activity/my/postpay-orders`, header: userAuthHeader() }).catch(() => ({ data: [] })),
+        Taro.request({ url: `${API}/users/me/journey`, header: userAuthHeader() }).catch(() => ({ data: null })),
+        Taro.request({ url: `${API}/users/me/journey-cities`, header: userAuthHeader() }).catch(() => ({ data: [] })),
       ])
       const registrationsRes = await Taro.request({
         url: `${API}/users/me/registrations`,
         header: userAuthHeader(),
       }).catch(() => ({ data: { items: [], pendingCheckinCount: 0 } }))
       setProfile(profileRes.data as UserProfile)
+      const summary = (journeyRes.data as any)?.summary
+      if (summary) setJourneySummary({ cityCount: Array.isArray(journeyCitiesRes.data) ? journeyCitiesRes.data.length : 0, certificateCount: Number(summary.certificateCount) || 0, companionCount: Number(summary.companionCount) || 0 })
       setProfileDetail(null)
       const orders = (postpayRes.data || []) as any[]
       setPendingPostpayCount(orders.filter((o: any) => o.postpayStatus === 'UNPAID' || o.postpayStatus === 'OVERDUE').length)
@@ -206,6 +216,7 @@ export default function MinePage() {
     logoutUser() // clears storage + reLaunches to login page
   }
   const isStaff = profile?.identityType === '工作人员'
+  const profileNeedsCompletion = !profile?.nickname || !profile?.avatarUrl || !profile?.intro
 
   // ── Not logged in (profile null, no error) ──
   if (!profile && !loading) {
@@ -304,49 +315,47 @@ export default function MinePage() {
 
   // ── DISPLAY MODE ──
   return (
-    <View style={{ minHeight: '100vh', background: C.bg, paddingBottom: '80rpx' }}>
-      {/* Avatar + name + edit button */}
-      <View style={{ padding: '40rpx 32rpx 24rpx', display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-      <View style={avatarBox}>
-          {profile.avatarUrl ? <Image src={imgUrl(profile.avatarUrl)} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
+    <View style={{ minHeight: '100vh', background: '#F7F8F5', paddingBottom: '80rpx' }}>
+      <View style={{ margin: '24rpx 24rpx 0', background: C.white, borderRadius: '24rpx', padding: '28rpx', border: `1rpx solid #E6EAE6` }}>
+        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+          <View style={avatarBox}>
+            {profile.avatarUrl ? <Image src={imgUrl(profile.avatarUrl)} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
+          </View>
+          <View style={{ flex: 1, minWidth: 0, marginLeft: '20rpx' }}>
+            <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
+              <Text style={{ maxWidth: '300rpx', fontSize: '34rpx', fontWeight: '600', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.nickname || '行者'}</Text>
+              <View style={{ flexShrink: 0, marginLeft: '12rpx', padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EDF6F0' }}>
+                <Text style={{ fontSize: '22rpx', color: '#39765A', fontWeight: '500' }}>{profile.identityType || '普通用户'}</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: '27rpx', color: profile.intro ? C.body : C.secondary, lineHeight: '1.55', display: 'block', marginTop: '12rpx', maxHeight: '84rpx', overflow: 'hidden' }}>
+              {profile.intro || '还没有写下行者签名'}
+            </Text>
+          </View>
         </View>
-        <View style={{ flex: 1, marginLeft: '24rpx' }}>
-          <Text style={{ fontSize: '36rpx', fontWeight: '700', color: C.dark }}>{profile.nickname || '行者'}</Text>
-        </View>
-        <View onClick={startEdit} style={{ padding: '12rpx 28rpx', borderRadius: '999rpx', border: `1rpx solid ${C.border}`, background: C.white }}>
-          <Text style={{ fontSize: '26rpx', color: C.green }}>编辑</Text>
+        <View onClick={startEdit} style={{ marginTop: '20rpx', paddingTop: '16rpx', borderTop: '1rpx solid #EEF0ED', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}><Text style={{ fontSize: '23rpx', color: '#6F7872' }}>{profileNeedsCompletion ? '完善个人资料' : '个人资料'} &gt;</Text></View>
+      </View>
+
+      <View onClick={() => Taro.navigateTo({ url: '/pages/trail/index' })} style={{ margin: '24rpx 24rpx 0', height: '196rpx', padding: '24rpx 28rpx', background: C.white, borderRadius: '24rpx', border: '1rpx solid #E6EAE6', boxSizing: 'border-box' }}>
+        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><View><Text style={{ fontSize: '30rpx', color: C.dark, fontWeight: '600' }}>我的旅程</Text><Text style={{ fontSize: '21rpx', color: C.secondary, marginLeft: '12rpx' }}>My Journey</Text></View><Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text></View>
+        <View style={{ display: 'flex', flexDirection: 'row', marginTop: '30rpx' }}><JourneyMetric label='点亮城市' value={journeySummary.cityCount} accent /><JourneyMetric label='证书' value={journeySummary.certificateCount} /><JourneyMetric label='同行者' value={journeySummary.companionCount} /></View>
+      </View>
+
+      <View style={{ margin: '24rpx 24rpx 0' }}>
+        <View style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: '16rpx' }}>
+          <ServiceTile icon='○' label='我的报名' description='查看已参加的活动' badge={pendingCheckinCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} />
+          <ServiceTile icon='□' label='我的订单' description='查看费用与付款' badge={pendingPostpayCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/orders/index' })} />
+          <ServiceTile icon='◇' label='我的证书' description='查看获得的证书' onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} />
+          <ServiceTile icon='▤' label='发票管理' description='查看开票记录' onClick={() => Taro.navigateTo({ url: '/pages/mine/invoices/index' })} />
         </View>
       </View>
 
-      {/* Profile info card */}
-      <View style={{ margin: '0 32rpx', background: C.white, borderRadius: '24rpx', padding: '28rpx 32rpx', border: `1rpx solid ${C.border}` }}>
-        <Row label='昵称' value={profile.nickname} />
-        <Row label='简介' value={profile.intro} />
-        <Row label='性别' value={LABEL_GENDER[profile.gender || 'unknown']} />
-        <Row label='手机号' value={profile.phoneMasked || null} />
-        <Row label='类型' value={profile.identityType} last />
-      </View>
+      {isStaff ? <View onClick={() => Taro.navigateTo({ url: '/pages/staff/index' })} style={{ height: '84rpx', margin: '24rpx 24rpx 0', padding: '0 24rpx', background: '#F0F6F2', borderRadius: '22rpx', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={{ fontSize: '28rpx', color: '#2E6F52', fontWeight: '600' }}>工作人员工具</Text><Text style={{ fontSize: '24rpx', color: '#2E6F52' }}>&gt;</Text></View> : null}
 
-      {/* Menu */}
-      <View style={{ margin: '24rpx 32rpx 0', background: C.white, borderRadius: '24rpx', border: `1rpx solid ${C.border}`, overflow: 'hidden' }}>
-        <MenuRow label='我的报名' border badge={pendingCheckinCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} />
-        <MenuRow label='我的订单' border badge={pendingPostpayCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/orders/index' })} />
-        <MenuRow label='我的证书' border onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} />
-        <MenuRow label='发票管理' border onClick={() => Taro.navigateTo({ url: '/pages/mine/invoices/index' })} />
-        {isStaff && (
-          <MenuRow label='工作人员工具' onClick={() => Taro.navigateTo({ url: '/pages/staff/index' })} />
-        )}
-{/* 我的邀请 — temporarily hidden (V2.7.1) */}
-      </View>
-
-      <View style={{ marginTop: '32rpx', padding: '0 32rpx', textAlign: 'center' }}>
-        <View onClick={handleLogout} style={{ height: '72rpx', borderRadius: '999rpx', border: '1rpx solid rgba(179,91,75,0.22)', background: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: '28rpx', color: '#B35B4B' }}>退出登录</Text>
-        </View>
-      </View>
+      <View style={{ marginTop: '42rpx', textAlign: 'center' }}><Text onClick={handleLogout} style={{ fontSize: '26rpx', color: '#C5655B' }}>退出登录</Text></View>
 
       <View style={{ padding: '20rpx 32rpx 40rpx', textAlign: 'center' }}>
-        <Text style={{ fontSize: '24rpx', color: C.secondary }}>行者学社 · 把身体从屏幕里带出来</Text>
+        <Text style={{ fontSize: '23rpx', color: '#A8AFA9' }}>感知自己 · 看见别人 · 走进真实世界</Text>
       </View>
     </View>
   )
@@ -354,46 +363,26 @@ export default function MinePage() {
 
 // ── Reusable components ──
 
-function Row({ label, value, last }: { label: string; value: string | null; last?: boolean }) {
-  const filled = !!value
+function ServiceTile({ icon, label, description, badge = 0, onClick }: { icon: string; label: string; description: string; badge?: number; onClick: () => void }) {
   return (
-    <View style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: '72rpx', padding: '10rpx 0', borderBottom: last ? 'none' : `1rpx solid ${C.border}` }}>
-      <Text style={profileLabel}>{label}</Text>
-      <Text style={{ ...profileValue, color: filled ? C.dark : C.secondary, fontWeight: filled ? '500' : '400' }}>
-        {value || '未填写'}
-      </Text>
+    <View onClick={onClick} style={{ width: 'calc(50% - 8rpx)', height: '160rpx', padding: '22rpx 24rpx', background: C.white, border: '1rpx solid #E6EAE6', borderRadius: '22rpx', boxSizing: 'border-box', position: 'relative' }}>
+      <Text style={{ fontSize: '36rpx', color: C.green, lineHeight: '1', display: 'block' }}>{icon}</Text>
+      <Text style={{ fontSize: '28rpx', color: C.dark, fontWeight: '600', display: 'block', marginTop: '14rpx' }}>{label}</Text>
+      <Text style={{ fontSize: '22rpx', color: C.neutral, display: 'block', marginTop: '5rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{description}</Text>
+      {badge > 0 ? <View style={{ position: 'absolute', top: '18rpx', right: '18rpx', minWidth: '30rpx', height: '30rpx', padding: '0 7rpx', borderRadius: '999rpx', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '19rpx', color: C.green }}>{badgeText(badge)}</Text></View> : null}
     </View>
   )
 }
 
-function MenuRow({ label, border, badge = 0, onClick }: { label: string; border?: boolean; badge?: number; onClick?: () => void }) {
-  return (
-    <View onClick={onClick} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: '88rpx', padding: '0 32rpx', borderBottom: border ? `1rpx solid ${C.border}` : 'none' }}>
-      <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12rpx', minWidth: 0 }}>
-        <Text style={menuLabel}>{label}</Text>
-        {badge > 0 && (
-          <View style={menuBadge}>
-            <Text style={menuBadgeText}>{badgeText(badge)}</Text>
-          </View>
-        )}
-      </View>
-      <Text style={menuArrow}>&gt;</Text>
-    </View>
-  )
+function JourneyMetric({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
+  return <View style={{ flex: 1, textAlign: 'center' }}><Text style={{ fontSize: '36rpx', color: accent ? C.green : C.dark, fontWeight: '600', display: 'block' }}>{value}</Text><Text style={{ fontSize: '22rpx', color: C.neutral, marginTop: '6rpx', display: 'block' }}>{label}</Text></View>
 }
 
 // ── Styles ──
 
 const fullCenter: React.CSSProperties = { minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }
 
-const avatarBox: React.CSSProperties = { width: '120rpx', height: '120rpx', borderRadius: '50%', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }
-
-const menuBadge: React.CSSProperties = { minWidth: '34rpx', height: '32rpx', borderRadius: '999rpx', background: C.lightGreen, border: `1rpx solid rgba(63,107,79,0.14)`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8rpx' }
-const menuBadgeText: React.CSSProperties = { fontSize: '20rpx', color: C.green, fontWeight: '600' }
-const menuLabel: React.CSSProperties = { fontSize: '28rpx', color: C.dark, fontWeight: '500', lineHeight: '1.35' }
-const menuArrow: React.CSSProperties = { fontSize: '24rpx', color: C.secondary, marginLeft: '20rpx' }
-const profileLabel: React.CSSProperties = { fontSize: '28rpx', color: C.neutral, flexShrink: 0, lineHeight: '1.35' }
-const profileValue: React.CSSProperties = { fontSize: '28rpx', maxWidth: '388rpx', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '1.35' }
+const avatarBox: React.CSSProperties = { width: '96rpx', height: '96rpx', borderRadius: '50%', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }
 
 const row: React.CSSProperties = { display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '24rpx 0', borderBottom: `1rpx solid ${C.border}` }
 

@@ -16,8 +16,19 @@ const stats = ref<StatCard[]>([
   { title: '今日新增', value: 0, unit: '人', trend: '+0', icon: '✨' },
 ])
 
+const quickLinks = [
+  { label: '新建活动', path: '/activity', icon: '＋' },
+  { label: '活动列表', path: '/activity', icon: '活' },
+  { label: '品牌管理', path: '/activity/brands', icon: '品' },
+  { label: 'Banner管理', path: '/activity/banners', icon: '图' },
+  { label: '手机核销', path: '/checkin', icon: '核' },
+  { label: '用户运营', path: '/crm/users', icon: '人' },
+  { label: '订单管理', path: '/orders', icon: '单' },
+  { label: '财务概览', path: '/finance', icon: '财' },
+]
+
 onMounted(() => {
-  // P2.1 uses mock data only
+  // Dashboard cards intentionally stay lightweight until full reporting APIs are available.
 })
 </script>
 
@@ -45,24 +56,19 @@ onMounted(() => {
       </div>
     </div>
 
-    <div style="background: #FFFFFF; border-radius: 12px; padding: 24px; border: 1px solid #EDE9DF;">
+    <div style="background: #FFFFFF; border-radius: 8px; padding: 24px; border: 1px solid #EDE9DF;">
       <div style="font-size: 16px; font-weight: 600; color: #18231E; margin-bottom: 16px;">快速入口</div>
-      <div style="display: flex; gap: 16px;">
-        <t-button theme="default" variant="outline" @click="$router.push('/activity')">
-          📅 活动管理
-        </t-button>
-        <t-button theme="default" variant="outline" disabled>
-          📋 订单只读（开发中）
-        </t-button>
-        <t-button theme="default" variant="outline" disabled>
-          👥 用户只读（开发中）
-        </t-button>
-      </div>
-    </div>
-
-    <div style="margin-top: 24px; padding: 20px; background: #EEF5EF; border-radius: 12px; border: 1px solid rgba(46,125,90,0.12);">
-      <div style="font-size: 14px; color: #2E7D5A;">
-        P2.1 Admin 基础工程已就绪。Activity 列表页面使用 mock 数据展示，后续 P2.2-P2.5 将对接真实 Admin API。
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+        <button
+          v-for="link in quickLinks"
+          :key="link.path"
+          type="button"
+          @click="$router.push(link.path)"
+          style="height: 72px; border-radius: 8px; border: 1px solid #EDE9DF; background: #FBFAF6; display: flex; align-items: center; gap: 12px; padding: 0 16px; cursor: pointer; text-align: left;"
+        >
+          <span style="width: 34px; height: 34px; border-radius: 8px; background: #EEF5EF; color: #2E7D5A; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700;">{{ link.icon }}</span>
+          <span style="font-size: 14px; font-weight: 600; color: #18231E; white-space: nowrap;">{{ link.label }}</span>
+        </button>
       </div>
     </div>
   </div>

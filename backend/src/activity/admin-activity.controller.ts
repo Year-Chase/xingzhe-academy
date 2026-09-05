@@ -10,6 +10,7 @@ import { ActivityFlowService } from './activity-flow.service'
 import { CheckinStatisticsService } from './checkin-statistics.service'
 import { ActivityRegistrationInfo } from './entities/activity-registration-info.entity'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
+import { ActivityFollowService } from './activity-follow.service'
 
 type UploadedActivityImageFile = {
   originalname: string
@@ -37,11 +38,12 @@ export class AdminActivityController {
     private readonly activitySvc: ActivityService,
     private readonly flow: ActivityFlowService,
     private readonly checkinStats: CheckinStatisticsService,
+    private readonly follows: ActivityFollowService,
     @InjectRepository(ActivityRegistrationInfo)
     private readonly regInfoRepo: Repository<ActivityRegistrationInfo>,
   ) {}
 
-  private toAdminItem(a: any, registeredCount: number) {
+  private toAdminItem(a: any, registeredCount: number, followStats?: { currentFollowers: number; totalFollowers: number; convertedFollowers: number; conversionRate: number }) {
     const now = new Date()
     const effStatus = this.activitySvc.effectiveStatus(a)
     return {
@@ -62,6 +64,8 @@ export class AdminActivityController {
       registrationEndTime: a.registrationEndTime || null,
       capacity: a.capacity,
       registeredCount,
+      followCount: followStats?.currentFollowers || 0,
+      followStats: followStats || { currentFollowers: 0, totalFollowers: 0, convertedFollowers: 0, conversionRate: 0 },
       status: effStatus,
       coverImage: a.coverImage || '',
       price: a.price ?? 0,
@@ -113,7 +117,7 @@ export class AdminActivityController {
     const l = Math.min(100, Math.max(1, parseInt(limit) || 20))
     const { items, total } = await this.activitySvc.adminGetList(p, l, status || undefined, keyword || undefined)
     const enriched = await Promise.all(
-      items.map(async (a) => this.toAdminItem(a, await this.flow.getRegisteredCount(a.id))),
+      items.map(async (a) => this.toAdminItem(a, await this.flow.getRegisteredCount(a.id), await this.follows.getStats(a.id))),
     )
     return { items: enriched, total, page: p, limit: l }
   }
@@ -129,7 +133,7 @@ export class AdminActivityController {
   async getDetail(@Param('id', ParseIntPipe) id: number) {
     const a = await this.activitySvc.getDetail(id)
     const registeredCount = await this.flow.getRegisteredCount(id)
-    return this.toAdminItem(a, registeredCount)
+    return this.toAdminItem(a, registeredCount, await this.follows.getStats(id))
   }
 
   // GET /admin/activity/:id/registrations — V2.5A: return reg info snapshots

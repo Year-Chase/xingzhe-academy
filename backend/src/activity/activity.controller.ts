@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { ActivityService } from './activity.service' 
@@ -6,12 +6,14 @@ import { ActivityFlowService } from './activity-flow.service'
 import { MiniappAuthGuard, MiniappRequestUser } from '../auth/miniapp-auth.guard'
 import { CurrentMiniappUser } from '../auth/current-miniapp-user.decorator'
 import { OperationBanner } from './entities/operation-banner.entity'
+import { ActivityFollowService } from './activity-follow.service'
 
 @Controller() 
 export class ActivityController { 
   constructor( 
     private readonly activitySvc: ActivityService, 
     private readonly flow: ActivityFlowService, 
+    private readonly follows: ActivityFollowService,
     @InjectRepository(OperationBanner)
     private readonly bannerRepo: Repository<OperationBanner>,
   ) {} 
@@ -148,6 +150,30 @@ export class ActivityController {
     }
   }
 
+  @Get('activity/my/follows')
+  @UseGuards(MiniappAuthGuard)
+  async getMyFollowedActivities(
+    @CurrentMiniappUser() user: MiniappRequestUser,
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('seriesId') seriesId: string,
+  ) {
+    const p = Math.max(1, parseInt(page) || 1)
+    const l = Math.min(100, Math.max(1, parseInt(limit) || 50))
+    const { items, total } = await this.follows.getFollowedActivities(user.userId, p, l, String(seriesId || '').trim() || undefined)
+    return {
+      items: await Promise.all(items.map(async (a) => ({
+        id: a.id, title: a.title,
+        category: a.category ? { id: a.category.id, name: a.category.name } : null,
+        series: a.series ? { id: a.series.id, name: a.series.name } : null,
+        description: a.description?.slice(0, 80) || '', location: a.location,
+        startTime: a.startTime, endTime: a.endTime, capacity: a.capacity, status: a.status,
+        registeredCount: await this.flow.getRegisteredCount(a.id), coverImage: a.coverImage || '', imageUrls: a.imageUrls || null,
+      }))),
+      total, page: p, limit: l,
+    }
+  }
+
   @Get('banner/active')
   async getActiveBanners() {
     const now = new Date()
@@ -230,6 +256,24 @@ export class ActivityController {
   ) { 
     return this.flow.getUserStatus(user.userId, id)
   } 
+
+  @Post('activity/:id/follow')
+  @UseGuards(MiniappAuthGuard)
+  async followActivity(@Param('id', ParseIntPipe) id: number, @CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.follows.follow(user.userId, id)
+  }
+
+  @Delete('activity/:id/follow')
+  @UseGuards(MiniappAuthGuard)
+  async unfollowActivity(@Param('id', ParseIntPipe) id: number, @CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.follows.unfollow(user.userId, id)
+  }
+
+  @Get('activity/:id/follow-status')
+  @UseGuards(MiniappAuthGuard)
+  async getFollowStatus(@Param('id', ParseIntPipe) id: number, @CurrentMiniappUser() user: MiniappRequestUser) {
+    return { isFollowed: await this.follows.isFollowed(user.userId, id) }
+  }
     @Get('activity/:id/qr') 
     @UseGuards(MiniappAuthGuard)
     async getQR( 

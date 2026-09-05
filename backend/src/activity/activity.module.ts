@@ -9,10 +9,12 @@ import { AdminCrmController } from './admin-crm.controller'
 import { StaffCheckinController } from './staff-checkin.controller'
 import { ActivityService } from './activity.service'
 import { ActivityFlowService } from './activity-flow.service'
+import { ActivityFollowService } from './activity-follow.service'
 import { CheckinStatisticsService } from './checkin-statistics.service'
 import { Activity } from './entities/activity.entity'
 import { ActivityCategory } from './entities/activity-category.entity'
 import { ActivitySeries } from './entities/activity-series.entity'
+import { ActivityFollow } from './entities/activity-follow.entity'
 import { ActivityRegistration } from './entities/activity-registration.entity'
 import { ActivityOrder } from './entities/activity-order.entity'
 import { ActivityQR } from './entities/activity-qr.entity'
@@ -42,6 +44,7 @@ import { PaymentModule } from '../payment/payment.module'
       Activity,
       ActivityCategory,
       ActivitySeries,
+      ActivityFollow,
       ActivityRegistration,
       ActivityOrder,
       ActivityQR,
@@ -72,6 +75,6 @@ import { PaymentModule } from '../payment/payment.module'
     AdminActivitySeriesController,
     StaffCheckinController,
   ],
-  providers: [ActivityService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob],
+  providers: [ActivityService, ActivityFollowService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob],
 })
 export class ActivityModule {}

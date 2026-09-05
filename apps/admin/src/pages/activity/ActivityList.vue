@@ -84,6 +84,7 @@ interface ActivityItem {
   seriesId?: string | null; series?: { id: string; name: string; code?: string } | null
   startTime: string; endTime: string; registrationStartTime: string; registrationEndTime: string
   capacity: number; registeredCount: number; status: string; coverImage: string
+  followCount?: number; followStats?: { currentFollowers: number; totalFollowers: number; convertedFollowers: number; conversionRate: number }
   price: number; memberPrice: number; lifetimeMemberPrice: number; paymentMode: string
   prepayAmount?: number; remainingAmount?: number; remainingPayDate?: string
   memoryImages?: any; memoryText?: string
@@ -420,6 +421,7 @@ const columns = [
   { colKey: 'registrationEndTime', title: '报名截止', width: 120, cell: (_h: any, { row }: any) => fmtDate(row.registrationEndTime) },
   { colKey: 'startTime', title: '活动时间', width: 120, cell: (_h: any, { row }: any) => fmtDate(row.startTime) },
   { colKey: 'registeredCount', title: '报名/名额', width: 85, cell: (_h: any, { row }: any) => `${row.registeredCount}/${row.capacity}` },
+  { colKey: 'followCount', title: '关注人数', width: 80 },
   { colKey: 'price', title: '价格', width: 75, cell: (_h: any, { row }: any) => row.price > 0 ? yuan(row.price) : '-' },
   { colKey: 'paymentMode', title: '支付', width: 80, cell: (_h: any, { row }: any) => pmLabel(row.paymentMode || 'FULL') },
   { colKey: 'requiredUserInfoFields', title: '信息收集', width: 70, cell: (_h: any, { row }: any) => arrLabelCompat(safeArray(row.requiredUserInfoFields || null)) },
@@ -480,7 +482,19 @@ const fetchCertTemplates = async () => {
         <div><label style="color: #8A9288;">描述</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.description || '-' }}</div></div>
         <div><label style="color: #8A9288;">活动时间</label><div style="color: #333A34; margin-top: 4px;">{{ fmtDateFull(detailItem.startTime) }} ~ {{ fmtDateFull(detailItem.endTime) }}</div></div>
         <div><label style="color: #8A9288;">报名时间</label><div style="color: #333A34; margin-top: 4px;">{{ fmtDateFull(detailItem.registrationStartTime) }} ~ {{ fmtDateFull(detailItem.registrationEndTime) }}</div></div>
-        <div><label style="color: #8A9288;">人数</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.registeredCount }}/{{ detailItem.capacity }} 人</div></div>
+        <div><label style="color: #8A9288;">报名人数/名额</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.registeredCount }}/{{ detailItem.capacity }} 人</div></div>
+        <div><label style="color: #8A9288;">关注人数</label><div style="color: #333A34; margin-top: 4px;">{{ detailItem.followCount || 0 }}</div></div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
+          <div v-for="item in [
+            { label: '当前关注', value: detailItem.followStats?.currentFollowers || 0 },
+            { label: '累计关注', value: detailItem.followStats?.totalFollowers || 0 },
+            { label: '关注后报名', value: detailItem.followStats?.convertedFollowers || 0 },
+            { label: '转化率', value: `${(((detailItem.followStats?.conversionRate || 0) * 100).toFixed(1))}%` },
+          ]" :key="item.label" style="padding: 12px 8px; border: 1px solid #E6EAE6; border-radius: 8px; background: #FFFFFF;">
+            <div style="font-size: 13px; color: #747D77; white-space: nowrap;">{{ item.label }}</div>
+            <div style="font-size: 20px; line-height: 1.4; font-weight: 600; color: #202923; margin-top: 5px;">{{ item.value }}</div>
+          </div>
+        </div>
         <div><label style="color: #8A9288;">活动图片</label>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
             <template v-if="(safeArray((detailItem as any).imageUrls || null) as string[]).length > 0">

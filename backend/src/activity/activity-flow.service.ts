@@ -14,6 +14,7 @@ import { UserRegistrationProfile } from '../users/entities/user-registration-pro
 import { PaymentService } from '../payment/payment.service'
 import { MerchantOrderNoGenerator } from '../payment/merchant-order-no.generator'
 import { PaymentTransaction, PaymentProvider, PaymentTradeType } from '../payment/entities/payment-transaction.entity'
+import { ActivityFollowService } from './activity-follow.service'
 
 type RegistrationInfoField = 'realName' | 'phone' | 'idCardNo' | 'departureCity' | 'transportPreference' | 'roomPreference'
 type PaymentSuccessInput = {
@@ -96,6 +97,7 @@ export class ActivityFlowService {
     private readonly paymentTxRepo: Repository<PaymentTransaction>,
     private readonly paymentService: PaymentService,
     private readonly merchantOrderNo: MerchantOrderNoGenerator,
+    private readonly follows: ActivityFollowService,
   ) {}
 
   private money(value: unknown): number {
@@ -430,6 +432,8 @@ export class ActivityFlowService {
       registration.status = 'PAID'
       await regRepo.save(registration)
     }
+
+    await this.follows.markConverted(manager, registration.userId, registration.activityId, tx.paidAt || new Date())
 
     let qr = await this.activeQR(registration.id, manager)
     if (!qr) {

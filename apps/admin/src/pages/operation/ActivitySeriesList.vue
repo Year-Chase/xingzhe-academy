@@ -11,6 +11,7 @@ interface ActivitySeriesItem {
   coverImage: string
   shortDescription: string
   description: string
+  externalUrl: string
   sortOrder: number
   status: 'ACTIVE' | 'INACTIVE'
   activityCount: number
@@ -30,6 +31,7 @@ const form = reactive({
   coverImage: '',
   shortDescription: '',
   description: '',
+  externalUrl: '',
   sortOrder: 0,
   status: 'ACTIVE',
 })
@@ -58,6 +60,7 @@ const resetForm = () => {
   form.coverImage = ''
   form.shortDescription = ''
   form.description = ''
+  form.externalUrl = ''
   form.sortOrder = 0
   form.status = 'ACTIVE'
   formError.value = ''
@@ -77,6 +80,7 @@ const openEdit = (row: ActivitySeriesItem) => {
   form.coverImage = row.coverImage || ''
   form.shortDescription = row.shortDescription || ''
   form.description = row.description || ''
+  form.externalUrl = row.externalUrl || ''
   form.sortOrder = Number(row.sortOrder || 0)
   form.status = row.status || 'ACTIVE'
   formError.value = ''
@@ -88,6 +92,8 @@ const submitForm = async () => {
   const shortDescription = form.shortDescription.trim()
   if (!name) { formError.value = '品牌名称不能为空'; return }
   if (shortDescription.length > 50) { formError.value = '品牌一句话介绍最多50字'; return }
+  const externalUrl = form.externalUrl.trim()
+  if (externalUrl && (!/^https:\/\//i.test(externalUrl) || externalUrl.length > 500)) { formError.value = '品牌跳转链接必须为不超过500字符的 https 地址'; return }
   formLoading.value = true
   formError.value = ''
   const body = {
@@ -95,6 +101,7 @@ const submitForm = async () => {
     coverImage: form.coverImage.trim() || null,
     shortDescription: shortDescription || null,
     description: form.description.trim() || null,
+    externalUrl: externalUrl || null,
     sortOrder: Number(form.sortOrder || 0),
     status: form.status,
   }
@@ -151,6 +158,7 @@ const columns = [
   { colKey: 'name', title: '品牌名称', width: 140 },
   { colKey: 'code', title: '编码', width: 120 },
   { colKey: 'shortDescription', title: '一句话介绍', ellipsis: true },
+  { colKey: 'externalUrl', title: '官网', width: 80 },
   { colKey: 'activityCount', title: '活动数量', width: 90 },
   { colKey: 'status', title: '状态', width: 80 },
   { colKey: 'sortOrder', title: '排序', width: 70 },
@@ -182,6 +190,7 @@ onMounted(fetchList)
             {{ row.status === 'ACTIVE' ? '启用' : '停用' }}
           </t-tag>
         </template>
+        <template #externalUrl="{ row }"><span style="font-size: 12px; color: #747D77;">{{ row.externalUrl ? '已配置' : '未配置' }}</span></template>
         <template #actions="{ row }">
           <t-space size="small">
             <t-button theme="default" variant="text" size="small" @click="openEdit(row)">编辑</t-button>
@@ -213,6 +222,11 @@ onMounted(fetchList)
           <div style="font-size: 12px; color: #8A9288; margin-top: 4px;">{{ form.shortDescription.length }} / 50</div>
         </div>
         <div><label style="color: #8A9288; font-size: 13px;">详细介绍</label><t-textarea v-model="form.description" :autosize="{ minRows: 4, maxRows: 8 }" /></div>
+        <div>
+          <label style="color: #8A9288; font-size: 13px;">品牌跳转链接</label>
+          <t-input v-model="form.externalUrl" placeholder="请输入 https:// 开头的品牌官网链接" maxlength="500" />
+          <div style="font-size: 12px; color: #8A9288; margin-top: 4px;">配置后将在小程序品牌详情展示“访问品牌官网”。</div>
+        </div>
         <div style="display: flex; gap: 12px;">
           <div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">排序</label><t-input-number v-model="form.sortOrder" style="width: 100%;" /></div>
           <div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">状态</label><t-select v-model="form.status" :options="statusOptions" style="width: 100%;" /></div>

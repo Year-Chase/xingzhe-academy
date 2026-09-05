@@ -322,6 +322,45 @@ export class UsersService {
     }
   }
 
+  async getJourneyCities(userId: string) {
+    await this.ensureUser(userId)
+    const regs = await this.regRepo.find({
+      where: { userId, status: 'CHECKED_IN' as any },
+      order: { checkedInAt: 'DESC' as any, createdAt: 'DESC' as any },
+    })
+    const activityIds = [...new Set(regs.map(r => r.activityId).filter(Boolean))]
+    if (activityIds.length === 0) return []
+
+    const activities = await this.activityRepo.find({ where: { id: In(activityIds) } })
+    const cityMap = new Map<string, {
+      city: string
+      province: string
+      latitude: number
+      longitude: number
+      activityCount: number
+    }>()
+
+    for (const activity of activities) {
+      const latitude = Number(activity.locationLat ?? activity.lat)
+      const longitude = Number(activity.locationLng ?? activity.lng)
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue
+      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) continue
+
+      const city = (activity.cityName || activity.city || activity.locationName || '').trim()
+      if (!city) continue
+      const province = (activity.provinceName || activity.province || '').trim()
+      const key = `${province}|${city}`
+      const current = cityMap.get(key)
+      if (current) {
+        current.activityCount += 1
+      } else {
+        cityMap.set(key, { city, province, latitude, longitude, activityCount: 1 })
+      }
+    }
+
+    return [...cityMap.values()].sort((a, b) => b.activityCount - a.activityCount || a.city.localeCompare(b.city))
+  }
+
   async getMyOrders(userId: string) {
     await this.ensureUser(userId)
     const orders = await this.orderRepo.find({

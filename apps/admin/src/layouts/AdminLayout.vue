@@ -6,14 +6,18 @@ const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
 
-const menuItems = [
-  { path: '/', name: 'Dashboard', label: '控制台', icon: '📊' },
-  { path: '/orders', name: 'OrderList', label: '订单管理', icon: '📋' },
-  { path: '/finance', name: 'FinanceSummary', label: '财务概览', icon: '💰' },
-  { path: '/invoices', name: 'InvoiceList', label: '发票管理', icon: '🧾' },
-  { path: '/crm/users', name: 'UserList', label: '用户运营', icon: '👥' },
-  { path: '/certificate-templates', name: 'CertificateTemplateList', label: '证书模板', icon: '🏅' },
-  { path: '/checkin', name: 'MobileCheckin', label: '手机核销', icon: '✅' },
+const activityMenuItems = [
+  { path: '/activity', label: '活动列表' },
+  { path: '/activity/brands', label: '品牌管理' },
+  { path: '/activity/categories', label: '活动分类' },
+  { path: '/activity/banners', label: 'Banner管理' },
+  { path: '/checkin', label: '手机核销' },
+  { path: '/certificate-templates', label: '证书模板' },
+]
+
+const financeMenuItems = [
+  { path: '/finance', label: '财务概览' },
+  { path: '/invoices', label: '发票管理' },
 ]
 
 function handleMenuChange(path: string) {
@@ -45,24 +49,27 @@ function isActive(path: string) {
         style="background: transparent; border: none; margin-top: 8px;"
         @change="handleMenuChange"
       >
-        <t-menu-item
-          v-for="item in menuItems"
-          :key="item.path"
-          :value="item.path"
-          @click="router.push(item.path)"
-        >
-          <template #icon>
-            <span>{{ item.icon }}</span>
-          </template>
-          {{ item.label }}
+        <t-menu-item value="/" @click="router.push('/')">
+          <template #icon><span>📊</span></template>
+          控制台
         </t-menu-item>
         <t-submenu value="activity-management">
           <template #icon><span>📅</span></template>
           <template #title>活动管理</template>
-          <t-menu-item value="/activity">活动列表</t-menu-item>
-          <t-menu-item value="/activity/brands">品牌管理</t-menu-item>
-          <t-menu-item value="/activity/categories">活动分类</t-menu-item>
-          <t-menu-item value="/activity/banners">Banner管理</t-menu-item>
+          <t-menu-item v-for="item in activityMenuItems" :key="item.path" :value="item.path">{{ item.label }}</t-menu-item>
+        </t-submenu>
+        <t-menu-item value="/crm/users" @click="router.push('/crm/users')">
+          <template #icon><span>👥</span></template>
+          用户运营
+        </t-menu-item>
+        <t-menu-item value="/orders" @click="router.push('/orders')">
+          <template #icon><span>📋</span></template>
+          订单管理
+        </t-menu-item>
+        <t-submenu value="finance-management">
+          <template #icon><span>💰</span></template>
+          <template #title>财务管理</template>
+          <t-menu-item v-for="item in financeMenuItems" :key="item.path" :value="item.path">{{ item.label }}</t-menu-item>
         </t-submenu>
       </t-menu>
 

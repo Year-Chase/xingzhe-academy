@@ -110,6 +110,12 @@ export class UsersController {
     return this.usersService.getJourney(user.userId)
   }
 
+  @Get('me/journey-cities')
+  @UseGuards(MiniappAuthGuard)
+  async getMyJourneyCities(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getJourneyCities(user.userId)
+  }
+
   @Get(':id/journey')
   @UseGuards(MiniappAuthGuard)
   async getJourney(@Param('id') id: string, @CurrentMiniappUser() user: MiniappRequestUser) {
