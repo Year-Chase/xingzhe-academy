@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { ActivityService } from './activity.service' 
@@ -7,6 +7,8 @@ import { MiniappAuthGuard, MiniappRequestUser } from '../auth/miniapp-auth.guard
 import { CurrentMiniappUser } from '../auth/current-miniapp-user.decorator'
 import { OperationBanner } from './entities/operation-banner.entity'
 import { ActivityFollowService } from './activity-follow.service'
+import { OptionalMiniappAuthGuard } from '../auth/optional-miniapp-auth.guard'
+import { resolveActivityTemporalState } from './user-activity-state'
 
 @Controller() 
 export class ActivityController { 
@@ -53,18 +55,25 @@ export class ActivityController {
    
   // Must be BEFORE /activity/:id to avoid "all" matching :id 
   @Get('activity/all')
+  @UseGuards(OptionalMiniappAuthGuard)
   async getAllActivities(
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('ongoing') ongoingRaw: string,
     @Query('categoryId') categoryIdRaw: string,
+    @Query('seriesId') seriesIdRaw: string,
+    @Query('seriesIds') seriesIdsRaw: string,
+    @Req() request: any,
   ) {
     const p = Math.max(1, parseInt(page) || 1)
     const l = Math.min(100, Math.max(1, parseInt(limit) || 50))
     const ongoing = ongoingRaw === 'true' || ongoingRaw === '1'
     const categoryId = String(categoryIdRaw || '').trim()
-    const opts = { ...(ongoing ? { ongoing: true } : {}), ...(categoryId ? { categoryId } : {}) }
+    const singleSeriesId = String(seriesIdRaw || '').trim()
+    const seriesIds = singleSeriesId ? [singleSeriesId] : String(seriesIdsRaw || '').split(',').map((value) => value.trim()).filter(Boolean)
+    const opts = { ...(ongoing ? { ongoing: true } : {}), ...(categoryId ? { categoryId } : {}), ...(seriesIds.length ? { seriesIds } : {}) }
     const { items, total } = await this.activitySvc.getAll(p, l, Object.keys(opts).length > 0 ? opts : undefined)
+    const states = await this.flow.getUserActivityStates(request.user?.userId, items.map((a) => a.id))
     const enriched = await Promise.all(
       items.map(async (a) => ({
         id: a.id,
@@ -83,6 +92,8 @@ export class ActivityController {
         effectivePrice: a.price ?? 0,
         effectivePriceLabel: '普通价',
         postpayDate: a.postpayDate || null,
+        userActivityState: states.get(a.id) || 'NONE',
+        activityTemporalState: resolveActivityTemporalState(a.startTime, a.endTime),
       })),
     )
     return { items: enriched, total, page: p, limit: l } 
@@ -94,9 +105,11 @@ export class ActivityController {
   }
 
   @Get('activity/recent')
-  async getRecentActivities(@Query('limit') limitRaw: string) {
+  @UseGuards(OptionalMiniappAuthGuard)
+  async getRecentActivities(@Query('limit') limitRaw: string, @Req() request: any) {
     const limit = Math.max(1, Math.min(20, parseInt(limitRaw) || 5))
     const items = await this.activitySvc.getRecent(limit)
+    const states = await this.flow.getUserActivityStates(request.user?.userId, items.map((a) => a.id))
     return Promise.all(items.map(async (a) => ({
       id: a.id,
       title: a.title,
@@ -114,6 +127,8 @@ export class ActivityController {
       effectivePrice: a.price ?? 0,
       effectivePriceLabel: '普通价',
       postpayDate: a.postpayDate || null,
+      userActivityState: states.get(a.id) || 'NONE',
+      activityTemporalState: resolveActivityTemporalState(a.startTime, a.endTime),
     })))
   }
 
@@ -122,9 +137,17 @@ export class ActivityController {
     return this.activitySvc.getActiveSeries()
   }
 
+  @Get('activity/series/activity-filter')
+  async getActivityFilterSeries() {
+    return this.activitySvc.getActivityFilterSeries()
+  }
+
   @Get('activity/series/:id')
-  async getSeriesDetail(@Param('id') id: string) {
+  @UseGuards(OptionalMiniappAuthGuard)
+  async getSeriesDetail(@Param('id') id: string, @Req() request: any) {
     const detail = await this.activitySvc.getSeriesDetail(id)
+    const allActivities = [...detail.activeActivities, ...detail.pastActivities]
+    const states = await this.flow.getUserActivityStates(request.user?.userId, allActivities.map((a) => a.id))
     const mapActivity = async (a: any) => ({
       id: a.id,
       title: a.title,
@@ -142,6 +165,8 @@ export class ActivityController {
       effectivePrice: a.price ?? 0,
       effectivePriceLabel: '普通价',
       postpayDate: a.postpayDate || null,
+      userActivityState: states.get(a.id) || 'NONE',
+      activityTemporalState: resolveActivityTemporalState(a.startTime, a.endTime),
     })
     return {
       ...detail,
@@ -156,11 +181,15 @@ export class ActivityController {
     @CurrentMiniappUser() user: MiniappRequestUser,
     @Query('page') page: string,
     @Query('limit') limit: string,
-    @Query('seriesId') seriesId: string,
+    @Query('seriesId') seriesIdRaw: string,
+    @Query('seriesIds') seriesIdsRaw: string,
   ) {
     const p = Math.max(1, parseInt(page) || 1)
     const l = Math.min(100, Math.max(1, parseInt(limit) || 50))
-    const { items, total } = await this.follows.getFollowedActivities(user.userId, p, l, String(seriesId || '').trim() || undefined)
+    const singleSeriesId = String(seriesIdRaw || '').trim()
+    const seriesIds = singleSeriesId ? [singleSeriesId] : String(seriesIdsRaw || '').split(',').map((value) => value.trim()).filter(Boolean)
+    const { items, total } = await this.follows.getFollowedActivities(user.userId, p, l, seriesIds)
+    const states = await this.flow.getUserActivityStates(user.userId, items.map((a) => a.id))
     return {
       items: await Promise.all(items.map(async (a) => ({
         id: a.id, title: a.title,
@@ -168,7 +197,7 @@ export class ActivityController {
         series: a.series ? { id: a.series.id, name: a.series.name } : null,
         description: a.description?.slice(0, 80) || '', location: a.location,
         startTime: a.startTime, endTime: a.endTime, capacity: a.capacity, status: a.status,
-        registeredCount: await this.flow.getRegisteredCount(a.id), coverImage: a.coverImage || '', imageUrls: a.imageUrls || null,
+        registeredCount: await this.flow.getRegisteredCount(a.id), coverImage: a.coverImage || '', imageUrls: a.imageUrls || null, userActivityState: states.get(a.id) || 'NONE', activityTemporalState: resolveActivityTemporalState(a.startTime, a.endTime),
       }))),
       total, page: p, limit: l,
     }
@@ -212,6 +241,7 @@ export class ActivityController {
       capacity: a.capacity,
       coverImage: a.coverImage || '',
       status: a.status,
+      activityTemporalState: resolveActivityTemporalState(a.startTime, a.endTime),
       registeredCount,
       price: a.price ?? 0,
       memberPrice: a.memberPrice ?? 0,

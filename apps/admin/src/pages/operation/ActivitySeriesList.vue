@@ -14,6 +14,7 @@ interface ActivitySeriesItem {
   externalUrl: string
   sortOrder: number
   status: 'ACTIVE' | 'INACTIVE'
+  showActivities: boolean
   activityCount: number
   updatedAt: string
 }
@@ -34,6 +35,7 @@ const form = reactive({
   externalUrl: '',
   sortOrder: 0,
   status: 'ACTIVE',
+  showActivities: true,
 })
 
 const statusOptions = [
@@ -63,6 +65,7 @@ const resetForm = () => {
   form.externalUrl = ''
   form.sortOrder = 0
   form.status = 'ACTIVE'
+  form.showActivities = true
   formError.value = ''
 }
 
@@ -83,6 +86,7 @@ const openEdit = (row: ActivitySeriesItem) => {
   form.externalUrl = row.externalUrl || ''
   form.sortOrder = Number(row.sortOrder || 0)
   form.status = row.status || 'ACTIVE'
+  form.showActivities = row.showActivities !== false
   formError.value = ''
   drawerVisible.value = true
 }
@@ -104,6 +108,7 @@ const submitForm = async () => {
     externalUrl: externalUrl || null,
     sortOrder: Number(form.sortOrder || 0),
     status: form.status,
+    showActivities: form.showActivities,
   }
   try {
     if (formMode.value === 'create') await post('/admin/activity-series', body)
@@ -161,6 +166,7 @@ const columns = [
   { colKey: 'externalUrl', title: '官网', width: 80 },
   { colKey: 'activityCount', title: '活动数量', width: 90 },
   { colKey: 'status', title: '状态', width: 80 },
+  { colKey: 'showActivities', title: '活动展示', width: 90 },
   { colKey: 'sortOrder', title: '排序', width: 70 },
   { colKey: 'updatedAt', title: '更新时间', width: 150, cell: (_h: any, { row }: any) => fmt(row.updatedAt) },
   { colKey: 'actions', title: '操作', width: 150, fixed: 'right' as const },
@@ -190,6 +196,7 @@ onMounted(fetchList)
             {{ row.status === 'ACTIVE' ? '启用' : '停用' }}
           </t-tag>
         </template>
+        <template #showActivities="{ row }"><t-tag :theme="row.showActivities ? 'success' : 'default'" variant="light">{{ row.showActivities ? '是' : '否' }}</t-tag></template>
         <template #externalUrl="{ row }"><span style="font-size: 12px; color: #747D77;">{{ row.externalUrl ? '已配置' : '未配置' }}</span></template>
         <template #actions="{ row }">
           <t-space size="small">
@@ -222,6 +229,10 @@ onMounted(fetchList)
           <div style="font-size: 12px; color: #8A9288; margin-top: 4px;">{{ form.shortDescription.length }} / 50</div>
         </div>
         <div><label style="color: #8A9288; font-size: 13px;">详细介绍</label><t-textarea v-model="form.description" :autosize="{ minRows: 4, maxRows: 8 }" /></div>
+        <div>
+          <label style="color: #8A9288; font-size: 13px;">是否活动展示</label>
+          <t-radio-group v-model="form.showActivities" style="display: block; margin-top: 6px;"><t-radio :value="true">是</t-radio><t-radio :value="false">否</t-radio></t-radio-group>
+        </div>
         <div>
           <label style="color: #8A9288; font-size: 13px;">品牌跳转链接</label>
           <t-input v-model="form.externalUrl" placeholder="请输入 https:// 开头的品牌官网链接" maxlength="500" />

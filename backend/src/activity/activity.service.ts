@@ -101,11 +101,11 @@ export class ActivityService implements OnModuleInit {
       .leftJoinAndSelect('a.series', 'series')
       .where('a.status = :pub', { pub: 'PUBLISHED' })
       .getMany()
-    return items.filter((a) => this.canDisplay(a, now))
+    return items.filter((a) => (!a.series || (a.series.status === 'ACTIVE' && a.series.showActivities !== false)) && this.canDisplay(a, now))
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
   }
 
-  async getAll(page: number, limit: number, opts?: { ongoing?: boolean; categoryId?: string }): Promise<{ items: Activity[]; total: number }> {
+  async getAll(page: number, limit: number, opts?: { ongoing?: boolean; categoryId?: string; seriesIds?: string[] }): Promise<{ items: Activity[]; total: number }> {
     const now = new Date()
     const qb = this.activityRepo.createQueryBuilder('a')
       .leftJoinAndSelect('a.category', 'category')
@@ -119,6 +119,8 @@ export class ActivityService implements OnModuleInit {
     if (opts?.categoryId) {
       qb.andWhere('a.categoryId = :categoryId', { categoryId: opts.categoryId })
     }
+    qb.andWhere('(a.seriesId IS NULL OR (series.status = :seriesStatus AND series.showActivities = :showActivities))', { seriesStatus: 'ACTIVE', showActivities: true })
+    if (opts?.seriesIds?.length) qb.andWhere('a.seriesId IN (:...seriesIds)', { seriesIds: opts.seriesIds })
     qb.skip((page - 1) * limit).take(limit)
     const [items, total] = await qb.getManyAndCount()
     return { items, total }
@@ -209,6 +211,11 @@ export class ActivityService implements OnModuleInit {
       externalUrl: s.externalUrl || '',
       sortOrder: s.sortOrder,
     }))
+  }
+
+  async getActivityFilterSeries() {
+    const series = await this.seriesRepo.find({ where: { status: 'ACTIVE', showActivities: true }, order: { sortOrder: 'ASC', updatedAt: 'DESC' } })
+    return series.map((s) => ({ id: s.id, name: s.name, code: s.code }))
   }
 
   async getSeriesDetail(id: string) {

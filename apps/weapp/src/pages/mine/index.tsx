@@ -1,5 +1,5 @@
 import { View, Text, Image, Input, Picker, Button } from '@tarojs/components'
-import { useState, useEffect } from 'react'
+import { useRef, useState } from 'react'
 import Taro, { usePullDownRefresh, useDidShow } from '@tarojs/taro'
 import { getUserId, isLoggedIn, logoutUser, navigateToLoginWithRedirect, saveStoredProfile, updateUserProfile, uploadUserAvatar, userAuthHeader } from '../../utils/user'
 
@@ -23,7 +23,35 @@ interface UserProfile {
   gender: string | null; phone?: string | null; phoneMasked?: string | null
   birthday: string | null; birthYearMonth: string | null; identityType: string | null
   intro: string | null
+  realName?: string | null; residentialAddress?: string | null; idCardNo?: string | null
+  departureCity?: string | null; transportPreference?: string | null; roomPreference?: string | null
+  organization?: string | null; jobTitle?: string | null; inviterName?: string | null
 }
+
+type RegistrationProfileField =
+  | 'realName'
+  | 'phone'
+  | 'departureCity'
+  | 'residentialAddress'
+  | 'transportPreference'
+  | 'roomPreference'
+  | 'organization'
+  | 'jobTitle'
+  | 'inviterName'
+  | 'idCardNo'
+
+const REGISTRATION_PROFILE_FIELDS: { key: RegistrationProfileField; label: string; maxLength: number; type?: 'number' | 'text' }[] = [
+  { key: 'realName', label: '真实姓名', maxLength: 20 },
+  { key: 'phone', label: '手机号码', maxLength: 20, type: 'number' },
+  { key: 'departureCity', label: '出发城市', maxLength: 50 },
+  { key: 'residentialAddress', label: '居住地址', maxLength: 200 },
+  { key: 'transportPreference', label: '交通工具偏好', maxLength: 50 },
+  { key: 'roomPreference', label: '房间偏好', maxLength: 100 },
+  { key: 'organization', label: '公司/机构', maxLength: 100 },
+  { key: 'jobTitle', label: '职务', maxLength: 100 },
+  { key: 'inviterName', label: '邀请人', maxLength: 100 },
+  { key: 'idCardNo', label: '身份证号', maxLength: 18 },
+]
 
 interface JourneySummary {
   cityCount: number
@@ -76,8 +104,22 @@ export default function MinePage() {
   const [editBirthday, setEditBirthday] = useState('')
   const [editGender, setEditGender] = useState(0)
   const [editIntro, setEditIntro] = useState('')
+  const [registrationProfileExpanded, setRegistrationProfileExpanded] = useState(false)
+  const [editRegistrationProfile, setEditRegistrationProfile] = useState<Record<RegistrationProfileField, string>>({
+    realName: '',
+    phone: '',
+    departureCity: '',
+    residentialAddress: '',
+    transportPreference: '',
+    roomPreference: '',
+    organization: '',
+    jobTitle: '',
+    inviterName: '',
+    idCardNo: '',
+  })
   const [saving, setSaving] = useState(false)
   const [showEditAvatarSheet, setShowEditAvatarSheet] = useState(false)
+  const hasShown = useRef(false)
 
   // ── Load profile ──
   const loadProfile = async () => {
@@ -111,9 +153,42 @@ export default function MinePage() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { loadProfile() }, [])
+  const refreshSummary = async () => {
+    if (!isLoggedIn()) return
+    try {
+      const response = await Taro.request({ url: `${API}/users/me/summary`, header: userAuthHeader(), timeout: 15000 })
+      if (response.statusCode < 200 || response.statusCode >= 300) return
+      const summary = response.data as any
+      if (!summary || typeof summary !== 'object') return
+      setJourneySummary({
+        cityCount: Number(summary.journeyCityCount) || 0,
+        certificateCount: Number(summary.certificateCount) || 0,
+        companionCount: Number(summary.companionCount) || 0,
+      })
+      setPendingCheckinCount(Number(summary.pendingCheckinCount) || 0)
+      setPendingPostpayCount(Number(summary.pendingPaymentCount) || 0)
+    } catch {
+      // Returning from a child page must never flash or discard the last good summary.
+    }
+  }
+
   usePullDownRefresh(() => { loadProfile().then(() => Taro.stopPullDownRefresh()) })
-  useDidShow(() => { loadProfile() })
+  useDidShow(() => {
+    if (!hasShown.current) {
+      hasShown.current = true
+      loadProfile()
+      return
+    }
+    if (Taro.getStorageSync('xingzhe_mine_summary_dirty')) {
+      Taro.removeStorageSync('xingzhe_mine_summary_dirty')
+      refreshSummary()
+    }
+  })
+
+  const openMineSubpage = (url: string) => {
+    Taro.setStorageSync('xingzhe_mine_summary_dirty', true)
+    Taro.navigateTo({ url })
+  }
 
   // ── Enter edit mode ──
   const startEdit = async () => {
@@ -135,6 +210,19 @@ export default function MinePage() {
       setEditGender(GENDER_OPTIONS.indexOf(detail.gender || 'unknown'))
       setEditIntro(detail.intro || '')
       setEditBirthday(detail.birthday && /^\d{4}-\d{2}-\d{2}$/.test(detail.birthday) ? detail.birthday : '')
+      setEditRegistrationProfile({
+        realName: detail.realName || '',
+        phone: detail.phone || '',
+        departureCity: detail.departureCity || '',
+        residentialAddress: detail.residentialAddress || '',
+        transportPreference: detail.transportPreference || '',
+        roomPreference: detail.roomPreference || '',
+        organization: detail.organization || '',
+        jobTitle: detail.jobTitle || '',
+        inviterName: detail.inviterName || '',
+        idCardNo: detail.idCardNo || '',
+      })
+      setRegistrationProfileExpanded(false)
       setEditing(true)
     } catch (e: any) {
       Taro.showToast({ title: e?.message || '读取资料失败', icon: 'none' })
@@ -187,6 +275,12 @@ export default function MinePage() {
         body.avatarUrl = editAvatarTemp ? await uploadUserAvatar(editAvatarTemp) : (editAvatar || null)
       }
       if (editIntro !== (baseProfile?.intro || '')) body.intro = editIntro || null
+      for (const field of REGISTRATION_PROFILE_FIELDS) {
+        const key = field.key
+        const value = (editRegistrationProfile[key] || '').trim()
+        const oldValue = String((baseProfile as any)?.[key] || '').trim()
+        if (value !== oldValue) body[key] = value || null
+      }
 
       const updatedDetail = await updateUserProfile(body)
       setProfileDetail(updatedDetail as UserProfile)
@@ -217,6 +311,33 @@ export default function MinePage() {
   }
   const isStaff = profile?.identityType === '工作人员'
   const profileNeedsCompletion = !profile?.nickname || !profile?.avatarUrl || !profile?.intro
+  const registrationCompletedCount = REGISTRATION_PROFILE_FIELDS.reduce((sum, field) => {
+    const value = field.key === 'phone' ? editPhone : editRegistrationProfile[field.key]
+    return String(value || '').trim() ? sum + 1 : sum
+  }, 0)
+  const updateRegistrationProfileField = (key: RegistrationProfileField, value: string) => {
+    setEditRegistrationProfile(prev => ({ ...prev, [key]: value }))
+    if (key === 'phone') setEditPhone(value)
+  }
+  const renderRegistrationProfileField = (field: { key: RegistrationProfileField; label: string; maxLength: number; type?: 'number' | 'text' }) => {
+    const value = field.key === 'phone' ? editPhone : editRegistrationProfile[field.key]
+    return (
+      <View key={field.key} style={{ ...row, borderBottom: field.key === 'idCardNo' ? 'none' : `1rpx solid ${C.border}` }}>
+        <Text style={label}>{field.label}</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Input
+            value={value}
+            onInput={e => updateRegistrationProfileField(field.key, e.detail.value)}
+            placeholder={'填写' + field.label}
+            maxlength={field.maxLength}
+            type={field.type || 'text'}
+            style={inputStyle}
+          />
+          {field.key === 'idCardNo' ? <Text style={{ fontSize: '22rpx', color: C.secondary, display: 'block', textAlign: 'right', marginTop: '6rpx' }}>仅在活动需要购买旅行保险时使用</Text> : null}
+        </View>
+      </View>
+    )
+  }
 
   // ── Not logged in (profile null, no error) ──
   if (!profile && !loading) {
@@ -246,49 +367,60 @@ export default function MinePage() {
         </View>
 
         <View style={{ padding: '24rpx 32rpx 0' }}>
-          {/* Avatar */}
-          <View style={row}>
-            <Text style={label}>头像</Text>
-            <View style={{ display: 'flex', alignItems: 'center', gap: '16rpx' }}>
-              <View onClick={() => setShowEditAvatarSheet(true)} style={avatarBox}>
-                {editAvatar ? <Image src={imgUrl(editAvatar)} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
+          <View style={sectionCard}>
+            <Text style={sectionTitle}>基础资料</Text>
+
+            {/* Avatar */}
+            <View style={row}>
+              <Text style={label}>头像</Text>
+              <View style={{ display: 'flex', alignItems: 'center', gap: '16rpx' }}>
+                <View onClick={() => setShowEditAvatarSheet(true)} style={avatarBox}>
+                  {editAvatar ? <Image src={imgUrl(editAvatar)} mode='aspectFill' style={{ width: '100%', height: '100%' }} /> : null}
+                </View>
+                <Text style={{ fontSize: '24rpx', color: C.secondary }}>点击头像选择</Text>
               </View>
-              <Text style={{ fontSize: '24rpx', color: C.secondary }}>点击头像选择</Text>
+            </View>
+
+            {/* Nickname */}
+            <View style={row}>
+              <Text style={label}>昵称</Text>
+              <Input value={editNickname} onInput={e => setEditNickname(e.detail.value)} placeholder='输入昵称' maxlength={50} style={inputStyle} />
+            </View>
+
+            {/* Gender */}
+            <View style={row}>
+              <Text style={label}>性别</Text>
+              <Picker mode='selector' range={GENDER_LIST} value={editGender} onChange={e => setEditGender(Number(e.detail.value))}>
+                <Text style={{ fontSize: '28rpx', color: C.dark }}>{GENDER_LIST[editGender]} ▾</Text>
+              </Picker>
+            </View>
+
+            {/* Intro */}
+            <View style={{ ...row, alignItems: 'flex-start', borderBottom: 'none' }}>
+              <Text style={{ ...label, paddingTop: '4rpx' }}>签名</Text>
+              <Input value={editIntro} onInput={e => setEditIntro(e.detail.value)} placeholder='介绍一下你自己，让同行者更好地认识你' maxlength={150} style={{ ...inputStyle, minHeight: '60rpx' }} />
             </View>
           </View>
 
-          {/* Nickname */}
-          <View style={row}>
-            <Text style={label}>昵称</Text>
-            <Input value={editNickname} onInput={e => setEditNickname(e.detail.value)} placeholder='输入昵称' maxlength={50} style={inputStyle} />
-          </View>
+          <View style={{ ...sectionCard, marginTop: '24rpx', paddingBottom: registrationProfileExpanded ? '2rpx' : '26rpx' }}>
+            <View onClick={() => setRegistrationProfileExpanded(prev => !prev)} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={sectionTitle}>报名常用资料</Text>
+                  <Text style={{ fontSize: '24rpx', color: C.green, marginLeft: '16rpx' }}>已完善 {registrationCompletedCount}/10</Text>
+                </View>
+                <Text style={{ fontSize: '23rpx', color: C.secondary, lineHeight: '1.45', display: 'block', marginTop: '8rpx' }}>
+                  用于活动报名时自动回填，可随时修改或清空
+                </Text>
+              </View>
+              <Text style={{ fontSize: '32rpx', color: C.secondary, transform: registrationProfileExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>&gt;</Text>
+            </View>
 
-          {/* Intro */}
-          <View style={{ ...row, alignItems: 'flex-start' }}>
-            <Text style={{ ...label, paddingTop: '4rpx' }}>简介</Text>
-            <Input value={editIntro} onInput={e => setEditIntro(e.detail.value)} placeholder='介绍一下你自己，让同行者更好地认识你' maxlength={150} style={{ ...inputStyle, minHeight: '60rpx' }} />
-          </View>
-
-          {/* Gender */}
-          <View style={row}>
-            <Text style={label}>性别</Text>
-            <Picker mode='selector' range={GENDER_LIST} value={editGender} onChange={e => setEditGender(Number(e.detail.value))}>
-              <Text style={{ fontSize: '28rpx', color: C.dark }}>{GENDER_LIST[editGender]} ▾</Text>
-            </Picker>
-          </View>
-
-          {/* Birth date — one line */}
-          <View style={row}>
-            <Text style={label}>出生日期</Text>
-            <Picker mode='date' value={editBirthday || '1990-01-01'} start='1930-01-01' end={today} onChange={e => setEditBirthday(String(e.detail.value))}>
-              <Text style={{ fontSize: '28rpx', color: editBirthday ? C.dark : C.secondary }}>{editBirthday ? formatBirthDate({ ...(profile as UserProfile), birthday: editBirthday }) : '请选择'} ▾</Text>
-            </Picker>
-          </View>
-
-          {/* Phone */}
-          <View style={row}>
-            <Text style={label}>手机号</Text>
-            <Input value={editPhone} onInput={e => setEditPhone(e.detail.value)} placeholder='输入手机号' maxlength={20} style={inputStyle} />
+            {registrationProfileExpanded ? (
+              <View style={{ marginTop: '10rpx' }}>
+                {REGISTRATION_PROFILE_FIELDS.map(renderRegistrationProfileField)}
+              </View>
+            ) : null}
           </View>
 
           {/* Save button */}
@@ -324,9 +456,9 @@ export default function MinePage() {
           <View style={{ flex: 1, minWidth: 0, marginLeft: '20rpx' }}>
             <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
               <Text style={{ maxWidth: '300rpx', fontSize: '34rpx', fontWeight: '600', color: C.dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.nickname || '行者'}</Text>
-              <View style={{ flexShrink: 0, marginLeft: '12rpx', padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EDF6F0' }}>
-                <Text style={{ fontSize: '22rpx', color: '#39765A', fontWeight: '500' }}>{profile.identityType || '普通用户'}</Text>
-              </View>
+              {profile.identityType && profile.identityType !== '普通用户' ? <View style={{ flexShrink: 0, marginLeft: '12rpx', padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EDF6F0' }}>
+                <Text style={{ fontSize: '22rpx', color: '#39765A', fontWeight: '500' }}>{profile.identityType}</Text>
+              </View> : null}
             </View>
             <Text style={{ fontSize: '27rpx', color: profile.intro ? C.body : C.secondary, lineHeight: '1.55', display: 'block', marginTop: '12rpx', maxHeight: '84rpx', overflow: 'hidden' }}>
               {profile.intro || '还没有写下行者签名'}
@@ -336,23 +468,23 @@ export default function MinePage() {
         <View onClick={startEdit} style={{ marginTop: '20rpx', paddingTop: '16rpx', borderTop: '1rpx solid #EEF0ED', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}><Text style={{ fontSize: '23rpx', color: '#6F7872' }}>{profileNeedsCompletion ? '完善个人资料' : '个人资料'} &gt;</Text></View>
       </View>
 
-      <View onClick={() => Taro.navigateTo({ url: '/pages/trail/index' })} style={{ margin: '24rpx 24rpx 0', height: '196rpx', padding: '24rpx 28rpx', background: C.white, borderRadius: '24rpx', border: '1rpx solid #E6EAE6', boxSizing: 'border-box' }}>
-        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><View><Text style={{ fontSize: '30rpx', color: C.dark, fontWeight: '600' }}>我的旅程</Text><Text style={{ fontSize: '21rpx', color: C.secondary, marginLeft: '12rpx' }}>My Journey</Text></View><Text style={{ fontSize: '24rpx', color: C.secondary }}>&gt;</Text></View>
+      <View style={{ margin: '24rpx 24rpx 0', height: '196rpx', padding: '24rpx 28rpx', background: C.white, borderRadius: '24rpx', border: '1rpx solid #E6EAE6', boxSizing: 'border-box' }}>
+        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}><View><Text style={{ fontSize: '30rpx', color: C.dark, fontWeight: '600' }}>我的旅程</Text><Text style={{ fontSize: '21rpx', color: C.secondary, marginLeft: '12rpx' }}>My Journey</Text></View></View>
         <View style={{ display: 'flex', flexDirection: 'row', marginTop: '30rpx' }}><JourneyMetric label='点亮城市' value={journeySummary.cityCount} accent /><JourneyMetric label='证书' value={journeySummary.certificateCount} /><JourneyMetric label='同行者' value={journeySummary.companionCount} /></View>
       </View>
 
       <View style={{ margin: '24rpx 24rpx 0' }}>
         <View style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: '16rpx' }}>
-          <ServiceTile icon='○' label='我的报名' description='查看已参加的活动' badge={pendingCheckinCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/registrations/index' })} />
-          <ServiceTile icon='□' label='我的订单' description='查看费用与付款' badge={pendingPostpayCount} onClick={() => Taro.navigateTo({ url: '/pages/mine/orders/index' })} />
-          <ServiceTile icon='◇' label='我的证书' description='查看获得的证书' onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} />
-          <ServiceTile icon='▤' label='发票管理' description='查看开票记录' onClick={() => Taro.navigateTo({ url: '/pages/mine/invoices/index' })} />
+          <ServiceTile label='我的报名' description='查看已参加的活动' badge={pendingCheckinCount} onClick={() => openMineSubpage('/pages/mine/registrations/index')} />
+          <ServiceTile label='我的订单' description='查看费用与付款' badge={pendingPostpayCount} onClick={() => openMineSubpage('/pages/mine/orders/index')} />
+          <ServiceTile label='我的证书' description='查看获得的证书' onClick={() => openMineSubpage('/pages/mine/certificates/index')} />
+          <ServiceTile label='发票管理' description='查看开票记录' onClick={() => openMineSubpage('/pages/mine/invoices/index')} />
         </View>
       </View>
 
       {isStaff ? <View onClick={() => Taro.navigateTo({ url: '/pages/staff/index' })} style={{ height: '84rpx', margin: '24rpx 24rpx 0', padding: '0 24rpx', background: '#F0F6F2', borderRadius: '22rpx', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><Text style={{ fontSize: '28rpx', color: '#2E6F52', fontWeight: '600' }}>工作人员工具</Text><Text style={{ fontSize: '24rpx', color: '#2E6F52' }}>&gt;</Text></View> : null}
 
-      <View style={{ marginTop: '42rpx', textAlign: 'center' }}><Text onClick={handleLogout} style={{ fontSize: '26rpx', color: '#C5655B' }}>退出登录</Text></View>
+      <View style={{ marginTop: '120rpx', textAlign: 'center' }}><Text onClick={handleLogout} style={{ fontSize: '26rpx', color: '#C5655B' }}>退出登录</Text></View>
 
       <View style={{ padding: '20rpx 32rpx 40rpx', textAlign: 'center' }}>
         <Text style={{ fontSize: '23rpx', color: '#A8AFA9' }}>感知自己 · 看见别人 · 走进真实世界</Text>
@@ -363,11 +495,11 @@ export default function MinePage() {
 
 // ── Reusable components ──
 
-function ServiceTile({ icon, label, description, badge = 0, onClick }: { icon: string; label: string; description: string; badge?: number; onClick: () => void }) {
+function ServiceTile({ label, description, badge = 0, onClick }: { label: string; description: string; badge?: number; onClick: () => void }) {
   return (
-    <View onClick={onClick} style={{ width: 'calc(50% - 8rpx)', height: '160rpx', padding: '22rpx 24rpx', background: C.white, border: '1rpx solid #E6EAE6', borderRadius: '22rpx', boxSizing: 'border-box', position: 'relative' }}>
-      <Text style={{ fontSize: '36rpx', color: C.green, lineHeight: '1', display: 'block' }}>{icon}</Text>
-      <Text style={{ fontSize: '28rpx', color: C.dark, fontWeight: '600', display: 'block', marginTop: '14rpx' }}>{label}</Text>
+    <View onClick={onClick} hoverStyle={{ opacity: 0.68 }} style={{ width: 'calc(50% - 8rpx)', height: '160rpx', padding: '28rpx 24rpx', background: C.white, border: '1rpx solid #E6EAE6', borderRadius: '22rpx', boxSizing: 'border-box', position: 'relative' }}>
+      <Text style={{ position: 'absolute', top: '24rpx', right: '22rpx', fontSize: '24rpx', color: C.secondary }}>&gt;</Text>
+      <Text style={{ fontSize: '28rpx', color: C.dark, fontWeight: '600', display: 'block' }}>{label}</Text>
       <Text style={{ fontSize: '22rpx', color: C.neutral, display: 'block', marginTop: '5rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{description}</Text>
       {badge > 0 ? <View style={{ position: 'absolute', top: '18rpx', right: '18rpx', minWidth: '30rpx', height: '30rpx', padding: '0 7rpx', borderRadius: '999rpx', background: C.lightGreen, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '19rpx', color: C.green }}>{badgeText(badge)}</Text></View> : null}
     </View>
@@ -389,6 +521,10 @@ const row: React.CSSProperties = { display: 'flex', flexDirection: 'row', alignI
 const label: React.CSSProperties = { fontSize: '28rpx', color: C.neutral, flexShrink: 0 }
 
 const inputStyle: React.CSSProperties = { flex: 1, fontSize: '28rpx', color: C.dark, textAlign: 'right' }
+
+const sectionCard: React.CSSProperties = { background: C.white, borderRadius: '24rpx', padding: '26rpx 28rpx', border: `1rpx solid ${C.border}` }
+
+const sectionTitle: React.CSSProperties = { fontSize: '30rpx', fontWeight: '700', color: C.dark }
 
 const saveBtn = (loading: boolean): React.CSSProperties => ({
   width: '100%', height: '88rpx', borderRadius: '999rpx',

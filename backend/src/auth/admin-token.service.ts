@@ -6,7 +6,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
  * No external JWT dependency.
  *
  * Token format: base64Url(JSON payload).base64Url(HMAC-SHA256 signature)
- * Payload: { username, iat (seconds), exp (seconds) }
+ * Payload: { adminId, username, role, iat (seconds), exp (seconds) }
  *
  * Env vars (loaded from .env):
  *   ADMIN_TOKEN_SECRET  — random 64+ char string (REQUIRED)
@@ -48,10 +48,10 @@ export class AdminTokenService {
   /**
    * Issue a signed token for a successfully authenticated admin user.
    */
-  issueToken(username: string): string {
+  issueToken(admin: { id: string; username: string; role: string }): string {
     const iat = Math.floor(Date.now() / 1000)
     const exp = iat + getExpiresSeconds()
-    const payloadStr = JSON.stringify({ username, iat, exp })
+    const payloadStr = JSON.stringify({ adminId: admin.id, username: admin.username, role: admin.role, iat, exp })
     const encoded = base64UrlEncode(payloadStr)
     const sig = sign(encoded)
     return `${encoded}.${sig}`
@@ -61,7 +61,7 @@ export class AdminTokenService {
    * Verify a token and return the decoded payload.
    * Throws UnauthorizedException on any failure.
    */
-  verifyToken(token: string): { username: string; iat: number; exp: number } {
+  verifyToken(token: string): { adminId: string; username: string; role: string; iat: number; exp: number } {
     const parts = token.split('.')
     if (parts.length !== 2) {
       throw new UnauthorizedException('token 格式无效')
@@ -84,7 +84,7 @@ export class AdminTokenService {
       throw new UnauthorizedException('token 数据无效')
     }
 
-    if (!payload.exp || typeof payload.exp !== 'number') {
+    if (!payload.exp || typeof payload.exp !== 'number' || !payload.adminId || !payload.username) {
       throw new UnauthorizedException('token 缺少过期时间')
     }
 

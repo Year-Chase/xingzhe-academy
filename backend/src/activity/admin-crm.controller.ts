@@ -14,6 +14,7 @@ import { TagDefinition } from './entities/tag-definition.entity'
 import { UserTagRelation } from './entities/user-tag-relation.entity'
 import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
 import { User } from '../users/entities/user.entity'
+import { UserRegistrationProfile } from '../users/entities/user-registration-profile.entity'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 function computeAge(birthday: string | null, birthYM: string | null): number | null {
@@ -49,6 +50,11 @@ function mergeUserFields(u: User | null, p: UserProfile | null, userId: string) 
   }
 }
 
+function maskIdCardNo(value: string | null): string | null {
+  if (!value) return null
+  return value.length >= 8 ? value.slice(0, 3) + '***********' + value.slice(-4).toUpperCase() : value
+}
+
 @Controller('admin/crm')
 @UseGuards(JwtAuthGuard)
 export class AdminCrmController {
@@ -77,6 +83,8 @@ export class AdminCrmController {
     private readonly tagRelationRepo: Repository<UserTagRelation>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(UserRegistrationProfile)
+    private readonly registrationProfileRepo: Repository<UserRegistrationProfile>,
     private readonly systemTagJob: SystemTagRefreshJob,
   ) {}
 
@@ -193,7 +201,10 @@ export class AdminCrmController {
 
     if (keyword) {
       const kw = keyword.trim()
-      userIds = new Set([...userIds].filter(id => id.includes(kw) || (users.find(u => u.id === id)?.nickname || '').includes(kw)))
+      userIds = new Set([...userIds].filter(id => {
+        const user = users.find(u => u.id === id)
+        return id.includes(kw) || (user?.nickname || '').includes(kw)
+      }))
     }
 
     if (birthYearMonth) {
@@ -361,6 +372,7 @@ export class AdminCrmController {
   async getUserDetail(@Param('userId') userId: string) {
     const u = await this.userRepo.findOne({ where: { id: userId } }).catch(() => null)
     const p = await this.profileRepo.findOne({ where: { userId } })
+    const registrationProfile = await this.registrationProfileRepo.findOne({ where: { userId } })
     const merged = mergeUserFields(u, p, userId)
     const age = computeAge(merged.birthday, merged.birthYearMonth)
     const stats = await this.buildUserStats(userId)
@@ -400,6 +412,21 @@ export class AdminCrmController {
       isLifetimeMember: merged.isLifetimeMember,
       registeredAt: merged.registeredAt ? (merged.registeredAt instanceof Date ? merged.registeredAt.toISOString() : merged.registeredAt) : null,
       lastLoginAt: merged.lastLoginAt ? (merged.lastLoginAt instanceof Date ? merged.lastLoginAt.toISOString() : merged.lastLoginAt) : null,
+      wechatAppId: u?.wechatAppId || null,
+      openid: u?.openid || null,
+      unionid: u?.unionid || null,
+      registrationProfile: {
+        realName: registrationProfile?.realName || null,
+        phone: registrationProfile?.phone || merged.phone || null,
+        residentialAddress: registrationProfile?.residentialAddress || null,
+        departureCity: registrationProfile?.departureCity || null,
+        idCardNo: maskIdCardNo(registrationProfile?.idCardNo || null),
+        transportPreference: registrationProfile?.transportPreference || null,
+        roomPreference: registrationProfile?.roomPreference || null,
+        organization: registrationProfile?.organization || null,
+        jobTitle: registrationProfile?.jobTitle || null,
+        inviterName: registrationProfile?.inviterName || null,
+      },
       summary: {
         registrationCount: stats.registrationCount,
         orderCount: stats.orderCount,

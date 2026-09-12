@@ -1,5 +1,6 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common'
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common'
 import { AdminTokenService } from './admin-token.service'
+import { AdminAuthService } from './admin-auth.service'
 
 /**
  * V2.7.1 Admin Auth Guard.
@@ -24,9 +25,9 @@ import { AdminTokenService } from './admin-token.service'
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly tokenService: AdminTokenService) {}
+  constructor(private readonly tokenService: AdminTokenService, private readonly adminAuth: AdminAuthService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest()
 
     // 1. No Authorization header
@@ -48,9 +49,13 @@ export class JwtAuthGuard implements CanActivate {
 
     // 4-6. Signature verification + expiry check
     const payload = this.tokenService.verifyToken(token)
+    const admin = await this.adminAuth.getActiveAdmin(payload.adminId)
+    if (admin.username !== payload.username) throw new UnauthorizedException('账号信息已变更，请重新登录')
+    const requestPath = String(request.path || request.url || '').split('?')[0]
+    const passwordRoute = requestPath === '/admin/auth/me' || requestPath === '/admin/auth/password/initial' || requestPath === '/admin/auth/password'
+    if (admin.mustChangePassword && !passwordRoute) throw new ForbiddenException('请先修改初始密码')
 
-    // Attach to request for potential future use (e.g. audit log)
-    request.admin = payload
+    request.admin = { ...payload, adminId: admin.id, username: admin.username, role: admin.role, mustChangePassword: admin.mustChangePassword, isSystemAccount: admin.isSystemAccount }
 
     return true
   }

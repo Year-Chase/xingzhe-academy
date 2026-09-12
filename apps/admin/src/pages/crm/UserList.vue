@@ -92,11 +92,7 @@ const fetchTags = async () => {
 
 const columns = [
   { colKey: 'avatarUrl', title: '头像', width: 60 },
-  { colKey: 'userId', title: '用户ID', width: 120, cell: (_h: any, { row }: any) => {
-    const uid = row.userId || '-'
-    if (uid.length > 20) return uid.slice(0, 10) + '...' + uid.slice(-8)
-    return uid
-  } },
+  { colKey: 'userId', title: '用户ID', width: 150, cell: (_h: any, { row }: any) => row.userId || '-' },
   { colKey: 'nickname', title: '昵称', width: 90, cell: (_h: any, { row }: any) => row.nickname || '-' },
   { colKey: 'gender', title: '性别', width: 60, cell: (_h: any, { row }: any) => genderLabel(row.gender) },
   { colKey: 'phone', title: '手机号', width: 110, cell: (_h: any, { row }: any) => row.phone || '-' },
@@ -128,7 +124,7 @@ onMounted(() => { fetchTags(); fetchList() })
 
     <div style="background: #FFFFFF; border-radius: 12px; border: 1px solid #EDE9DF; padding: 16px; margin-bottom: 16px;">
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-        <t-input v-model="keyword" placeholder="搜索用户ID" clearable style="width: 170px;" @enter="onSearch" />
+        <t-input v-model="keyword" placeholder="搜索用户编号/昵称" clearable style="width: 190px;" @enter="onSearch" />
         <t-select v-model="identityType" :options="TYPE_OPTIONS.map(t => ({ label: t, value: t }))" placeholder="身份类型" clearable style="width: 130px;" @change="onSearch" />
         <t-select v-model="systemTagId" :options="systemTagOptions()" placeholder="系统标签" clearable style="width: 130px;" @change="onSearch" />
         <t-select v-model="customTagId" :options="customTagOptions()" placeholder="自定义标签" clearable style="width: 130px;" @change="onSearch" />

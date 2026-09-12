@@ -14,6 +14,9 @@ export class UserRegistrationProfile {
   @Column({ type: 'varchar', length: 30, nullable: true })
   phone: string | null
 
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  residentialAddress: string | null
+
   @Column({ type: 'varchar', length: 50, nullable: true })
   idCardNo: string | null
 
@@ -25,6 +28,15 @@ export class UserRegistrationProfile {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   roomPreference: string | null
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  organization: string | null
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  jobTitle: string | null
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  inviterName: string | null
 
   @CreateDateColumn()
   createdAt: Date

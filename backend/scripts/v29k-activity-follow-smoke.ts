@@ -25,7 +25,7 @@ async function main() {
   const activities = db.getRepository(Activity); const users = db.getRepository(User); const follows = db.getRepository(ActivityFollow)
   const now = Date.now()
   const activity = await activities.save(activities.create({ title: 'follow smoke', location: '北京', status: 'PUBLISHED', capacity: 10, paymentMode: 'FULL', price: 1, startTime: new Date(now + 86400000), endTime: new Date(now + 90000000), registrationStartTime: new Date(now - 3600000), registrationEndTime: new Date(now + 3600000) } as any) as unknown as Activity)
-  const makeUser = async (suffix: string): Promise<User> => users.save(users.create({ id: `follow_${suffix}`, openid: `openid_${suffix}`, nickname: suffix, registeredAt: new Date(), status: 'ACTIVE' } as any) as unknown as User)
+  const makeUser = async (suffix: string): Promise<User> => users.save(users.create({ id: `usr_follow_${suffix}`, wechatAppId: 'mock-app', openid: `openid_${suffix}`, nickname: suffix, registeredAt: new Date(), status: 'ACTIVE' } as any) as unknown as User)
   const userA = await makeUser('a'); const userB = await makeUser('b')
   const service = app.get(ActivityFollowService)
   await service.follow(userA.id, activity.id); await service.follow(userA.id, activity.id)
@@ -51,4 +51,4 @@ async function main() {
   console.log('V2.9K follow and brand-link smoke PASS')
   await app.close(); cleanup()
 }
-main().catch(error => { console.error(error?.message || error); cleanup(); process.exit(1) })
+main().then(() => process.exit(0)).catch(error => { console.error(error?.message || error); cleanup(); process.exit(1) })

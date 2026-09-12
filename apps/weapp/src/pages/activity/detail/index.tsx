@@ -1,6 +1,6 @@
 import { View, Text, Button, ScrollView, Image, Swiper, SwiperItem } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
-import Taro, { useDidShow, useRouter } from '@tarojs/taro'
+import Taro, { useDidShow, useRouter, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import { consumeLoginReturnAction, getUserId, isLoggedIn, navigateToLoginWithRedirect, userAuthHeader } from '../../../utils/user'
 import { canOpenActivityLocation, openActivityLocation } from '../../../utils/location'
 
@@ -62,6 +62,7 @@ interface ActivityData {
   price?: number; memberPrice?: number; lifetimeMemberPrice?: number
   paymentMode?: string; prepayAmount?: number; remainingAmount?: number
   createdAt: string
+  activityTemporalState?: string
 }
 
 interface Participant {
@@ -78,7 +79,10 @@ const C = {
 }
 
 const STATUS_LABEL: Record<RegStatus, string> = {
-  NOT_REGISTERED: '可报名', REGISTERED: '待支付', PAID: '已报名', CHECKED_IN: '已签到', EXPIRED: '已过期',
+  NOT_REGISTERED: '可报名', REGISTERED: '待支付', PAID: '待签到', CHECKED_IN: '已签到', EXPIRED: '待签到',
+}
+const USER_ACTIVITY_STATE_LABEL: Record<string, string> = {
+  REGISTERED: '已报名', PENDING_CHECKIN: '待签到', CHECKED_IN: '已签到', CANCELLED: '已取消', REFUNDED: '已退款',
 }
 
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
@@ -89,6 +93,7 @@ export default function ActivityDetail() {
   const [id, setId] = useState(0)
   const [activity, setActivity] = useState<ActivityData | null>(null)
   const [userStatus, setUserStatus] = useState<RegStatus>('NOT_REGISTERED')
+  const [userActivityState, setUserActivityState] = useState('NONE')
   const [userType, setUserType] = useState<string>('普通用户')
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
@@ -101,7 +106,6 @@ export default function ActivityDetail() {
   const [groupQrFailed, setGroupQrFailed] = useState(false)
   const [groupQr, setGroupQr] = useState<any>(null)
   const [groupQrLoading, setGroupQrLoading] = useState(false)
-  const [pendingGroupQrOpen, setPendingGroupQrOpen] = useState(false)
   // V2.8-D: Postpay order info
   const [orderInfo, setOrderInfo] = useState<any>(null)
   const [postpayActing, setPostpayActing] = useState(false)
@@ -123,12 +127,12 @@ export default function ActivityDetail() {
     if (action?.action === 'FOLLOW' && String(action.activityId || '') === String(id)) setPendingFollow(true)
     load(id)
   })
-  // V2.5C: check enrollSuccess to show group QR
   useEffect(() => {
-    const p = router.params as any
-    if (p?.enrollSuccess === '1') setPendingGroupQrOpen(true)
-  }, [router.params])
-
+    Taro.showShareMenu({ menus: ['shareAppMessage', 'shareTimeline'] as any }).catch(() => undefined)
+  }, [activity?.id])
+  const shareTitle = activity?.title ? `【${activity.title}】我已经在路上，有人同行吗？` : '我已经在路上，有人同行吗？'
+  useShareAppMessage(() => ({ title: shareTitle, path: id ? `/pages/activity/detail/index?id=${id}` : '/pages/index/index', imageUrl: activity?.coverImage ? imgUrl(activity.coverImage) : undefined } as any))
+  useShareTimeline(() => ({ title: shareTitle, query: id ? `id=${id}` : '', imageUrl: activity?.coverImage ? imgUrl(activity.coverImage) : undefined } as any))
   const load = useCallback(async (activityId: number) => {
     setLoading(true); setError('')
     try {
@@ -144,6 +148,7 @@ export default function ActivityDetail() {
       ])
       setActivity(d.data as ActivityData)
       setUserStatus((s.data as any).status || 'NOT_REGISTERED')
+      setUserActivityState((s.data as any).userActivityState || ((s.data as any).status === 'PAID' ? 'PENDING_CHECKIN' : 'NONE'))
       setParticipants((p.data as Participant[]) || [])
       setUserType((profileRes.data as any)?.identityType || '普通用户')
       setOrderInfo((orderRes.data as any) || null)
@@ -226,10 +231,9 @@ export default function ActivityDetail() {
         header: { 'content-type': 'application/json', ...userAuthHeader() },
       })
       if ((res.data as any)?.status === 'PAID') {
-        Taro.showToast({ title: '报名成功', icon: 'success' })
         Taro.setStorageSync('dirtyActivityId', id)
-        setPendingGroupQrOpen(true)
-        await load(id)
+        const orderId = Number((res.data as any)?.orderId || 0)
+        Taro.redirectTo({ url: `/pages/mine/orders/index?source=activityPayment&activityId=${id}${orderId ? `&orderId=${orderId}` : ''}` })
       } else if ((res.data as any)?.message) {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
@@ -359,11 +363,6 @@ export default function ActivityDetail() {
       setGroupQrLoading(false)
     }
   }
-  useEffect(() => {
-    if (!pendingGroupQrOpen || loading || !activity || !isPaid) return
-    setPendingGroupQrOpen(false)
-    handleGroupQr()
-  }, [pendingGroupQrOpen, loading, activity, isPaid])
   const goOrders = () => Taro.navigateTo({ url: '/pages/mine/orders/index' })
   const goSeries = () => {
     if (!activity?.series?.id) return
@@ -389,9 +388,7 @@ export default function ActivityDetail() {
           <View onClick={handleFollow} style={{ width: '54rpx', height: '54rpx', marginLeft: '12rpx', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: followActing ? 0.45 : 1 }}>
             <Text style={{ fontSize: '38rpx', lineHeight: '1', color: isFollowed ? '#F4C542' : C.body }}>{isFollowed ? '★' : '☆'}</Text>
           </View>
-          <View style={{ flexShrink: 0, marginLeft: '16rpx', marginTop: '6rpx', padding: '6rpx 16rpx', borderRadius: '999rpx', background: C.lightGreen }}>
-            <Text style={{ fontSize: '22rpx', color: C.green, fontWeight: '500' }}>{STATUS_LABEL[userStatus]}</Text>
-          </View>
+          {userActivityState !== 'NONE' ? <View style={{ flexShrink: 0, marginLeft: '16rpx', marginTop: '6rpx', padding: '6rpx 16rpx', borderRadius: '999rpx', background: C.lightGreen }}><Text style={{ fontSize: '22rpx', color: C.green, fontWeight: '500' }}>{USER_ACTIVITY_STATE_LABEL[userActivityState]}</Text></View> : null}
         </View>
         {activity.category?.name ? (
           <View style={{ alignSelf: 'flex-start', marginTop: '14rpx', height: '40rpx', padding: '0 14rpx', borderRadius: '999rpx', background: C.lightGreen, display: 'flex', alignItems: 'center' }}>

@@ -3,6 +3,7 @@ export default defineAppConfig({
     'pages/index/index',
     'pages/trail/memories/index',
     'pages/journey/certificate/index',
+    'pages/certificate-public/index',
     'pages/mine/orders/index',
     'pages/mine/registrations/index',
     'pages/mine/invoices/index',

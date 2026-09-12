@@ -146,10 +146,14 @@ export class AdminActivityController {
       userId: r.userId,
       realName: r.realName || null,
       phone: r.phone ? r.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : null,
+      residentialAddress: r.residentialAddress || null,
       idCardNo: maskIdCardNo(r.idCardNo),
       departureCity: r.departureCity || null,
       transportPreference: r.transportPreference || null,
       roomPreference: r.roomPreference || null,
+      organization: r.organization || null,
+      jobTitle: r.jobTitle || null,
+      inviterName: r.inviterName || null,
       confirmedAt: r.confirmedAt,
     }))
   }

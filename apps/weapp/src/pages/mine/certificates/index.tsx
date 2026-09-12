@@ -12,8 +12,8 @@ const C = {
 
 interface CertItem {
   certificateId: string; activityId: number; recipientName: string; activityTitle: string
-  activityDate: string; issuerName: string; certificateImage: string
-  province: string; city: string; certificateNo: string; issuedAt: string
+  activityEndAt?: string | null; activityDescription?: string; location?: string; certificateImage: string
+  issuedAt: string
 }
 
 export default function CertificatesPage() {
@@ -39,7 +39,7 @@ export default function CertificatesPage() {
 
   useEffect(() => { load() }, [])
 
-  const fmtDate = (s: string) => { if (!s) return ''; const d = new Date(s); return `${d.getMonth()+1}月${d.getDate()}日` }
+  const fmtDate = (s?: string | null) => { if (!s) return '活动结束日期待确认'; const d = new Date(s); return Number.isNaN(d.getTime()) ? '活动结束日期待确认' : `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日` }
   const goCert = (certId: string) => Taro.navigateTo({ url: `/pages/journey/certificate/index?certificateId=${certId}` })
   const goHome = () => Taro.switchTab({ url: '/pages/index/index' })
 
@@ -56,18 +56,18 @@ export default function CertificatesPage() {
 
   return (
     <ScrollView scrollY style={{height:'100vh',background:C.bg}}>
-      <View style={{padding:'16rpx 24rpx',paddingBottom:'80rpx'}}>
+      <View style={{padding:'20rpx 24rpx',paddingBottom:'80rpx'}}>
         {certs.map(c => (
           <View key={c.certificateId} onClick={() => goCert(c.certificateId)}
-            style={{marginBottom:'16rpx',background:C.card,borderRadius:'20rpx',padding:'20rpx',border:`1rpx solid ${C.line}`,display:'flex',flexDirection:'row'}}>
-            <View style={{width:'120rpx',height:'160rpx',borderRadius:'12rpx',background:'linear-gradient(160deg,#E8E2D8 0%,#DFE8DE 50%,#DCE6E2 100%)',flexShrink:0,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
-              {c.certificateImage ? <Image src={c.certificateImage.startsWith('http')?c.certificateImage:`${API}${c.certificateImage}`} mode='aspectFill' style={{width:'100%',height:'100%'}} /> : <Text style={{fontSize:'40rpx'}}>🏅</Text>}
+            style={{marginBottom:'20rpx',background:C.card,borderRadius:'20rpx',padding:'24rpx',border:`1rpx solid ${C.line}`}}>
+            <View style={{width:'100%',aspectRatio:'1754 / 1240',borderRadius:'14rpx',background:'#EEF3EF',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {c.certificateImage ? <Image src={c.certificateImage.startsWith('http')?c.certificateImage:`${API}${c.certificateImage}`} mode='aspectFit' style={{width:'100%',height:'100%'}} /> : <Text style={{fontSize:'40rpx'}}>证书</Text>}
             </View>
-            <View style={{flex:1,marginLeft:'16rpx',minWidth:0}}>
-              <Text style={{fontSize:'28rpx',fontWeight:'600',color:C.ink,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.activityTitle}</Text>
-              <Text style={{fontSize:'22rpx',color:C.muted,marginTop:'4rpx'}}>{c.recipientName}</Text>
-              <Text style={{fontSize:'20rpx',color:C.muted,marginTop:'4rpx'}}>{c.province}{c.city?' · '+c.city:''} · {fmtDate(c.activityDate)}</Text>
-              <Text style={{fontSize:'20rpx',color:C.muted,marginTop:'4rpx'}}>{c.issuerName} · {c.certificateNo}</Text>
+            <View style={{minWidth:0}}>
+              <Text style={{fontSize:'30rpx',fontWeight:'600',color:C.ink,lineHeight:'1.38',display:'-webkit-box',marginTop:'20rpx',overflow:'hidden',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{c.activityTitle}</Text>
+              {c.activityDescription ? <Text style={{fontSize:'22rpx',color:C.body,lineHeight:'1.45',display:'-webkit-box',marginTop:'6rpx',overflow:'hidden',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}}>{c.activityDescription}</Text> : null}
+              <Text style={{fontSize:'22rpx',color:C.muted,display:'block',marginTop:c.activityDescription?'12rpx':'14rpx'}}>{fmtDate(c.activityEndAt)}</Text>
+              {c.location ? <Text style={{fontSize:'21rpx',color:C.muted,marginTop:'4rpx',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.location}</Text> : null}
             </View>
           </View>
         ))}

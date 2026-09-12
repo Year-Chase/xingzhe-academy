@@ -1,12 +1,16 @@
-import { Entity, Column, CreateDateColumn, UpdateDateColumn, PrimaryColumn } from 'typeorm'
+import { Entity, Column, CreateDateColumn, UpdateDateColumn, PrimaryColumn, Index } from 'typeorm'
 
 @Entity('user')
+@Index('uq_user_wechat_app_openid', ['wechatAppId', 'openid'], { unique: true })
 export class User {
   @PrimaryColumn({ type: 'varchar', length: 50 })
   id: string
 
-  @Column({ type: 'varchar', length: 200, nullable: true, unique: true })
-  openid: string | null
+  @Column({ type: 'varchar', length: 100 })
+  wechatAppId: string
+
+  @Column({ type: 'varchar', length: 200 })
+  openid: string
 
   @Column({ type: 'varchar', length: 200, nullable: true })
   unionid: string | null

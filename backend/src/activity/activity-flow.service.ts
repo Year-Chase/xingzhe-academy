@@ -15,8 +15,19 @@ import { PaymentService } from '../payment/payment.service'
 import { MerchantOrderNoGenerator } from '../payment/merchant-order-no.generator'
 import { PaymentTransaction, PaymentProvider, PaymentTradeType } from '../payment/entities/payment-transaction.entity'
 import { ActivityFollowService } from './activity-follow.service'
+import { resolveUserActivityState, UserActivityState } from './user-activity-state'
 
-type RegistrationInfoField = 'realName' | 'phone' | 'idCardNo' | 'departureCity' | 'transportPreference' | 'roomPreference'
+type RegistrationInfoField =
+  | 'realName'
+  | 'phone'
+  | 'residentialAddress'
+  | 'departureCity'
+  | 'idCardNo'
+  | 'transportPreference'
+  | 'roomPreference'
+  | 'organization'
+  | 'jobTitle'
+  | 'inviterName'
 type PaymentSuccessInput = {
   merchantOrderNo: string
   providerTransactionNo?: string | null
@@ -27,14 +38,29 @@ type PaymentSuccessInput = {
   paidAt?: Date | null
 }
 
-const REGISTRATION_INFO_FIELDS: RegistrationInfoField[] = ['realName', 'phone', 'idCardNo', 'departureCity', 'transportPreference', 'roomPreference']
+const REGISTRATION_INFO_FIELDS: RegistrationInfoField[] = [
+  'realName',
+  'phone',
+  'residentialAddress',
+  'departureCity',
+  'idCardNo',
+  'transportPreference',
+  'roomPreference',
+  'organization',
+  'jobTitle',
+  'inviterName',
+]
 const REGISTRATION_INFO_LABELS: Record<RegistrationInfoField, string> = {
   realName: '真实姓名',
   phone: '手机号',
+  residentialAddress: '居住地址',
   idCardNo: '身份证号',
   departureCity: '出发城市',
   transportPreference: '交通工具偏好',
   roomPreference: '房间偏好',
+  organization: '来源公司/机构',
+  jobTitle: '职务',
+  inviterName: '邀请人',
 }
 const TRANSPORT_OPTIONS = ['高铁', '飞机', '自驾', '其他']
 const ROOM_OPTIONS = ['单住', '拼房', '无所谓', '其他']
@@ -506,6 +532,10 @@ export class ActivityFlowService {
       if (field === 'phone' && !PHONE_RE.test(value)) throw new BadRequestException('请填写正确的手机号')
       if (field === 'idCardNo' && !ID_CARD_RE.test(value)) throw new BadRequestException('请填写正确的身份证号')
       if (field === 'departureCity' && value.length > 30) throw new BadRequestException('出发城市最多30字')
+      if (field === 'residentialAddress' && value.length > 200) throw new BadRequestException('居住地址最多200字')
+      if (field === 'organization' && value.length > 100) throw new BadRequestException('来源公司/机构最多100字')
+      if (field === 'jobTitle' && value.length > 100) throw new BadRequestException('职务最多100字')
+      if (field === 'inviterName' && value.length > 100) throw new BadRequestException('邀请人最多100字')
       if (field === 'transportPreference' && !TRANSPORT_OPTIONS.includes(value)) throw new BadRequestException('请选择正确的交通工具偏好')
       if (field === 'roomPreference' && !ROOM_OPTIONS.includes(value)) throw new BadRequestException('请选择正确的房间偏好')
 
@@ -868,7 +898,8 @@ export class ActivityFlowService {
   // ──── getUserStatus ────
   async getUserStatus(userId: string, activityId: number) {
     const reg = await this.regRepo.findOne({ where: { userId, activityId } })
-    if (!reg) return { status: 'NOT_REGISTERED' }
+    if (!reg) return { status: 'NOT_REGISTERED', userActivityState: 'NONE' as UserActivityState }
+    const order = await this.orderRepo.findOne({ where: { registrationId: reg.id } })
     const qr = await this.activeQR(reg.id) || await this.latestQR(reg.id)
     if (reg.status === 'EXPIRED' && qr?.status === 'EXPIRED' && !this.isActivityQrExpired(reg.activity)) {
       qr.status = 'ACTIVE'
@@ -884,13 +915,24 @@ export class ActivityFlowService {
       reg.status = 'EXPIRED'
       await this.regRepo.save(reg)
     }
-    return { status: reg.status, qrCode: qr?.code || null, qrStatus: qr?.status || null }
+    return { status: reg.status, userActivityState: resolveUserActivityState({ registrationStatus: reg.status, orderStatus: order?.status }), qrCode: qr?.code || null, qrStatus: qr?.status || null }
+  }
+
+  async getUserActivityStates(userId: string | undefined, activityIds: number[]) {
+    const result = new Map<number, UserActivityState>()
+    if (!userId || activityIds.length === 0) return result
+    const regs = await this.regRepo.find({ where: { userId, activityId: In(activityIds) } })
+    const orders = regs.length ? await this.orderRepo.find({ where: { registrationId: In(regs.map((reg) => reg.id)) } }) : []
+    const orderByReg = new Map(orders.map((order) => [order.registrationId, order]))
+    for (const reg of regs) result.set(reg.activityId, resolveUserActivityState({ registrationStatus: reg.status, orderStatus: orderByReg.get(reg.id)?.status }))
+    return result
   }
 
   // ──── enrollPay ────
   async enrollPay(userId: string, activityId: number, registrationInfo?: {
-    realName?: string; phone?: string; idCardNo?: string
+    realName?: string; phone?: string; residentialAddress?: string; idCardNo?: string
     departureCity?: string; transportPreference?: string; roomPreference?: string
+    organization?: string; jobTitle?: string; inviterName?: string
   }) {
     return this.runEnrollmentTransaction(async (manager) => {
       const activityRepo = manager.getRepository(Activity)
@@ -984,10 +1026,14 @@ export class ActivityFlowService {
           existingInfo.registrationId = saved.id
           existingInfo.realName = cleanRegistrationInfo.realName || null
           existingInfo.phone = cleanRegistrationInfo.phone || null
+          existingInfo.residentialAddress = cleanRegistrationInfo.residentialAddress || null
           existingInfo.idCardNo = cleanRegistrationInfo.idCardNo || null
           existingInfo.departureCity = cleanRegistrationInfo.departureCity || null
           existingInfo.transportPreference = cleanRegistrationInfo.transportPreference || null
           existingInfo.roomPreference = cleanRegistrationInfo.roomPreference || null
+          existingInfo.organization = cleanRegistrationInfo.organization || null
+          existingInfo.jobTitle = cleanRegistrationInfo.jobTitle || null
+          existingInfo.inviterName = cleanRegistrationInfo.inviterName || null
           existingInfo.confirmedAt = new Date()
           await regInfoRepo.save(existingInfo)
         } else {
@@ -998,10 +1044,14 @@ export class ActivityFlowService {
             userId,
             realName: cleanRegistrationInfo.realName || null,
             phone: cleanRegistrationInfo.phone || null,
+            residentialAddress: cleanRegistrationInfo.residentialAddress || null,
             idCardNo: cleanRegistrationInfo.idCardNo || null,
             departureCity: cleanRegistrationInfo.departureCity || null,
             transportPreference: cleanRegistrationInfo.transportPreference || null,
             roomPreference: cleanRegistrationInfo.roomPreference || null,
+            organization: cleanRegistrationInfo.organization || null,
+            jobTitle: cleanRegistrationInfo.jobTitle || null,
+            inviterName: cleanRegistrationInfo.inviterName || null,
             confirmedAt: new Date(),
           }))
         }

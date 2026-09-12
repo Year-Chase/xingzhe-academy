@@ -1,7 +1,8 @@
 import { View, Text, Image, ScrollView, Swiper, SwiperItem } from '@tarojs/components'
 import { useState, useEffect, useCallback } from 'react'
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
-import { ensureUserId } from '../../utils/user'
+import { ensureUserId, isLoggedIn, userAuthHeader } from '../../utils/user'
+import { activityTemporalStateLabel, formatActivityStart, hasUserActivityState, userActivityStateLabel } from '../../utils/activity-display'
 
 import { API_BASE_URL as API } from '../../config/api'
 
@@ -20,6 +21,8 @@ interface ActivityCard {
   price?: number
   category?: { id: string; name: string } | null
   series?: { id: string; name: string } | null
+  userActivityState?: string
+  activityTemporalState?: string
 }
 
 interface ActivitySeries {
@@ -43,6 +46,7 @@ interface BannerItem {
 const RECENT_LIMIT = 5
 const BANNER_HEIGHT = '312rpx'
 const PLACEHOLDER_BG = 'linear-gradient(160deg, #DCE6E2 0%, #BED5C5 30%, #9AB8A8 65%, #789A85 100%)'
+function userAuthHeaderIfLogged() { return isLoggedIn() ? userAuthHeader() : undefined }
 
 function imgUrl(cover: string | undefined): string {
   if (!cover) return ''
@@ -56,16 +60,6 @@ function ImgWithFallback({ src, style, mode = 'aspectFill' }: { src: string; sty
   return <Image src={src} mode={mode as any} style={style} onError={() => setFailed(true)} />
 }
 
-function fmtDate(d: string) {
-  if (!d) return ''
-  const dt = new Date(d)
-  if (Number.isNaN(dt.getTime())) return ''
-  const w = ['日', '一', '二', '三', '四', '五', '六'][dt.getDay()]
-  const h = String(dt.getHours()).padStart(2, '0')
-  const m = String(dt.getMinutes()).padStart(2, '0')
-  return `${dt.getMonth() + 1}月${dt.getDate()}日（周${w}） ${h}:${m}`
-}
-
 function activityCover(a: ActivityCard) {
   try {
     const urls = JSON.parse((a as any).imageUrls || 'null')
@@ -76,7 +70,7 @@ function activityCover(a: ActivityCard) {
 
 function ActivityCardView({ activity, onClick }: { activity: ActivityCard; onClick: () => void }) {
   const cover = activityCover(activity)
-  const meta = [activity.startTime ? fmtDate(activity.startTime) : '', activity.location || ''].filter(Boolean).join('  ')
+  const hasUserState = hasUserActivityState(activity.userActivityState)
   return (
     <View onClick={onClick}
       style={{ margin: '0 32rpx 18rpx', background: '#FFFFFF', borderRadius: '18rpx', overflow: 'hidden', border: '1rpx solid #EDE9DF', display: 'flex', flexDirection: 'row', minHeight: '172rpx' }}
@@ -88,29 +82,15 @@ function ActivityCardView({ activity, onClick }: { activity: ActivityCard; onCli
           <Text style={{ fontSize: '28rpx', color: 'rgba(24,35,30,0.12)' }}>行者</Text>
         )}
       </View>
-      <View style={{ flex: 1, minWidth: 0, padding: '18rpx 22rpx', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <View style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '10rpx' }}>
-          {activity.series?.name ? (
-            <View style={{ flexShrink: 0, padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EEF5EF' }}>
-              <Text style={{ fontSize: '21rpx', color: '#2E7D5A', fontWeight: '600' }}>{activity.series.name}</Text>
-            </View>
-          ) : activity.category?.name ? (
-            <View style={{ flexShrink: 0, padding: '4rpx 14rpx', borderRadius: '999rpx', background: '#EEF5EF' }}>
-              <Text style={{ fontSize: '21rpx', color: '#2E7D5A', fontWeight: '600' }}>{activity.category.name}</Text>
-            </View>
-          ) : null}
-          <Text style={{ flex: 1, minWidth: 0, fontSize: '29rpx', fontWeight: '700', color: '#18231E', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</Text>
-        </View>
+      <View style={{ flex: 1, minWidth: 0, padding: '18rpx 22rpx', display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'relative' }}>
+        <Text style={{ fontSize: '21rpx', color: activity.activityTemporalState === 'ENDED' ? '#8A918C' : '#2E7D5A', lineHeight: '1.3', paddingRight: hasUserState ? '112rpx' : '0' }}>{activityTemporalStateLabel(activity.activityTemporalState)}</Text>
+        <Text style={{ fontSize: '29rpx', fontWeight: '700', color: '#18231E', lineHeight: '1.3', marginTop: '6rpx', paddingRight: hasUserState ? '112rpx' : '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</Text>
         {activity.description ? (
-          <Text style={{ fontSize: '23rpx', color: '#3A403B', lineHeight: '1.45', marginTop: '8rpx', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>{activity.description}</Text>
+          <Text style={{ fontSize: '23rpx', color: '#3A403B', lineHeight: '1.45', marginTop: '8rpx', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>{activity.description}</Text>
         ) : null}
-        <View style={{ marginTop: '12rpx', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            {meta ? (
-              <Text style={{ fontSize: '24rpx', color: '#666666', lineHeight: '1.4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta}</Text>
-            ) : null}
-          </View>
-        </View>
+        {activity.startTime ? <Text style={{ fontSize: '24rpx', color: '#666666', lineHeight: '1.4', marginTop: '12rpx' }}>{formatActivityStart(activity.startTime)}</Text> : null}
+        {activity.location ? <Text style={{ fontSize: '24rpx', color: '#666666', lineHeight: '1.4', marginTop: '4rpx', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.location}</Text> : null}
+        {hasUserState ? <View style={{ position: 'absolute', right: '22rpx', top: '18rpx', padding: '5rpx 12rpx', borderRadius: '999rpx', background: activity.userActivityState === 'CHECKED_IN' || activity.userActivityState === 'PENDING_CHECKIN' ? '#EEF5EF' : '#F1F1EE' }}><Text style={{ fontSize: '20rpx', color: activity.userActivityState === 'CHECKED_IN' || activity.userActivityState === 'PENDING_CHECKIN' ? '#2E7D5A' : '#747D77', fontWeight: '600' }}>{userActivityStateLabel(activity.userActivityState)}</Text></View> : null}
       </View>
     </View>
   )
@@ -145,7 +125,7 @@ export default function Index() {
     setLoading(true)
     setError('')
     try {
-      const res = await Taro.request({ url: `${API}/activity/recent?limit=${RECENT_LIMIT}`, timeout: 15000 })
+      const res = await Taro.request({ url: `${API}/activity/recent?limit=${RECENT_LIMIT}`, header: userAuthHeaderIfLogged(), timeout: 15000 })
       const data = res.data as any
       let list: ActivityCard[] = []
       if (Array.isArray(data)) list = data

@@ -50,10 +50,12 @@ interface OrderItem {
 }
 
 export default function OrdersPage() {
+  const router = Taro.getCurrentInstance().router
   const [orders, setOrders] = useState<OrderItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actingKey, setActingKey] = useState('')
+  const paymentReturn = router?.params?.source === 'activityPayment'
 
   const load = async () => {
     if (!isLoggedIn()) {
@@ -78,6 +80,11 @@ export default function OrdersPage() {
   useEffect(() => { load() }, [])
   useDidShow(() => { load() })
   usePullDownRefresh(() => { load().then(() => Taro.stopPullDownRefresh()) })
+  const backToActivity = () => {
+    const activityId = router?.params?.activityId
+    if (activityId) Taro.redirectTo({ url: `/pages/activity/detail/index?id=${activityId}` })
+    else Taro.navigateBack()
+  }
 
   const completePostpay = async (order: OrderItem) => {
     if (actingKey) return
@@ -184,6 +191,7 @@ export default function OrdersPage() {
   return (
     <ScrollView scrollY style={{ height: '100vh', background: C.bg }}>
       <View style={{ padding: '24rpx 24rpx 80rpx' }}>
+        {paymentReturn ? <View onClick={backToActivity} style={{ height: '64rpx', display: 'flex', alignItems: 'center' }}><Text style={{ fontSize: '28rpx', color: C.green }}>&lt; 活动详情</Text></View> : null}
         <Text style={{ display: 'block', fontSize: '36rpx', fontWeight: '700', color: C.dark, marginBottom: '16rpx' }}>我的订单</Text>
         {orders.map(order => {
           const pendingPostpay = order.payType === 'PREPAY' && (order.postpayStatus === 'UNPAID' || order.postpayStatus === 'OVERDUE')

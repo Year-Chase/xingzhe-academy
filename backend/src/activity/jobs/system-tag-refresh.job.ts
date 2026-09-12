@@ -12,7 +12,7 @@ import { UserTagRelation } from '../entities/user-tag-relation.entity'
 const SYSTEM_TAGS = [
   { name: '新用户', ruleCode: 'NEW_USER', description: '注册时间 <= 30 天' },
   { name: '高频参与', ruleCode: 'FREQUENT_CHECKIN', description: '过去 180 天签到活动次数 >= 3' },
-  { name: '沉睡用户', ruleCode: 'DORMANT_USER', description: '过去 180 天没有报名活动' },
+  { name: '沉睡用户', ruleCode: 'DORMANT_USER', description: '曾报名过活动且过去 180 天没有报名活动' },
   { name: '高价值用户', ruleCode: 'HIGH_VALUE_USER', description: '累计支付金额 >= 50000 元' },
   { name: '邀请之星', ruleCode: 'INVITE_STAR', description: '累计邀请成功参与活动用户数 >= 5' },
 ] as const
@@ -60,15 +60,17 @@ export class SystemTagRefreshJob implements OnModuleInit {
     }
 
     const recentRegs = await this.regRepo.find()
+    const historicalRegMap = new Set<string>()
     const recentRegMap = new Map<string, number>()
     const checkinMap = new Map<string, number>()
     for (const reg of recentRegs) {
       if (!reg.userId) continue
+      historicalRegMap.add(reg.userId)
       if (reg.createdAt && new Date(reg.createdAt) >= day180) recentRegMap.set(reg.userId, (recentRegMap.get(reg.userId) || 0) + 1)
       if (reg.status === 'CHECKED_IN' && reg.createdAt && new Date(reg.createdAt) >= day180) checkinMap.set(reg.userId, (checkinMap.get(reg.userId) || 0) + 1)
     }
     for (const [uid, count] of checkinMap) if (count >= 3) targets.get('FREQUENT_CHECKIN')!.add(uid)
-    for (const uid of userIds) if ((recentRegMap.get(uid) || 0) === 0) targets.get('DORMANT_USER')!.add(uid)
+    for (const uid of historicalRegMap) if ((recentRegMap.get(uid) || 0) === 0) targets.get('DORMANT_USER')!.add(uid)
 
     const paidOrders = await this.orderRepo.find({ where: { status: 'PAID' } })
     const paidMap = new Map<string, number>()

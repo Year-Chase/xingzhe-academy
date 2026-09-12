@@ -1,0 +1,1 @@
+-- SQLite rollback requires rebuilding issued_certificate; intentionally manual.

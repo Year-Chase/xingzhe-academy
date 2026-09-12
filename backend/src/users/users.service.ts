@@ -1,7 +1,9 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { Repository, In } from 'typeorm'
-import { randomUUID } from 'crypto'
+import { Repository, In, QueryFailedError } from 'typeorm'
+import { randomBytes, randomInt, randomUUID } from 'crypto'
+import { writeFileSync } from 'fs'
+import { join } from 'path'
 import { User } from './entities/user.entity'
 import { Activity } from '../activity/entities/activity.entity'
 import { ActivityRegistration } from '../activity/entities/activity-registration.entity'
@@ -10,11 +12,15 @@ import { ActivityOrder } from '../activity/entities/activity-order.entity'
 import { ActivityInvoice } from '../activity/entities/activity-invoice.entity'
 import { ActivityRefund } from '../activity/entities/activity-refund.entity'
 import { CertificateTemplate } from '../certificate/entities/certificate-template.entity'
+import { IssuedCertificate } from '../certificate/entities/issued-certificate.entity'
 import { UserInvoiceProfile, UserInvoiceType } from './entities/user-invoice-profile.entity'
 import { UserRegistrationProfile } from './entities/user-registration-profile.entity'
 import { ContentSecurityService } from '../common/content-security.service'
 import { MiniappJwtService } from '../auth/miniapp-jwt.service'
 import { getWechatLoginMode } from '../config/runtime-config'
+import { resolveActivityTemporalState, resolveUserActivityState } from '../activity/user-activity-state'
+import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
+import { CertificateRenderSnapshot, createCertificateRenderSnapshot, renderCertificateSvg } from '../certificate/certificate-renderer'
 
 const MOCK_CODE_MAP: Record<string, string> = {
   'mock-code': 'mock_openid_default',
@@ -22,6 +28,22 @@ const MOCK_CODE_MAP: Record<string, string> = {
   'mock-code-002': 'mock_openid_002',
   'mock-code-v24-smoke': 'mock_openid_v24_smoke',
 }
+
+const USER_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+const REGISTRATION_PROFILE_FIELDS = [
+  'realName',
+  'phone',
+  'residentialAddress',
+  'departureCity',
+  'idCardNo',
+  'transportPreference',
+  'roomPreference',
+  'organization',
+  'jobTitle',
+  'inviterName',
+] as const
+type RegistrationProfileField = typeof REGISTRATION_PROFILE_FIELDS[number]
+const ID_CARD_RE = /^(?:\d{15}|\d{17}[\dXx])$/
 
 @Injectable()
 export class UsersService {
@@ -46,6 +68,8 @@ export class UsersService {
     private readonly registrationProfileRepo: Repository<UserRegistrationProfile>,
     @InjectRepository(CertificateTemplate)
     private readonly certTemplateRepo: Repository<CertificateTemplate>,
+    @InjectRepository(IssuedCertificate)
+    private readonly issuedCertificateRepo: Repository<IssuedCertificate>,
     private readonly contentSecurity: ContentSecurityService,
     private readonly miniappJwt: MiniappJwtService,
   ) {}
@@ -61,7 +85,11 @@ export class UsersService {
     return 'mock_openid_dev'
   }
 
-  private async resolveRealOpenid(code: string): Promise<string> {
+  private getWechatAppId(): string {
+    return (process.env.WECHAT_APPID || process.env.MINIAPP_APPID || 'mock-app').trim()
+  }
+
+  private async resolveRealOpenid(code: string): Promise<{ openid: string; unionid: string | null }> {
     const appId = process.env.WECHAT_APPID
     const secret = process.env.WECHAT_SECRET
     if (!appId || !secret) {
@@ -74,11 +102,17 @@ export class UsersService {
       if (data.errcode) {
         throw new BadRequestException(`微信登录失败: ${data.errmsg || '未知错误'}`)
       }
-      return data.openid as string
+      return { openid: data.openid as string, unionid: data.unionid || null }
     } catch (e: any) {
       if (e instanceof BadRequestException) throw e
       throw new BadRequestException(`微信 code2session 调用失败: ${e.message}`)
     }
+  }
+
+  private createUserId(): string {
+    let suffix = ''
+    for (let i = 0; i < 12; i += 1) suffix += USER_ID_ALPHABET[randomInt(USER_ID_ALPHABET.length)]
+    return `usr_${suffix}`
   }
 
   private generateToken(userId: string): Promise<string> {
@@ -104,12 +138,21 @@ export class UsersService {
     }
   }
 
-  private userPrivateProfile(user: User) {
+  private userPrivateProfile(user: User, registrationProfile?: UserRegistrationProfile | null) {
     return {
       ...this.userSummary(user),
-      phone: user.phone,
+      phone: registrationProfile?.phone || user.phone,
       birthday: user.birthday,
       birthYearMonth: user.birthYearMonth,
+      realName: registrationProfile?.realName || null,
+      residentialAddress: registrationProfile?.residentialAddress || null,
+      idCardNo: registrationProfile?.idCardNo || null,
+      departureCity: registrationProfile?.departureCity || null,
+      transportPreference: registrationProfile?.transportPreference || null,
+      roomPreference: registrationProfile?.roomPreference || null,
+      organization: registrationProfile?.organization || null,
+      jobTitle: registrationProfile?.jobTitle || null,
+      inviterName: registrationProfile?.inviterName || null,
     }
   }
 
@@ -118,45 +161,63 @@ export class UsersService {
     const { code, nickname, avatarUrl, gender } = body
     if (!code) throw new BadRequestException('code is required')
 
+    const wechatAppId = this.getWechatAppId()
     let openid: string
+    let unionid: string | null = null
 
     if (getWechatLoginMode() === 'real') {
-      openid = await this.resolveRealOpenid(code)
+      const resolved = await this.resolveRealOpenid(code)
+      openid = resolved.openid
+      unionid = resolved.unionid
     } else {
       openid = this.resolveMockOpenid(code)
     }
 
-    // Find existing user by openid — V2.6B: stable openid ensures same user
-    let user = await this.userRepo.findOne({ where: { openid } })
+    // The app ID is part of the identity boundary. UnionID is optional metadata only.
+    let user = await this.userRepo.findOne({ where: { wechatAppId, openid } })
 
     let isNewUser = false
     if (!user) {
       isNewUser = true
-      const id = `user_${randomUUID()}`
       const now = new Date()
-      user = this.userRepo.create({
-        id,
-        openid,
-        nickname: nickname || null,
-        avatarUrl: avatarUrl || null,
-        gender: gender || null,
-        identityType: '普通用户',
-        registeredAt: now,
-        lastLoginAt: now,
-        status: 'ACTIVE',
-        isMember: false,
-        isLifetimeMember: false,
-      })
-      await this.userRepo.save(user)
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        user = this.userRepo.create({
+          id: this.createUserId(),
+          wechatAppId,
+          openid,
+          unionid,
+          nickname: nickname || null,
+          avatarUrl: avatarUrl || null,
+          gender: gender || null,
+          identityType: '普通用户',
+          registeredAt: now,
+          lastLoginAt: now,
+          status: 'ACTIVE',
+          isMember: false,
+          isLifetimeMember: false,
+        })
+        try {
+          await this.userRepo.save(user)
+          break
+        } catch (error) {
+          const driverMessage = String((error as any)?.driverError?.message || (error as any)?.message || '')
+          const duplicate = error instanceof QueryFailedError && /unique|duplicate|constraint/i.test(driverMessage)
+          if (!duplicate || attempt === 4) throw error
+          user = await this.userRepo.findOne({ where: { wechatAppId, openid } })
+          if (user) { isNewUser = false; break }
+        }
+      }
     } else {
       // Update profile fields only if non-empty values are provided
       user.lastLoginAt = new Date()
       if (nickname && nickname.trim()) user.nickname = nickname.trim()
       if (avatarUrl && avatarUrl.trim()) user.avatarUrl = avatarUrl.trim()
       if (gender && gender !== 'unknown') user.gender = gender
+      if (unionid && !user.unionid) user.unionid = unionid
       await this.userRepo.save(user)
     }
 
+    if (!user) throw new BadRequestException('用户身份创建失败，请重试')
     const token = await this.generateToken(user.id)
 
     return {
@@ -177,7 +238,8 @@ export class UsersService {
   async getPrivateProfile(id: string) {
     const user = await this.userRepo.findOne({ where: { id } })
     if (!user) throw new NotFoundException(`User ${id} not found`)
-    return this.userPrivateProfile(user)
+    const registrationProfile = await this.registrationProfileRepo.findOne({ where: { userId: id } })
+    return this.userPrivateProfile(user, registrationProfile)
   }
 
   async getRegistrationProfile(userId: string) {
@@ -187,10 +249,14 @@ export class UsersService {
       userId,
       realName: profile?.realName || null,
       phone: profile?.phone || user.phone || null,
+      residentialAddress: profile?.residentialAddress || null,
       idCardNo: profile?.idCardNo || null,
       departureCity: profile?.departureCity || null,
       transportPreference: profile?.transportPreference || null,
       roomPreference: profile?.roomPreference || null,
+      organization: profile?.organization || null,
+      jobTitle: profile?.jobTitle || null,
+      inviterName: profile?.inviterName || null,
       updatedAt: profile?.updatedAt || null,
     }
   }
@@ -270,18 +336,17 @@ export class UsersService {
     const regInfoMap = new Map(regInfo.map(r => [r.activityId, r]))
     const recipientName = regInfo.length > 0 ? (regInfo.find(r => r.realName)?.realName || displayName) : displayName
 
-    // V2.6C: Certificate image from certificate template, NOT from memoryImages
-    // Pre-fetch all enabled templates + build lookup map
+    // Templates are only input. Each eligible user receives a persisted rendered asset.
     const allTemplates = await this.certTemplateRepo.find({ where: { enabled: true } })
     const templateMap = new Map(allTemplates.map(t => [t.id, t]))
     const defaultTemplate = allTemplates.find(t => t.isDefault) || null
 
-    function getTemplate(templateId: number | null): { id: number; name: string; imageUrl: string; fieldConfig: any } | null {
+    function getTemplate(templateId: number | null): { id: number; name: string; imageUrl: string; fieldConfig: any; updatedAt: Date } | null {
       if (templateId) {
         const t = templateMap.get(templateId)
-        if (t) return { id: t.id, name: t.name, imageUrl: t.imageUrl, fieldConfig: parseFieldConfig(t.fieldConfig) }
+        if (t) return { id: t.id, name: t.name, imageUrl: t.imageUrl, fieldConfig: parseFieldConfig(t.fieldConfig), updatedAt: t.updatedAt }
       }
-      if (defaultTemplate) return { id: defaultTemplate.id, name: defaultTemplate.name, imageUrl: defaultTemplate.imageUrl, fieldConfig: parseFieldConfig(defaultTemplate.fieldConfig) }
+      if (defaultTemplate) return { id: defaultTemplate.id, name: defaultTemplate.name, imageUrl: defaultTemplate.imageUrl, fieldConfig: parseFieldConfig(defaultTemplate.fieldConfig), updatedAt: defaultTemplate.updatedAt }
       return null
     }
 
@@ -290,24 +355,47 @@ export class UsersService {
       try { return JSON.parse(raw) } catch { return {} }
     }
 
-    const certificates = activityAssets.filter(a => a.certificateStatus === 'AVAILABLE').map(a => {
+    const certificates = await Promise.all(activityAssets.filter(a => a.certificateStatus === 'AVAILABLE').map(async a => {
       const activityTemplate = a.certificateTemplateId || null  // V2.6C: per-activity template
       const template = getTemplate(activityTemplate)
-      return {
-        certificateId: `cert_${a.activityId}_${userId}`,
+      const issued = await this.ensureIssuedCertificate({
+        userId,
         activityId: a.activityId,
+        templateId: template?.id || null,
+        templateUpdatedAt: template?.updatedAt || null,
+        activityTitle: a.title,
+        activitySlogan: activityMap.get(a.activityId)?.slogan || '',
         recipientName: regInfoMap.get(a.activityId)?.realName || displayName,
-        activityTitle: a.title, activityDate: a.startTime || a.endTime,
+        templateImageUrl: template?.imageUrl || '',
+        templateFieldConfig: template?.fieldConfig || {},
+        city: a.location || a.city || '',
+        activityEndAt: a.endTime || null,
+      })
+      const snapshot = this.parseIssuedCertificateSnapshot(issued.renderSnapshot)
+      return {
+        certificateId: issued.id,
+        publicToken: issued.publicToken,
+        activityId: a.activityId,
+        recipientName: snapshot?.fields.recipientName.value || regInfoMap.get(a.activityId)?.realName || displayName,
+        activityTitle: snapshot?.fields.activityName.value || a.title,
+        activityDescription: activityMap.get(a.activityId)?.description || '',
+        activityDate: snapshot?.activityEndAt || a.endTime || null,
+        activityEndAt: snapshot?.activityEndAt || a.endTime || null,
         issuerName: '行者学社',
-        certificateImage: template?.imageUrl || '',  // from template, NOT memoryImages
-        template,
+        certificateImage: issued.imageUrl,
+        template: snapshot ? { id: snapshot.templateId, imageUrl: snapshot.backgroundImageUrl } : null,
+        templateRenderConfig: snapshot?.fields || {},
+        certificateFields: snapshot ? Object.fromEntries(Object.entries(snapshot.fields).map(([key, field]) => [key, field.value])) : {},
         province: a.province, city: a.city || a.location || '',
+        location: snapshot?.fields.city.value || a.location || '',
         certificateText: '这段路，已成为你的行者印记。',
         certificateNo: `XZ-${a.activityId}-${userId.slice(-4)}`,
-        issuedAt: a.endTime || a.startTime || new Date().toISOString(),
+        issuedAt: issued.issuedAt,
+        friendShareImage: issued.friendShareImageUrl || issued.imageUrl,
+        timelineShareImage: issued.timelineShareImageUrl || issued.imageUrl,
         certificateStatus: 'AVAILABLE',
       }
-    })
+    }))
 
     return {
       userId,
@@ -322,12 +410,115 @@ export class UsersService {
     }
   }
 
+  async getMineSummary(userId: string) {
+    await this.ensureUser(userId)
+    const [journey, registrations, orders] = await Promise.all([
+      this.getJourney(userId),
+      this.getMyRegistrations(userId),
+      this.orderRepo.find({ where: { userId } }),
+    ])
+    return {
+      journeyCityCount: Number(journey.summary.cityCount) || 0,
+      certificateCount: Number(journey.summary.certificateCount) || 0,
+      companionCount: Number(journey.summary.companionCount) || 0,
+      pendingCheckinCount: Number(registrations.pendingCheckinCount) || 0,
+      pendingPaymentCount: orders.filter(order => order.postpayStatus === 'UNPAID' || order.postpayStatus === 'OVERDUE').length,
+    }
+  }
+
+  async getPublicCertificate(publicToken: string) {
+    const issued = await this.issuedCertificateRepo.findOne({ where: { publicToken } })
+    if (!issued) throw new NotFoundException('证书不存在或已失效')
+    const activity = await this.activityRepo.findOne({ where: { id: issued.activityId } })
+    if (!activity) throw new NotFoundException('证书活动不存在')
+    const snapshot = this.parseIssuedCertificateSnapshot(issued.renderSnapshot)
+    return {
+      certificateImage: issued.imageUrl,
+      friendShareImage: issued.friendShareImageUrl || issued.imageUrl,
+      timelineShareImage: issued.timelineShareImageUrl || issued.imageUrl,
+      activityTitle: snapshot?.fields.activityName.value || activity.title,
+      activityDescription: activity.description || '',
+      location: snapshot?.fields.city.value || activity.locationName || activity.location || '',
+      issuedAt: issued.issuedAt,
+    }
+  }
+
+  private async ensureIssuedCertificate(input: { userId: string; activityId: number; templateId: number | null; templateUpdatedAt: Date | string | null; activityTitle: string; activitySlogan: string; recipientName: string; templateImageUrl: string; templateFieldConfig: Record<string, any>; city: string; activityEndAt: Date | string | null }) {
+    const existing = await this.issuedCertificateRepo.findOne({ where: { userId: input.userId, activityId: input.activityId } })
+    if (existing) {
+      // Issued assets are immutable. Legacy rows only receive an audit snapshot;
+      // the persisted image and share assets are never regenerated here.
+      if (!existing.renderSnapshot) {
+        const snapshot = this.createIssuedCertificateSnapshot(input, existing.issuedAt)
+        existing.templateId = snapshot.templateId
+        existing.renderSnapshot = JSON.stringify(snapshot)
+        return this.issuedCertificateRepo.save(existing)
+      }
+      return existing
+    }
+
+    const id = `cert_${randomUUID().replace(/-/g, '')}`
+    const filename = `${id}.svg`
+    const imageUrl = toPublicUploadUrl('certificate-issued', filename)
+    const issuedAt = input.activityEndAt ? new Date(input.activityEndAt) : new Date()
+    const publicToken = randomBytes(24).toString('base64url')
+    const snapshot = this.createIssuedCertificateSnapshot(input, issuedAt)
+    this.writeIssuedCertificateAsset(id, snapshot)
+    const shareImages = this.writeCertificateShareImages(id)
+    try {
+      return await this.issuedCertificateRepo.save(this.issuedCertificateRepo.create({ id, userId: input.userId, activityId: input.activityId, publicToken, imageUrl, templateId: snapshot.templateId, renderSnapshot: JSON.stringify(snapshot), issuedAt, ...shareImages }))
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const raced = await this.issuedCertificateRepo.findOne({ where: { userId: input.userId, activityId: input.activityId } })
+        if (raced) return raced
+      }
+      throw error
+    }
+  }
+
+  private createIssuedCertificateSnapshot(input: { templateId: number | null; templateUpdatedAt: Date | string | null; templateImageUrl: string; templateFieldConfig: Record<string, any>; recipientName: string; activityTitle: string; activitySlogan: string; city: string; activityEndAt: Date | string | null }, issuedAt: Date) {
+    return createCertificateRenderSnapshot({
+      templateId: input.templateId,
+      templateUpdatedAt: input.templateUpdatedAt,
+      backgroundImageUrl: input.templateImageUrl,
+      renderConfig: input.templateFieldConfig,
+      recipientName: input.recipientName,
+      activityName: input.activityTitle,
+      activityLocation: input.city,
+      activityEndAt: input.activityEndAt,
+      activitySlogan: input.activitySlogan,
+      issuedAt,
+    })
+  }
+
+  private parseIssuedCertificateSnapshot(raw: string | null): CertificateRenderSnapshot | null {
+    if (!raw) return null
+    try { return JSON.parse(raw) as CertificateRenderSnapshot } catch { return null }
+  }
+
+  private writeIssuedCertificateAsset(certificateId: string, snapshot: CertificateRenderSnapshot) {
+    writeFileSync(join(ensureUploadSubDir('certificate-issued'), `${certificateId}.svg`), renderCertificateSvg(snapshot), 'utf8')
+  }
+
+  private writeCertificateShareImages(certificateId: string) {
+    const baseUrl = toPublicUploadUrl('certificate-issued', `${certificateId}.svg`)
+    const friendShareImageUrl = toPublicUploadUrl('certificate-issued', `${certificateId}-share-friend.svg`)
+    const timelineShareImageUrl = toPublicUploadUrl('certificate-issued', `${certificateId}-share-timeline.svg`)
+    const dir = ensureUploadSubDir('certificate-issued')
+    const makeCover = (width: number, height: number) => `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#edf5ef"/><path d="M0 ${height * .83} L${width * .26} ${height * .58} L${width * .5} ${height * .78} L${width * .74} ${height * .5} L${width} ${height * .75} V${height} H0Z" fill="#d3e5d9"/><text x="${width / 2}" y="${height * .12}" text-anchor="middle" font-size="${Math.round(width * .045)}" font-family="sans-serif" fill="#2E7D5A">行者学社</text><image href="${baseUrl}" x="${width * .09}" y="${height * .2}" width="${width * .82}" height="${height * .68}" preserveAspectRatio="xMidYMid meet"/></svg>`
+    writeFileSync(join(dir, `${certificateId}-share-friend.svg`), makeCover(1250, 1000), 'utf8')
+    writeFileSync(join(dir, `${certificateId}-share-timeline.svg`), makeCover(1000, 1000), 'utf8')
+    return { friendShareImageUrl, timelineShareImageUrl }
+  }
+
   async getJourneyCities(userId: string) {
     await this.ensureUser(userId)
     const regs = await this.regRepo.find({
       where: { userId, status: 'CHECKED_IN' as any },
       order: { checkedInAt: 'DESC' as any, createdAt: 'DESC' as any },
     })
+    const orders = regs.length ? await this.orderRepo.find({ where: { registrationId: In(regs.map((reg) => reg.id)) } }) : []
+    const orderByReg = new Map(orders.map((order) => [order.registrationId, order]))
     const activityIds = [...new Set(regs.map(r => r.activityId).filter(Boolean))]
     if (activityIds.length === 0) return []
 
@@ -335,30 +526,41 @@ export class UsersService {
     const cityMap = new Map<string, {
       city: string
       province: string
-      latitude: number
-      longitude: number
+      cityAdcode: string
+      latitude: number | null
+      longitude: number | null
       activityCount: number
     }>()
 
     for (const activity of activities) {
-      const latitude = Number(activity.locationLat ?? activity.lat)
-      const longitude = Number(activity.locationLng ?? activity.lng)
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue
-      if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) continue
+      const rawLatitude = Number(activity.locationLat ?? activity.lat)
+      const rawLongitude = Number(activity.locationLng ?? activity.lng)
+      const latitude = Number.isFinite(rawLatitude) && rawLatitude >= -90 && rawLatitude <= 90 ? rawLatitude : null
+      const longitude = Number.isFinite(rawLongitude) && rawLongitude >= -180 && rawLongitude <= 180 ? rawLongitude : null
 
       const city = (activity.cityName || activity.city || activity.locationName || '').trim()
       if (!city) continue
       const province = (activity.provinceName || activity.province || '').trim()
-      const key = `${province}|${city}`
+      const cityAdcode = (activity.adcode || activity.cityCode || '').trim()
+      const key = cityAdcode || `${province}|${city}`
       const current = cityMap.get(key)
       if (current) {
         current.activityCount += 1
       } else {
-        cityMap.set(key, { city, province, latitude, longitude, activityCount: 1 })
+        cityMap.set(key, { city, province, cityAdcode, latitude, longitude, activityCount: 1 })
       }
     }
 
-    return [...cityMap.values()].sort((a, b) => b.activityCount - a.activityCount || a.city.localeCompare(b.city))
+    return [...cityMap.values()].sort((a, b) => b.activityCount - a.activityCount || a.city.localeCompare(b.city)).map(city => ({
+      cityName: city.city,
+      cityAdcode: city.cityAdcode || null,
+      checkedInCount: city.activityCount,
+      city: city.city,
+      province: city.province,
+      latitude: city.latitude,
+      longitude: city.longitude,
+      activityCount: city.activityCount,
+    }))
   }
 
   async getMyOrders(userId: string) {
@@ -447,6 +649,8 @@ export class UsersService {
       where: { userId, status: In(['REGISTERED', 'PAID', 'CHECKED_IN']) },
       order: { createdAt: 'DESC' as any, id: 'DESC' as any },
     })
+    const orders = regs.length ? await this.orderRepo.find({ where: { registrationId: In(regs.map((reg) => reg.id)) } }) : []
+    const orderByReg = new Map(orders.map((order) => [order.registrationId, order]))
     const now = Date.now()
     const items = regs.map(reg => {
       const activity = reg.activity
@@ -456,12 +660,15 @@ export class UsersService {
         registrationId: reg.id,
         activityId: reg.activityId,
         activityTitle: activity?.title || '',
+        activityDescription: activity?.description || '',
         activityCoverUrl: activity?.coverImage || '',
         activityStartTime: activity?.startTime || null,
         activityEndTime: activity?.endTime || null,
         activityLocation: activity?.locationName || activity?.location || '',
         province: activity?.province || '',
         city: activity?.city || '',
+        userActivityState: resolveUserActivityState({ registrationStatus: reg.status, orderStatus: orderByReg.get(reg.id)?.status }),
+        activityTemporalState: resolveActivityTemporalState(activity?.startTime, activity?.endTime),
         registrationStatus: reg.status,
         checkinStatus: isCheckedIn ? 'CHECKED_IN' : 'NOT_CHECKED_IN',
         qrAvailable: reg.status === 'PAID' && !isCheckedIn && !isCompleted,
@@ -469,12 +676,18 @@ export class UsersService {
         createdAt: reg.createdAt,
       }
     })
-    const pendingCheckinCount = items.filter(i => i.registrationStatus === 'PAID' && i.checkinStatus !== 'CHECKED_IN' && !i.isCompleted).length
+    const pendingCheckinCount = items.filter(i => i.userActivityState === 'PENDING_CHECKIN' && !i.isCompleted).length
     return { items, total: items.length, pendingCheckinCount }
   }
 
   // ──── Update profile ────
-  async updateProfile(id: string, body: { nickname?: string; avatarUrl?: string; gender?: string; phone?: string; birthday?: string; birthYearMonth?: string; identityType?: string; intro?: string }) {
+  async updateProfile(id: string, body: {
+    nickname?: string | null; avatarUrl?: string | null; gender?: string | null; phone?: string | null
+    birthday?: string | null; birthYearMonth?: string | null; identityType?: string; intro?: string | null
+    realName?: string | null; residentialAddress?: string | null; idCardNo?: string | null
+    departureCity?: string | null; transportPreference?: string | null; roomPreference?: string | null
+    organization?: string | null; jobTitle?: string | null; inviterName?: string | null
+  }) {
     const user = await this.userRepo.findOne({ where: { id } })
     if (!user) throw new NotFoundException(`User ${id} not found`)
 
@@ -492,6 +705,31 @@ export class UsersService {
       if (body.birthYearMonth !== null && body.birthYearMonth !== '' && !/^\d{4}-\d{2}$/.test(body.birthYearMonth)) {
         throw new BadRequestException('birthYearMonth must be YYYY-MM format')
       }
+    }
+
+    if (body.idCardNo !== undefined) {
+      const idCardNo = String(body.idCardNo || '').trim().replace(/x$/, 'X')
+      if (idCardNo && !ID_CARD_RE.test(idCardNo)) throw new BadRequestException('请填写正确的身份证号')
+      body.idCardNo = idCardNo || null
+    }
+
+    const maxLengths: Partial<Record<RegistrationProfileField, number>> = {
+      realName: 20,
+      phone: 30,
+      residentialAddress: 200,
+      departureCity: 50,
+      idCardNo: 50,
+      transportPreference: 50,
+      roomPreference: 100,
+      organization: 100,
+      jobTitle: 100,
+      inviterName: 100,
+    }
+    for (const field of REGISTRATION_PROFILE_FIELDS) {
+      if (body[field] === undefined || body[field] === null) continue
+      body[field] = String(body[field]).trim() || null
+      const limit = maxLengths[field]
+      if (limit && String(body[field] || '').length > limit) throw new BadRequestException(`${field} too long`)
     }
 
     if (body.intro !== undefined && (body.intro || '').trim()) {
@@ -512,6 +750,20 @@ export class UsersService {
     }
 
     await this.userRepo.save(user)
+
+    const hasRegistrationProfilePatch = REGISTRATION_PROFILE_FIELDS.some(field => body[field] !== undefined)
+    if (hasRegistrationProfilePatch) {
+      let registrationProfile = await this.registrationProfileRepo.findOne({ where: { userId: id } })
+      if (!registrationProfile) registrationProfile = this.registrationProfileRepo.create({ userId: id })
+      for (const field of REGISTRATION_PROFILE_FIELDS) {
+        if (body[field] !== undefined) {
+          ;(registrationProfile as any)[field] = body[field] ? String(body[field]).trim() : null
+        }
+      }
+      if (body.phone !== undefined) registrationProfile.phone = body.phone ? String(body.phone).trim() : null
+      await this.registrationProfileRepo.save(registrationProfile)
+    }
+
     return this.getPrivateProfile(id)
   }
 

@@ -1,0 +1,1 @@
+-- SQLite rollback requires table recreation; retained as a documented manual rollback.

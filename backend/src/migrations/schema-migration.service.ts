@@ -160,7 +160,7 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
   }
 
   private canApplyIncrementally(version: string): boolean {
-    return ['v2.8.4b-checkin-core', 'v2.9f-operation-banner', 'v2.9g-activity-series', 'v2.9i-registration-unique', 'v2.9j-payment-transaction-idempotency', 'v2.9k-activity-follow'].includes(version)
+    return ['v2.8.4b-checkin-core', 'v2.9f-operation-banner', 'v2.9g-activity-series', 'v2.9i-registration-unique', 'v2.9j-payment-transaction-idempotency', 'v2.9k-activity-follow', 'v3.0a-user-identity', 'v3.0b-activity-series-visibility', 'v3.0c-admin-users', 'v3.0d-issued-certificates', 'v3.0e-certificate-share-images', 'v3.0f-issued-certificate-freeze', 'v3.0g-registration-profile-expansion'].includes(version)
   }
 
   private async isMigrationAlreadyRepresented(version: string): Promise<boolean> {
@@ -181,6 +181,20 @@ export class SchemaMigrationService implements OnApplicationBootstrap {
         return this.hasIndex('payment_transaction', 'uniq_payment_transaction_order_trade_type')
       case 'v2.9k-activity-follow':
         return (await this.hasTable('activity_follow')) && (await this.hasColumn('activity_series', 'externalUrl'))
+      case 'v3.0a-user-identity':
+        return (await this.hasColumn('user', 'wechatAppId')) && (await this.hasIndex('user', 'uq_user_wechat_app_openid'))
+      case 'v3.0b-activity-series-visibility':
+        return this.hasColumn('activity_series', 'showActivities')
+      case 'v3.0c-admin-users':
+        return (await this.hasTable('admin_user')) && (await this.hasIndex('admin_user', 'uq_admin_user_username'))
+      case 'v3.0d-issued-certificates':
+        return (await this.hasTable('issued_certificate')) && (await this.hasIndex('issued_certificate', 'uq_issued_certificate_public_token'))
+      case 'v3.0e-certificate-share-images':
+        return (await this.hasColumn('issued_certificate', 'friendShareImageUrl')) && (await this.hasColumn('issued_certificate', 'timelineShareImageUrl'))
+      case 'v3.0f-issued-certificate-freeze':
+        return (await this.hasColumn('issued_certificate', 'templateId')) && (await this.hasColumn('issued_certificate', 'renderSnapshot'))
+      case 'v3.0g-registration-profile-expansion':
+        return (await this.hasColumn('user_registration_profile', 'residentialAddress')) && (await this.hasColumn('activity_registration_info', 'residentialAddress'))
       default:
         return false
     }

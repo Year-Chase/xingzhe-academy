@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { API_BASE_URL } from '@/config/api'
 import axios from 'axios'
+import { saveAdminProfile } from '@/utils/admin-auth'
 
 const router = useRouter()
 const username = ref('')
@@ -32,7 +33,8 @@ async function handleLogin() {
       password: password.value,
     })
     localStorage.setItem('admin_token', res.data.token)
-    router.push('/')
+    saveAdminProfile(res.data.admin)
+    router.push(res.data.admin?.mustChangePassword ? '/initial-password' : '/')
   } catch (e: any) {
     const status = e?.response?.status
     if (status === 401) {

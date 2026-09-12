@@ -1,5 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import axios from 'axios'
+import { API_BASE_URL } from '@/config/api'
+import { clearAdminSession, saveAdminProfile } from '@/utils/admin-auth'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -7,6 +10,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Login',
     component: () => import('@/pages/Login.vue'),
     meta: { requiresAuth: false },
+  },
+  {
+    path: '/initial-password',
+    name: 'InitialPassword',
+    component: () => import('@/pages/InitialPassword.vue'),
+    meta: { requiresAuth: true, passwordChange: 'initial' },
   },
   {
     path: '/',
@@ -26,6 +35,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'crm/users/:userId', name: 'UserDetail', component: () => import('@/pages/crm/UserDetail.vue') },
       { path: 'certificate-templates', name: 'CertificateTemplateList', component: () => import('@/pages/certificate/CertificateTemplateList.vue') },
       { path: 'checkin', name: 'MobileCheckin', component: () => import('@/pages/MobileCheckin.vue') },
+      { path: 'change-password', name: 'ChangePassword', component: () => import('@/pages/ChangePassword.vue') },
     ],
   },
 ]
@@ -35,11 +45,24 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const token = localStorage.getItem('admin_token')
-  if (to.meta.requiresAuth && !token) { next('/login') }
-  else if (to.path === '/login' && token) { next('/') }
-  else { next() }
+  if (!to.meta.requiresAuth && to.path !== '/login') return next()
+  if (!token) return to.meta.requiresAuth ? next('/login') : next()
+
+  try {
+    const response = await axios.get(`${API_BASE_URL}/admin/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+    const profile = response.data
+    saveAdminProfile(profile)
+    if (profile.mustChangePassword && to.path !== '/initial-password') return next('/initial-password')
+    if (!profile.mustChangePassword && to.path === '/initial-password') return next('/')
+    if (to.path === '/login') return next('/')
+    return next()
+  } catch {
+    clearAdminSession()
+    if (to.meta.requiresAuth || to.path === '/login') return next('/login')
+    return next()
+  }
 })
 
 export default router

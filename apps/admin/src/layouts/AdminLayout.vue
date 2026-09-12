@@ -26,6 +26,7 @@ function handleMenuChange(path: string) {
 
 function logout() {
   localStorage.removeItem('admin_token')
+  localStorage.removeItem('admin_profile')
   router.push('/login')
 }
 
@@ -74,6 +75,9 @@ function isActive(path: string) {
       </t-menu>
 
       <div style="position: absolute; bottom: 20px; left: 16px; right: 16px;">
+        <t-button theme="default" variant="text" block @click="router.push('/change-password')" style="color: rgba(255,255,255,0.8); margin-bottom: 6px;">
+          {{ collapsed ? '密' : '修改密码' }}
+        </t-button>
         <t-button theme="default" variant="text" block @click="logout" style="color: rgba(255,255,255,0.6);">
           {{ collapsed ? '出' : '退出登录' }}
         </t-button>

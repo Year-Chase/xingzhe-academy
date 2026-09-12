@@ -7,12 +7,14 @@ import { JwtAuthGuard } from './jwt-auth.guard'
 import { MiniappJwtService } from './miniapp-jwt.service'
 import { MiniappAuthGuard } from './miniapp-auth.guard'
 import { User } from '../users/entities/user.entity'
+import { AdminUser } from './entities/admin-user.entity'
+import { AdminAuthService } from './admin-auth.service'
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), JwtModule.register({})],
+  imports: [TypeOrmModule.forFeature([User, AdminUser]), JwtModule.register({})],
   controllers: [AdminAuthController],
-  providers: [AdminTokenService, JwtAuthGuard, MiniappJwtService, MiniappAuthGuard],
-  exports: [AdminTokenService, JwtAuthGuard, MiniappJwtService, MiniappAuthGuard],
+  providers: [AdminTokenService, AdminAuthService, JwtAuthGuard, MiniappJwtService, MiniappAuthGuard],
+  exports: [AdminTokenService, AdminAuthService, JwtAuthGuard, MiniappJwtService, MiniappAuthGuard],
 })
 export class AuthModule {}

@@ -15,8 +15,22 @@ const C = {
 
 const FIELD_LABELS: Record<string, string> = {
   realName: '真实姓名', phone: '手机号', idCardNo: '身份证号',
-  departureCity: '出发城市', transportPreference: '交通工具偏好', roomPreference: '房间偏好',
+  residentialAddress: '居住地址', departureCity: '出发城市',
+  transportPreference: '交通工具偏好', roomPreference: '房间偏好',
+  organization: '公司/机构', jobTitle: '职务', inviterName: '邀请人',
 }
+const FIELD_ORDER = [
+  'realName',
+  'phone',
+  'departureCity',
+  'residentialAddress',
+  'transportPreference',
+  'roomPreference',
+  'organization',
+  'jobTitle',
+  'inviterName',
+  'idCardNo',
+]
 const TRANSPORT = ['高铁', '飞机', '自驾', '其他']
 const ROOM = ['单住', '拼房', '无所谓', '其他']
 
@@ -26,9 +40,14 @@ const idCardRx = /^(?:\d{15}|\d{17}[\dXx])$/
 const phoneRx = /^1\d{10}$/
 
 function safeFields(raw: any): string[] {
-  if (Array.isArray(raw)) return raw
-  if (!raw) return []
-  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : [] } catch (e) { console.error('[registration-info] parse error', e); return [] }
+  let value: any[] = []
+  if (Array.isArray(raw)) value = raw
+  else if (!raw) value = []
+  else {
+    try { const v = JSON.parse(raw); value = Array.isArray(v) ? v : [] } catch (e) { console.error('[registration-info] parse error', e); value = [] }
+  }
+  const allowed = new Set(FIELD_ORDER)
+  return FIELD_ORDER.filter(field => value.includes(field) && allowed.has(field))
 }
 
 function NavPointerIcon() {
@@ -90,6 +109,8 @@ export default function RegistrationInfoPage() {
       else if (f === 'phone' && !phoneRx.test(v)) e[f] = '请填写正确的手机号'
       else if (f === 'idCardNo' && !idCardRx.test(v)) e[f] = '请填写正确的身份证号'
       else if (f === 'departureCity' && v.length > 30) e[f] = '出发城市最多30字'
+      else if (f === 'residentialAddress' && v.length > 200) e[f] = '居住地址最多200字'
+      else if (['organization', 'jobTitle', 'inviterName'].includes(f) && v.length > 100) e[f] = (FIELD_LABELS[f] || f) + '最多100字'
     }
     setErrors(e)
     return Object.keys(e).length === 0
@@ -130,11 +151,7 @@ export default function RegistrationInfoPage() {
         setForm({})
         setShowConfirm(false)
         Taro.setStorageSync('dirtyActivityId', activityId)
-        Taro.showToast({ title: '报名成功', icon: 'success', duration: 1500 })
-        // Navigate back to detail with success flag only — no sensitive data
-        setTimeout(() => {
-          Taro.redirectTo({ url: `/pages/activity/detail/index?id=${activityId}&enrollSuccess=1` })
-        }, 600)
+        Taro.redirectTo({ url: `/pages/mine/orders/index?source=activityPayment&activityId=${activityId}${(res.data as any)?.orderId ? `&orderId=${(res.data as any).orderId}` : ''}` })
       } else if ((res.data as any)?.message) {
         Taro.showToast({ title: (res.data as any).message, icon: 'none' })
       }
@@ -198,11 +215,12 @@ export default function RegistrationInfoPage() {
     }
     const isPhone = key === 'phone'
     const isIdCard = key === 'idCardNo'
+    const maxLength = key === 'residentialAddress' ? 200 : ['organization', 'jobTitle', 'inviterName'].includes(key) ? 100 : isPhone ? 11 : isIdCard ? 18 : 50
     return (
       <View key={key} style={fieldBox}>
         <Text style={fieldLabel}>{label}</Text>
         <Input value={val} onInput={e => updateField(key, e.detail.value)} placeholder={'请填写' + label}
-          maxlength={isPhone ? 11 : isIdCard ? 18 : 50}
+          maxlength={maxLength}
           style={{ flex: 1, fontSize: '28rpx', color: C.dark, textAlign: 'right' }}
           type={isPhone ? 'number' : 'text'} />
         {key === 'idCardNo' ? <Text style={{ fontSize: '22rpx', color: '#C98255', display: 'block', marginTop: '6rpx' }}>身份证号属于敏感信息，仅在保险、住宿、实名核验等确有必要时使用。</Text> : null}
@@ -222,7 +240,9 @@ export default function RegistrationInfoPage() {
           {showConfirm ? '确认报名信息' : '报名信息'}
         </Text>
         <Text style={{ fontSize: '26rpx', color: C.neutral, display: 'block', marginTop: '8rpx' }}>
-          本信息仅用于本次活动组织与安全保障。
+          {requiredFields.includes('idCardNo')
+            ? '以下信息我们将严格保密，仅用于活动报名、房间和交通预定；身份证信息仅用于活动相关旅行保险购买。'
+            : '以下信息我们将严格保密，仅用于活动报名、房间和交通预定。'}
         </Text>
       </View>
 

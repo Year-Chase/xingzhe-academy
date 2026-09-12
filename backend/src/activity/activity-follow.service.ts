@@ -70,14 +70,14 @@ export class ActivityFollowService {
     }
   }
 
-  async getFollowedActivities(userId: string, page: number, limit: number, seriesId?: string) {
+  async getFollowedActivities(userId: string, page: number, limit: number, seriesIds: string[] = []) {
     const qb = this.activityRepo.createQueryBuilder('activity')
       .innerJoin(ActivityFollow, 'follow', 'follow.activityId = activity.id AND follow.userId = :userId AND follow.unfollowedAt IS NULL', { userId })
       .leftJoinAndSelect('activity.category', 'category')
       .leftJoinAndSelect('activity.series', 'series')
       .where('activity.status = :status', { status: 'PUBLISHED' })
       .orderBy('activity.createdAt', 'DESC')
-    if (seriesId) qb.andWhere('activity.seriesId = :seriesId', { seriesId })
+    if (seriesIds.length) qb.andWhere('activity.seriesId IN (:...seriesIds)', { seriesIds })
     qb.skip((page - 1) * limit).take(limit)
     const [items, total] = await qb.getManyAndCount()
     return { items, total }

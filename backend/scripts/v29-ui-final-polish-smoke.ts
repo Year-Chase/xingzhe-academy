@@ -26,6 +26,7 @@ function cleanupDb() {
 async function createUser(repo: Repository<User>, suffix: string = randomUUID()) {
   return repo.save(repo.create({
     id: `user_${suffix}`,
+    wechatAppId: 'mock-app',
     openid: `openid_${suffix}`,
     nickname: `行者${suffix.slice(0, 6)}`,
     registeredAt: new Date(),

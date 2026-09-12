@@ -28,6 +28,7 @@ import { User } from './users/entities/user.entity'
 import { UserInvoiceProfile } from './users/entities/user-invoice-profile.entity'
 import { UserRegistrationProfile } from './users/entities/user-registration-profile.entity'
 import { CertificateTemplate } from './certificate/entities/certificate-template.entity'
+import { IssuedCertificate } from './certificate/entities/issued-certificate.entity'
 import { ActivityModule } from './activity/activity.module'
 import { UsersModule } from './users/users.module'
 import { CertificateModule } from './certificate/certificate.module'
@@ -35,8 +36,9 @@ import { AuthModule } from './auth/auth.module'
 import { PaymentModule } from './payment/payment.module'
 import { PaymentTransaction } from './payment/entities/payment-transaction.entity'
 import { RefundTransaction } from './payment/entities/refund-transaction.entity'
+import { AdminUser } from './auth/entities/admin-user.entity'
 
-const entities = [Activity, ActivityCategory, ActivitySeries, ActivityFollow, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, TagDefinition, UserTagRelation, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, OperationBanner, CertificateTemplate, User, UserInvoiceProfile, UserRegistrationProfile, PaymentTransaction, RefundTransaction]
+const entities = [Activity, ActivityCategory, ActivitySeries, ActivityFollow, ActivityRegistration, ActivityOrder, ActivityQR, ActivityRefund, ActivityInvoice, UserTag, TagDefinition, UserTagRelation, UserNote, UserProfile, UserInviteRecord, ActivityInviteRecord, ActivityRegistrationInfo, OperationBanner, CertificateTemplate, IssuedCertificate, User, UserInvoiceProfile, UserRegistrationProfile, PaymentTransaction, RefundTransaction, AdminUser]
 
 // Production uses MySQL from env vars; development uses local SQLite
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.DB_HOST

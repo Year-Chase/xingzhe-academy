@@ -24,7 +24,7 @@ export type LoginRedirectState = {
  */
 export function getStoredUserId(): string {
   const id = Taro.getStorageSync('xingzhe_user_id')
-  if (typeof id === 'string' && id.startsWith('user_')) return id
+  if (typeof id === 'string' && /^usr_[0-9A-Za-z]{12}$/.test(id)) return id
   return ''
 }
 
@@ -258,7 +258,7 @@ export async function loginWithPhone(input: {
 
     const data = res.data as any
     const userId = data?.userId || data?.user?.id
-    if (userId && typeof userId === 'string' && userId.startsWith('user_')) {
+    if (userId && typeof userId === 'string' && /^usr_[0-9A-Za-z]{12}$/.test(userId)) {
       Taro.setStorageSync('xingzhe_user_id', userId)
       if (data.token) Taro.setStorageSync('xingzhe_auth_token', data.token)
       const profile = data?.user || data
@@ -312,10 +312,14 @@ export async function getRegistrationProfile(): Promise<Record<string, string>> 
   return {
     realName: data.realName || '',
     phone: data.phone || '',
+    residentialAddress: data.residentialAddress || '',
     idCardNo: data.idCardNo || '',
     departureCity: data.departureCity || '',
     transportPreference: data.transportPreference || '',
     roomPreference: data.roomPreference || '',
+    organization: data.organization || '',
+    jobTitle: data.jobTitle || '',
+    inviterName: data.inviterName || '',
   }
 }
 

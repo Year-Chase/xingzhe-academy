@@ -36,6 +36,7 @@ import { AdminOperationController } from './admin-operation.controller'
 import { AdminActivitySeriesController } from './admin-activity-series.controller'
 import { SystemTagRefreshJob } from './jobs/system-tag-refresh.job'
 import { PaymentModule } from '../payment/payment.module'
+import { OptionalMiniappAuthGuard } from '../auth/optional-miniapp-auth.guard'
 
 @Module({
   imports: [
@@ -75,6 +76,6 @@ import { PaymentModule } from '../payment/payment.module'
     AdminActivitySeriesController,
     StaffCheckinController,
   ],
-  providers: [ActivityService, ActivityFollowService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob],
+  providers: [ActivityService, ActivityFollowService, ActivityFlowService, CheckinStatisticsService, SystemTagRefreshJob, OptionalMiniappAuthGuard],
 })
 export class ActivityModule {}

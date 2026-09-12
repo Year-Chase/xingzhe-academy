@@ -1,9 +1,7 @@
-import { View, Text, ScrollView, Image, Swiper, SwiperItem, MovableArea, MovableView } from '@tarojs/components'
+import { View, Text, ScrollView, Image, Swiper, SwiperItem } from '@tarojs/components'
 import { useState, useEffect, useMemo } from 'react'
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro'
 import { isLoggedIn, userAuthHeader } from '../../utils/user'
-import chinaMap from '../../assets/maps/china-map.png'
-import { cityPoint } from '../../data/china-city-points'
 import { API_BASE_URL as API } from '../../config/api'
 
 const C = { bg: '#F7F8F5', card: '#FFFFFF', ink: '#202923', body: '#4B564F', muted: '#747D77', line: '#E6EAE6', green: '#2E7D5A', softGreen: '#EEF6F1' }
@@ -19,7 +17,7 @@ interface JourneyData {
   certificates: Certificate[]
 }
 interface Certificate { certificateId: string; activityDate: string; issuedAt: string; certificateImage: string }
-interface JourneyCity { city: string; province: string; latitude: number; longitude: number; activityCount: number }
+interface JourneyCity { cityName: string; cityAdcode: string | null; checkedInCount: number; city: string; province: string; latitude: number; longitude: number; activityCount: number }
 
 function safeImgs(raw: any): string[] {
   if (Array.isArray(raw)) return raw.filter((value: any) => typeof value === 'string')
@@ -35,10 +33,6 @@ export default function TrailPage() {
   const [error, setError] = useState('')
   const [needLogin, setNeedLogin] = useState(false)
   const [journeyCities, setJourneyCities] = useState<JourneyCity[]>([])
-  const [selectedCity, setSelectedCity] = useState<JourneyCity | null>(null)
-  const [mapX, setMapX] = useState(0)
-  const [mapY, setMapY] = useState(0)
-  const [mapScale, setMapScale] = useState(1)
   const [singleMemoryPortrait, setSingleMemoryPortrait] = useState(false)
 
   const loadJourney = async () => {
@@ -64,18 +58,12 @@ export default function TrailPage() {
     if (!data?.certificates) return []
     return [...data.certificates].sort((a, b) => new Date(b.issuedAt || b.activityDate || 0).getTime() - new Date(a.issuedAt || a.activityDate || 0).getTime()).slice(0, 3)
   }, [data?.certificates])
-  const mappedCities = useMemo(() => journeyCities.flatMap(city => {
-    const point = cityPoint(city.city)
-    if (!point) { if (process.env.NODE_ENV !== 'production') console.warn(`[trail] missing China map coordinate: ${city.city}`); return [] }
-    return [{ ...city, point }]
-  }), [journeyCities])
 
   if (loading) return <View style={fullCenter}><Text style={loadingText}>正在整理你的旅程...</Text></View>
   if (needLogin) return <EmptyPage title='登录行者学社' copy='登录后，查看你和行者学社一起走过的路。' action='去登录' onAction={() => Taro.reLaunch({ url: '/pages/auth/login/index' })} />
   if (error || !data) return <EmptyPage title='我的旅程暂时没有打开' copy='请稍后再试' action='重新加载' onAction={loadJourney} />
   if (data.summary.registeredCount === 0) return <EmptyPage title={'你的旅程，\n还在第一次出发前。'} copy='去参加一次活动，让这里留下你的第一枚行者印记。' action='去看看活动' onAction={() => Taro.switchTab({ url: '/pages/activity/list/index' })} />
 
-  const resetMap = () => { setMapX(0); setMapY(0); setMapScale(1) }
   return (
     <ScrollView scrollY style={{ height: '100vh', background: C.bg }}>
       <View style={{ paddingBottom: '160rpx', paddingTop: '8rpx' }}>
@@ -90,7 +78,7 @@ export default function TrailPage() {
 
         <View style={{ ...modWrap, minHeight: '360rpx', boxSizing: 'border-box' }}>
           <View style={moduleHeader}><Text style={modTitle}>我的证书</Text>{data.certificates.length > 3 ? <Text onClick={() => Taro.navigateTo({ url: '/pages/mine/certificates/index' })} style={moreText}>查看更多</Text> : null}</View>
-          {latestCertificates.length ? <Swiper indicatorDots={false} circular={false} autoplay={false} style={{ width: '100%', height: '262rpx' }}>
+          {latestCertificates.length === 1 ? <MediaFrame src={resourceUrl(latestCertificates[0].certificateImage)} contain /> : latestCertificates.length > 1 ? <Swiper indicatorDots={false} circular={false} autoplay={false} style={{ width: '100%', height: '262rpx' }}>
             {latestCertificates.map((certificate, index) => <SwiperItem key={certificate.certificateId}>
               <MediaFrame src={resourceUrl(certificate.certificateImage)} contain />
               {latestCertificates.length > 1 ? <Text style={pageCounter}>{index + 1} / {latestCertificates.length}</Text> : null}
@@ -111,23 +99,8 @@ export default function TrailPage() {
         </View>
 
         <View style={modWrap}>
-          <View style={moduleHeader}><View><Text style={modTitle}>点亮地图</Text><Text style={{ ...modSub, marginBottom: 0 }}>已点亮 {journeyCities.length} 座城市</Text></View>{mapScale !== 1 || mapX !== 0 || mapY !== 0 ? <Text onClick={resetMap} style={resetText}>重置</Text> : null}</View>
-          <MovableArea scaleArea style={mapArea}>
-            <MovableView direction='all' inertia scale scaleMin={1} scaleMax={2.5} scaleValue={mapScale} x={mapX} y={mapY} onChange={(event) => { setMapX(Number(event.detail.x || 0)); setMapY(Number(event.detail.y || 0)) }} onScale={(event) => setMapScale(Number(event.detail.scale || 1))} style={mapLayer}>
-              <View style={mapCanvas}>
-                <Image src={chinaMap} mode='aspectFit' style={fullImage} />
-                {mappedCities.map(city => {
-                  const showLabel = mappedCities.length <= 10 || selectedCity?.city === city.city || city.activityCount > 1
-                  return <View key={`${city.province}-${city.city}`} onClick={() => setSelectedCity(city)} style={{ position: 'absolute', left: `${city.point.x * 100}%`, top: `${city.point.y * 100}%`, transform: 'translate(-50%, -50%)', padding: '16rpx', margin: '-16rpx', zIndex: 2 }}>
-                    <View style={cityHalo}><View style={cityDot} /></View>
-                    {showLabel ? <Text style={cityLabel}>{city.city}</Text> : null}
-                  </View>
-                })}
-              </View>
-            </MovableView>
-            {journeyCities.length === 0 ? <View style={mapEmpty}><Text style={{ display: 'block', fontSize: '26rpx', color: C.body }}>还没有点亮城市</Text><Text style={{ display: 'block', fontSize: '22rpx', color: C.muted, marginTop: '8rpx' }}>完成一次活动签到，属于你的足迹会出现在这里。</Text></View> : null}
-          </MovableArea>
-          {selectedCity ? <View style={tooltip}><Text style={{ fontSize: '24rpx', color: C.green }}>{selectedCity.city}<Text style={{ color: C.muted }}> · 参加 {selectedCity.activityCount} 次活动</Text></Text></View> : null}
+          <Text style={modTitle}>点亮城市</Text><Text style={modSub}>已点亮 {journeyCities.length} 座城市</Text>
+          {journeyCities.length === 0 ? <View style={cityEmpty}><Text style={{ display: 'block', fontSize: '26rpx', color: C.body }}>你的第一座城市，正在等你点亮。</Text><Text style={{ display: 'block', fontSize: '22rpx', color: C.muted, marginTop: '8rpx' }}>完成一次活动签到后，这里会留下你的足迹。</Text></View> : <View style={cityList}>{journeyCities.map(city => <View key={`${city.cityAdcode || city.city}-${city.city}`} style={cityChip}><Text style={{ fontSize: '25rpx', color: C.green }}>{city.cityName || city.city}</Text><Text style={{ fontSize: '21rpx', color: C.muted, marginLeft: '8rpx' }}>参加 {city.checkedInCount || city.activityCount} 次</Text></View>)}</View>}
         </View>
       </View>
     </ScrollView>
@@ -156,12 +129,6 @@ const pageCounter: React.CSSProperties = { fontSize: '22rpx', color: C.muted, te
 const emptyMedia: React.CSSProperties = { height: '260rpx', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }
 const emptyMediaText: React.CSSProperties = { fontSize: '26rpx', color: C.muted }
 const memoryLink: React.CSSProperties = { marginTop: '12rpx', height: '68rpx', borderRadius: '999rpx', background: C.softGreen, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-const mapArea: React.CSSProperties = { height: '460rpx', width: '100%', borderRadius: '18rpx', overflow: 'hidden', background: '#F2F5F2' }
-const mapLayer: React.CSSProperties = { height: '460rpx', width: '100%' }
-const mapCanvas: React.CSSProperties = { position: 'absolute', top: '44rpx', left: 0, right: 0, aspectRatio: '696 / 379' }
-const resetText: React.CSSProperties = { fontSize: '22rpx', color: C.muted, padding: '8rpx 12rpx' }
-const cityHalo: React.CSSProperties = { width: '36rpx', height: '36rpx', borderRadius: '50%', background: 'rgba(46,125,90,0.20)', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-const cityDot: React.CSSProperties = { width: '14rpx', height: '14rpx', borderRadius: '50%', background: C.green }
-const cityLabel: React.CSSProperties = { position: 'absolute', left: '42rpx', top: '7rpx', fontSize: '21rpx', color: '#34463B', whiteSpace: 'nowrap' }
-const mapEmpty: React.CSSProperties = { position: 'absolute', left: '32rpx', right: '32rpx', bottom: '26rpx', textAlign: 'center', pointerEvents: 'none' }
-const tooltip: React.CSSProperties = { marginTop: '14rpx', padding: '14rpx 18rpx', background: C.softGreen, borderRadius: '14rpx' }
+const cityEmpty: React.CSSProperties = { height: '120rpx', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', background: '#F3F6F3', borderRadius: '16rpx' }
+const cityList: React.CSSProperties = { display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '12rpx' }
+const cityChip: React.CSSProperties = { padding: '14rpx 16rpx', background: C.softGreen, borderRadius: '14rpx', display: 'flex', alignItems: 'center' }

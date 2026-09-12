@@ -1,0 +1,1 @@
+-- SQLite rollback for dropped columns requires table rebuild and is intentionally manual.

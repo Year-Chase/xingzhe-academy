@@ -32,6 +32,9 @@ export class ActivitySeries {
   @Column({ type: 'varchar', length: 20, default: 'ACTIVE' })
   status: ActivitySeriesStatus
 
+  @Column({ type: 'boolean', default: true })
+  showActivities: boolean
+
   @CreateDateColumn()
   createdAt: Date
 

@@ -15,6 +15,12 @@ interface DetailData {
   birthday: string | null; birthYearMonth: string | null; intro: string | null; age: number | null; identityType: string
   isMember: boolean; isLifetimeMember: boolean
   registeredAt: string | null; lastLoginAt: string | null
+  wechatAppId: string | null; openid: string | null; unionid: string | null
+  registrationProfile?: {
+    realName: string | null; phone: string | null; residentialAddress: string | null
+    departureCity: string | null; idCardNo: string | null; transportPreference: string | null
+    roomPreference: string | null; organization: string | null; jobTitle: string | null; inviterName: string | null
+  }
   summary: { registrationCount: number; orderCount: number; checkedInCount: number; paidAmount: number; refundedAmount: number; netAmount: number; inviteRegisterCount: number; inviteActivityCount: number }
   registrations: any[]; orders: any[]; refunds: any[]; invoices: any[]
   certificates: any[]
@@ -110,6 +116,18 @@ const invoiceStatusLabel = (s: string) => ({ REQUESTED: '已申请', ISSUED: '�
 const genderLabel = (g: string) => ({ unknown: '未设置', '男': '男', '女': '女' } as any)[g] || g
 const birthLabel = (birthday: string | null, birthYearMonth: string | null) => birthday || (birthYearMonth ? birthYearMonth + ' 未补全' : '-')
 const statusColor = (s: string) => ({ PAID: '#2E7D5A', CHECKED_IN: '#2E7D5A', REFUNDED: '#8A9288', PARTIAL_REFUND: '#C98255', PENDING: '#8A9288', FAILED: '#B35B4B', REGISTERED: '#8A9288', EXPIRED: '#8A9288' } as any)[s] || '#666'
+const regProfileRows = () => [
+  { label: '真实姓名', value: data.value?.registrationProfile?.realName },
+  { label: '手机号码', value: data.value?.registrationProfile?.phone },
+  { label: '居住地址', value: data.value?.registrationProfile?.residentialAddress },
+  { label: '出发城市', value: data.value?.registrationProfile?.departureCity },
+  { label: '身份证号', value: data.value?.registrationProfile?.idCardNo },
+  { label: '交通工具偏好', value: data.value?.registrationProfile?.transportPreference },
+  { label: '房间偏好', value: data.value?.registrationProfile?.roomPreference },
+  { label: '来源公司/机构', value: data.value?.registrationProfile?.organization },
+  { label: '职务', value: data.value?.registrationProfile?.jobTitle },
+  { label: '邀请人', value: data.value?.registrationProfile?.inviterName },
+]
 
 const regColumns = [
   { colKey: 'id', title: 'ID', width: 55 },
@@ -175,6 +193,9 @@ onMounted(fetchDetail)
               <h3 style="font-size: 18px; font-weight: 600; color: #18231E; margin: 0 0 8px 0;">{{ data.nickname || '-' }}</h3>
               <div style="color: #8A9288; font-size: 13px; line-height: 1.9; display: grid; grid-template-columns: 80px 1fr; gap: 2px 12px;">
                 <span>用户ID:</span><span>{{ data.userId }} <t-button theme="default" variant="text" size="small" @click="copyUserId" style="font-size:12px;color:#2E7D5A;padding:0 4px;min-width:auto;">复制</t-button></span>
+                <span>微信AppID:</span><span>{{ data.wechatAppId || '-' }}</span>
+                <span>OpenID:</span><span>{{ data.openid || '-' }}</span>
+                <span>UnionID:</span><span>{{ data.unionid || '-' }}</span>
                 <span>性别:</span><span>{{ genderLabel(data.gender) }}</span>
                 <span>手机号:</span><span>{{ data.phone || '-' }}</span>
                 <span>出生日期:</span><span>{{ birthLabel(data.birthday, data.birthYearMonth) }}</span>
@@ -215,6 +236,16 @@ onMounted(fetchDetail)
                 <span v-if="!data.adminTags.length" style="color: #8A9288; font-size: 13px;">-</span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: #FFFFFF; border-radius: 12px; border: 1px solid #EDE9DF; padding: 20px; margin-bottom: 16px;">
+        <h3 style="font-size: 16px; font-weight: 600; color: #18231E; margin: 0 0 12px 0;">报名资料 / 扩展资料</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 10px 24px; color: #333A34; font-size: 13px;">
+          <div v-for="row in regProfileRows()" :key="row.label" style="display: grid; grid-template-columns: 96px 1fr; gap: 10px;">
+            <span style="color: #8A9288;">{{ row.label }}:</span>
+            <span>{{ row.value || '-' }}</span>
           </div>
         </div>
       </div>

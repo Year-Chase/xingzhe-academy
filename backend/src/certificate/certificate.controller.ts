@@ -6,6 +6,13 @@ import { ensureUploadSubDir, toPublicUploadUrl } from '../config/upload-path'
 import { CertificateService } from './certificate.service'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
+export const CERTIFICATE_TEMPLATE_MAX_BYTES = 5 * 1024 * 1024
+export function validateCertificateTemplateUpload(mimeType: string, size: number) {
+  if (!/^image\/(jpeg|png)$/.test(mimeType)) return '仅支持 JPG、JPEG、PNG 图片'
+  if (size > CERTIFICATE_TEMPLATE_MAX_BYTES) return '证书底图不能超过 5MB'
+  return null
+}
+
 @Controller('admin/certificate-templates')
 @UseGuards(JwtAuthGuard)
 export class CertificateController {
@@ -53,10 +60,11 @@ export class CertificateController {
         cb(null, unique + extname(file.originalname))
       },
     }),
-    limits: { fileSize: 5 * 1024 * 1024 },
+    limits: { fileSize: CERTIFICATE_TEMPLATE_MAX_BYTES },
     fileFilter: (_req, file, cb) => {
-      if (!file.mimetype.match(/^image\/(jpeg|png|webp)$/)) {
-        cb(new BadRequestException('Only jpg/jpeg/png/webp allowed'), false)
+      const error = validateCertificateTemplateUpload(file.mimetype, file.size || 0)
+      if (error) {
+        cb(new BadRequestException(error), false)
       } else {
         cb(null, true)
       }

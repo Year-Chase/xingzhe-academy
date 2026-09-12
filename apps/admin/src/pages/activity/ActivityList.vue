@@ -74,7 +74,9 @@ function initPricingRules(row?: any): any[] {
 
 const FIELD_LABELS: Record<string, string> = {
   realName: '真实姓名', phone: '手机号', idCardNo: '身份证号',
-  departureCity: '出发城市', transportPreference: '交通工具偏好', roomPreference: '房间偏好',
+  residentialAddress: '居住地址', departureCity: '出发城市',
+  transportPreference: '交通工具偏好', roomPreference: '房间偏好',
+  organization: '来源公司/机构', jobTitle: '职务', inviterName: '邀请人',
 }
 
 // ── types ──
@@ -156,8 +158,11 @@ const qrTypeOptions = [
 
 const regFieldOptions = [
   { label: '真实姓名', value: 'realName' }, { label: '手机号', value: 'phone' },
-  { label: '身份证号', value: 'idCardNo' }, { label: '出发城市', value: 'departureCity' },
+  { label: '居住地址', value: 'residentialAddress' }, { label: '出发城市', value: 'departureCity' },
+  { label: '身份证号', value: 'idCardNo' },
   { label: '交通工具偏好', value: 'transportPreference' }, { label: '房间偏好', value: 'roomPreference' },
+  { label: '来源公司/机构', value: 'organization' }, { label: '职务', value: 'jobTitle' },
+  { label: '邀请人', value: 'inviterName' },
 ]
 const statusLabel = (s: string) => ({ PUBLISHED: '已发布', DRAFT: '未发布', CLOSED: '已下架', ENDED: '已结束' } as any)[s] || s
 const statusColor = (s: string) => ({ PUBLISHED: '#2E7D5A', DRAFT: '#8A9288', CLOSED: '#B35B4B', ENDED: '#8A9288' } as any)[s] || '#666'
@@ -305,7 +310,6 @@ const openEdit = async (row: ActivityItem) => {
 }
 const submitForm = async () => {
   if (!form.title || !form.startTime || !form.endTime || !form.registrationStartTime || !form.registrationEndTime || !form.capacity || Number(form.capacity) <= 0) { formError.value = '标题、活动开始/结束时间、报名开始/结束时间、人数（>0）为必填项'; return }
-  if (formMode.value === 'create' && !form.categoryId) { formError.value = '新建活动请先选择活动分类；临时无法判断时可选择“其他”'; return }
   if (!form.province?.trim() || !form.city?.trim()) { formError.value = '请填写活动省份和城市'; return }
   if (new Date(form.endTime) <= new Date(form.startTime)) { formError.value = '活动结束时间必须晚于活动开始时间'; return }
   if (new Date(form.registrationEndTime) <= new Date(form.registrationStartTime)) { formError.value = '报名结束时间必须晚于报名开始时间'; return }
@@ -352,9 +356,9 @@ const submitForm = async () => {
     groupQrTitle: form.groupQrTitle,
     groupQrDescription: form.groupQrDescription,
     certificateTemplateId: form.certificateTemplateId ?? undefined,
-    provinceName: syncProvince || '', provinceCode: '',
-    cityName: syncCity || '', cityCode: '',
-    adcode: '', lng: null, lat: null,
+    provinceName: syncProvince || '', provinceCode: form.provinceCode || '',
+    cityName: syncCity || '', cityCode: form.cityCode || '',
+    adcode: form.adcode || '', lng: null, lat: null,
     imageUrls: JSON.stringify(form.imageUrls || []),
     contentBlocks: JSON.stringify(form.contentBlocks || []),
     pricingRules: JSON.stringify(form.pricingRules || []),
@@ -527,8 +531,12 @@ const fetchCertTemplates = async () => {
           <label style="color: #8A9288; font-weight: 600;">报名信息 ({{ regInfoList.length }}条)</label>
           <div v-for="(r, i) in regInfoList" :key="i" style="background: #F7F6F2; border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 13px;">
             <div v-if="r.realName">真实姓名: {{ r.realName }}</div><div v-if="r.phone">手机号: {{ maskPhone(r.phone) }}</div>
-            <div v-if="r.idCardNo">身份证号: {{ maskIdCard(r.idCardNo) }}</div><div v-if="r.departureCity">出发城市: {{ r.departureCity }}</div>
+            <div v-if="r.residentialAddress">居住地址: {{ r.residentialAddress }}</div><div v-if="r.departureCity">出发城市: {{ r.departureCity }}</div>
+            <div v-if="r.idCardNo">身份证号: {{ maskIdCard(r.idCardNo) }}</div>
             <div v-if="r.transportPreference">交通工具: {{ r.transportPreference }}</div><div v-if="r.roomPreference">房间偏好: {{ r.roomPreference }}</div>
+            <div v-if="r.organization">来源公司/机构: {{ r.organization }}</div><div v-if="r.jobTitle">职务: {{ r.jobTitle }}</div>
+            <div v-if="r.inviterName">邀请人: {{ r.inviterName }}</div>
+            <span v-if="!r.realName && !r.phone && !r.residentialAddress && !r.departureCity && !r.idCardNo && !r.transportPreference && !r.roomPreference && !r.organization && !r.jobTitle && !r.inviterName" style="color: #aaa;">-</span>
             <div v-if="r.confirmedAt" style="color: #A6AAA2; font-size: 12px; margin-top: 4px;">确认时间: {{ fmtDateFull(r.confirmedAt) }}</div>
           </div>
         </div>
@@ -541,7 +549,7 @@ const fetchCertTemplates = async () => {
     <t-drawer v-model:visible="formDrawer" :header="formMode === 'create' ? '新建活动' : '编辑活动'" size="700px" :footer="false">
       <div style="display: flex; flex-direction: column; gap: 16px; padding-bottom: 16px;">
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px;">基础信息</div>
-        <div><label style="color: #8A9288; font-size: 13px;">活动标题 *</label><t-input v-model="form.title" placeholder="例如：晨跑打卡" /></div>
+        <div><label style="color: #8A9288; font-size: 13px;">活动标题<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.title" placeholder="例如：晨跑打卡" /></div>
         <div><label style="color: #8A9288; font-size: 13px;">Slogan</label><t-input v-model="form.slogan" placeholder="少于100字" maxlength="100" /></div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动归属</div>
         <div>
@@ -554,10 +562,10 @@ const fetchCertTemplates = async () => {
           <t-select v-model="form.categoryId" :options="activityCategories.map((c: any) => ({ label: c.name, value: String(c.id) }))" placeholder="选择活动分类" clearable style="width: 100%;" />
           <div style="font-size: 12px; color: #8A9288; margin-top: 4px;">用于活动筛选和运营统计，例如社群相聚、户外行走、学习共创。</div>
         </div>
-        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">省份</label><t-input v-model="form.province" placeholder="手动填写，如 重庆市 / 四川省" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">城市</label><t-input v-model="form.city" placeholder="手动填写，如 重庆 / 成都" /></div></div>
+        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">省份<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.province" placeholder="手动填写，如 重庆市 / 四川省" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">城市<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.city" placeholder="手动填写，如 重庆 / 成都" /></div><div style="width: 180px;"><label style="color: #8A9288; font-size: 13px;">城市行政区编码</label><t-input v-model="form.adcode" placeholder="如 110000" /></div></div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 12px;">活动地点与坐标</div>
-        <div><label style="color: #8A9288; font-size: 13px;">地点名称 *</label><t-input v-model="form.locationName" placeholder="例如：奥林匹克森林公园南门" /></div>
-        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">经度 longitude *</label><t-input v-model="form.locationLng" placeholder="106.58" type="text" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">纬度 latitude *</label><t-input v-model="form.locationLat" placeholder="29.56" type="text" /></div></div>
+        <div><label style="color: #8A9288; font-size: 13px;">地点名称<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.locationName" placeholder="例如：奥林匹克森林公园南门" /></div>
+        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">经度 longitude<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.locationLng" placeholder="106.58" type="text" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">纬度 latitude<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.locationLat" placeholder="29.56" type="text" /></div></div>
         <span style="font-size: 11px; color: #8A9288; display: block; margin-top: 4px;">高德/腾讯坐标通常为：经度,纬度。例如高德返回 106.58,29.56 时：经度 longitude 填 106.58，纬度 latitude 填 29.56。请勿填写反。不使用百度地图坐标，会产生偏移。</span>
         <div><label style="color: #8A9288; font-size: 13px;">活动描述</label><t-textarea v-model="form.description" placeholder="活动详细描述" :autosize="{ minRows: 2, maxRows: 4 }" /></div>
         <!-- V2.8-C: Unified activity images (first one = coverImage) -->
@@ -591,12 +599,12 @@ const fetchCertTemplates = async () => {
           <t-button theme="default" variant="outline" size="small" @click="form.contentBlocks.push({ type: 'image', url: '' })">+ 图片块</t-button>
         </div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">时间与名额</div>
-        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动开始时间 *</label><t-input v-model="form.startTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动结束时间 *</label><t-input v-model="form.endTime" type="datetime-local" /></div></div>
-        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">报名开始时间 *</label><t-input v-model="form.registrationStartTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">报名结束时间 *</label><t-input v-model="form.registrationEndTime" type="datetime-local" /></div></div>
-        <div><label style="color: #8A9288; font-size: 13px;">人数上限 *</label><t-input-number v-model="form.capacity" :min="1" style="width: 100%;" /></div>
+        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动开始时间<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.startTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">活动结束时间<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.endTime" type="datetime-local" /></div></div>
+        <div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">报名开始时间<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.registrationStartTime" type="datetime-local" /></div><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">报名结束时间<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.registrationEndTime" type="datetime-local" /></div></div>
+        <div><label style="color: #8A9288; font-size: 13px;">人数上限<span style="color: #B35B4B;"> *</span></label><t-input-number v-model="form.capacity" :min="1" style="width: 100%;" /></div>
         <div style="font-size: 14px; font-weight: 600; color: #18231E; border-bottom: 1px solid #EDE9DF; padding-bottom: 8px; margin-top: 8px;">价格与支付</div>
         <div><label style="color: #8A9288; font-size: 13px;">支付模式</label><t-select v-model="form.paymentMode" :options="[{ label: '全款', value: 'FULL' }, { label: '预付+后付', value: 'PREPAY' }]" style="width: 100%;" /></div>
-        <template v-if="form.paymentMode === 'PREPAY'"><div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">后付款日期 *</label><t-input v-model="form.postpayDate" type="date" placeholder="如 2026-07-31" /></div></div></template>
+        <template v-if="form.paymentMode === 'PREPAY'"><div style="display: flex; gap: 12px;"><div style="flex: 1;"><label style="color: #8A9288; font-size: 13px;">后付款日期<span style="color: #B35B4B;"> *</span></label><t-input v-model="form.postpayDate" type="date" placeholder="如 2026-07-31" /></div></div></template>
         <!-- V2.8-C: Pricing matrix per user type -->
         <div style="font-size: 13px; font-weight: 600; color: #3F6B4F; margin-top: 12px; border-bottom: 1px solid #EDE9DF; padding-bottom: 4px;">价格矩阵（{{ form.paymentMode === 'PREPAY' ? '预付 + 后付' : '全款' }}）</div>
         <div v-if="form.paymentMode === 'FULL'" style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">

@@ -116,6 +116,17 @@ export class UsersController {
     return this.usersService.getJourneyCities(user.userId)
   }
 
+  @Get('me/summary')
+  @UseGuards(MiniappAuthGuard)
+  async getMySummary(@CurrentMiniappUser() user: MiniappRequestUser) {
+    return this.usersService.getMineSummary(user.userId)
+  }
+
+  @Get('certificates/public/:token')
+  async getPublicCertificate(@Param('token') token: string) {
+    return this.usersService.getPublicCertificate(token)
+  }
+
   @Get(':id/journey')
   @UseGuards(MiniappAuthGuard)
   async getJourney(@Param('id') id: string, @CurrentMiniappUser() user: MiniappRequestUser) {

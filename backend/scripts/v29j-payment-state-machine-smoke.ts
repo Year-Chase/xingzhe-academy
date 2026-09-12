@@ -51,6 +51,7 @@ function cents(amount: number) {
 async function createUser(repo: Repository<User>, suffix: string = randomUUID()) {
   return repo.save(repo.create({
     id: `v29j_user_${suffix}`,
+    wechatAppId: 'mock-app',
     openid: `v29j_openid_${suffix}`,
     nickname: `行者${suffix.slice(0, 6)}`,
     registeredAt: new Date(),

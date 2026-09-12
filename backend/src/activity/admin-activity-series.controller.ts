@@ -28,6 +28,7 @@ export class AdminActivitySeriesController {
       externalUrl: s.externalUrl || '',
       sortOrder: s.sortOrder,
       status: s.status,
+      showActivities: s.showActivities !== false,
       activityCount: await this.activityRepo.count({ where: { seriesId: s.id } as any }),
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
@@ -108,6 +109,7 @@ export class AdminActivitySeriesController {
     }
     if (body?.sortOrder !== undefined) next.sortOrder = Number(body.sortOrder || 0)
     if (body?.status !== undefined) next.status = body.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    if (body?.showActivities !== undefined) next.showActivities = body.showActivities === true || body.showActivities === 'true' || body.showActivities === 1
     return next
   }
 

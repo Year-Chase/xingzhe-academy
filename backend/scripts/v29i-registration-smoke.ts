@@ -59,6 +59,7 @@ async function createActivity(repo: Repository<Activity>, paymentMode: string, c
 async function createUser(repo: Repository<User>, suffix: string = randomUUID()): Promise<User> {
   return repo.save(repo.create({
     id: `user_${suffix}`,
+    wechatAppId: 'mock-app',
     openid: `openid_${suffix}`,
     nickname: `行者${suffix.slice(0, 6)}`,
     registeredAt: new Date(),
